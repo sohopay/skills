@@ -1,0 +1,59 @@
+# Deploy hosted skills to agents.sohopay.xyz (S3 + CloudFront).
+#
+# Required GitHub repository secrets (sohopay/skills repo):
+#   AWS_DEPLOY_ROLE_ARN  — IAM role for OIDC deploy (S3 sync + CloudFront invalidation)
+#   AGENTS_SKILLS_BUCKET — S3 bucket name (from AgentsSkillsStack output)
+#   AGENTS_SKILLS_CF_ID  — CloudFront distribution ID
+#
+# OIDC trust should scope to repo:sohopay/skills:ref:refs/heads/main
+name: Deploy agent skills
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    needs: []
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run generate:llms-full
+      - run: npm run validate
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Sync to S3
+        run: |
+          aws s3 sync . "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/" \
+            --exclude ".git/*" \
+            --exclude "node_modules/*" \
+            --exclude "plugins/*" \
+            --exclude "scripts/*" \
+            --exclude ".github/*" \
+            --exclude "package.json" \
+            --exclude "README.md" \
+            --exclude "CODEOWNERS" \
+            --exclude "docs/*" \
+            --cache-control "public,max-age=300"
+          aws s3 cp llms-full.txt "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/llms-full.txt" \
+            --cache-control "public,max-age=300"
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ secrets.AGENTS_SKILLS_CF_ID }}" \
+            --paths "/skills/setup.md" "/.well-known/agent-skills/index.json" "/llms-full.txt"

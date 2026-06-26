@@ -1,0 +1,11 @@
+{
+  "name": "sohopay",
+  "displayName": "SohoPay",
+  "version": "0.1.0",
+  "description": "Integrate AI agents with SohoPay MCP gateway, borrower onboarding, delegated sessions, and x402 credit settlement.",
+  "author": {
+    "name": "SohoPay"
+  },
+  "keywords": ["sohopay", "mcp", "x402", "credit", "agents", "payments"],
+  "license": "UNLICENSED"
+}

@@ -1,0 +1,590 @@
+# SohoPay Agent Skills
+Skill index for AI agents integrating with SohoPay MCP gateway and x402 credit settlement.
+
+
+---
+
+# SohoPay Agent Setup for AI Agents
+
+# Skill: SohoPay Agent Setup for AI Agents
+
+CRITICAL: This skill uses **soho-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
+
+CRITICAL: Run this setup in full-access mode (network access + read/write to the user's home directory). Without it, skill installation and MCP config writes fail or hang on permission prompts.
+
+Hosted skill base: `https://agents.sohopay.xyz`
+
+## Step 1: Check prerequisites
+
+```bash
+node --version
+which npm || command -v npm
+```
+
+Required: Node.js `>=22.13.0`, npm `>=10`, network access.
+
+## Step 2: Install sticky SohoPay skills
+
+Install SohoPay's official skills so the agent has local guidance in every future session:
+
+```bash
+npx skills add sohopay/skills -g -y
+```
+
+If the repo is not yet published on GitHub, skip this step and rely on curl-fetched hosted skills below. Re-run after `sohopay/skills` is public.
+
+## Step 3: Connect to SohoPay MCP
+
+Fetch the MCP connection skill:
+
+```bash
+curl -sL https://agents.sohopay.xyz/skills/mcp-connect.md
+```
+
+Follow those instructions exactly. Choose either:
+
+- **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
+- **Local MCP** — clone and run [soho-mcp-server](https://github.com/sohopay/soho-mcp-server)
+
+## Step 4: Smoke test MCP
+
+After configuring `.env`, verify the server:
+
+```bash
+npm run smoke
+```
+
+If transport auth is enforced, provide `MCP_AUTH_TOKEN`:
+
+```bash
+MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
+```
+
+## Step 5: Onboard a borrower
+
+Fetch the onboarding skill:
+
+```bash
+curl -sL https://agents.sohopay.xyz/skills/borrower-onboard.md
+```
+
+Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal).
+
+## Step 6: Create a delegated agent session
+
+```bash
+curl -sL https://agents.sohopay.xyz/skills/agent-session.md
+```
+
+## Step 7: Operate (spend / policy / payment)
+
+```bash
+curl -sL https://agents.sohopay.xyz/skills/spend-and-pay.md
+```
+
+## Step 8: Optional — x402 HTTP credit rail
+
+For HTTP 402 paywalls (distinct from MCP orchestration):
+
+```bash
+curl -sL https://agents.sohopay.xyz/skills/x402-credit-pay.md
+```
+
+## Step 9: Idempotency reference
+
+Before any mutating financial call:
+
+```bash
+curl -sL https://agents.sohopay.xyz/skills/idempotency.md
+```
+
+## Staying current
+
+Update installed skills:
+
+```bash
+npx skills update -g -y sohopay-integrate
+```
+
+Browse all skills:
+
+```bash
+curl -sL https://agents.sohopay.xyz/.well-known/agent-skills/index.json
+```
+
+Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `soho-mcp-server` — scope drift must be a compile error, not a runtime authz bug.
+
+## Rules
+
+### Security rules
+
+- NEVER store, log, or display borrower private keys, JWTs, OTP codes, or full EIP-712 signatures beyond immediate use.
+- NEVER include real API keys or service tokens in skill files or chat transcripts.
+- NEVER bypass wallet-proof or KYC gates — re-request scopes after gates complete.
+- ALWAYS obtain explicit user consent before wallet-proof signing or high-risk payment execution.
+- ALWAYS use `Idempotency-Key` (UUID v4) on mutating financial MCP and x402 routes.
+
+### Best practices
+
+- ALWAYS resolve live authorization via `POST /api/v1/auth/authorization-context` before privileged tools — scopes are not baked into JWTs.
+- ALWAYS use `borrowerId` (UUID) as canonical identity — never wallet address in session/policy APIs.
+- ALWAYS prefer `--output json` or structured API responses when parsing results.
+- ALWAYS verify x402 `/verify` before `/settle`; treat `txHash` as async — poll for confirmation.
+
+---
+
+Current location: `/skills/setup.md`
+
+For full skill directory: `https://agents.sohopay.xyz/.well-known/agent-skills/index.json`
+
+
+---
+
+# Connect to SohoPay MCP Server
+
+# Skill: Connect to SohoPay MCP Server
+
+CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of truth**. Policy Engine is the decision authority. MCP tools never move money directly.
+
+## Architecture
+
+```text
+MCP Client / AI Agent
+        ↓
+SOHO MCP Server (soho-mcp-server)
+        ↓  x-soho-service-token + x-soho-* identity headers
+SOHO Backend API (sohopay-backend /api/v1/*)
+        ↓
+Auth + Policy + Settlement
+```
+
+## Option A: Local soho-mcp-server
+
+```bash
+git clone https://github.com/sohopay/soho-mcp-server.git
+cd soho-mcp-server
+npm ci
+cp .env.example .env
+```
+
+Minimum `.env` values (production example — adjust for staging):
+
+```env
+SOHO_BACKEND_BASE_URL=https://api.sohopay.xyz
+SOHO_MCP_SERVICE_TOKEN=<from-secrets-manager>
+AUTH_PROVIDER=soho_backend
+AUTH_ISSUER=https://api.sohopay.xyz
+AUTH_RESOURCE=soho-mcp
+AUTH_AUDIENCE=soho-mcp
+AUTH_JWKS_URL=https://api.sohopay.xyz/api/v1/auth/.well-known/jwks.json
+AUTH_VALIDATION_MODE=jwt
+AUTH_INTROSPECTION_ENABLED=true
+AUTH_INTROSPECTION_URL=https://api.sohopay.xyz/api/v1/auth/introspect
+RBAC_PROVIDER=soho_backend
+AUTHZ_CACHE_TTL_SECONDS=30
+```
+
+Start dev server:
+
+```bash
+npm run dev
+```
+
+## Option B: Hosted MCP
+
+When deployed, point MCP clients at `https://mcp.sohopay.xyz`. Transport requires OAuth 2.1 bearer tokens per MCP spec.
+
+## Verify health
+
+```bash
+curl -sS https://mcp.sohopay.xyz/health
+```
+
+For local development, use the health URL and port documented in the soho-mcp-server README after `npm run dev`.
+
+Expected: `{ "ok": true }`
+
+## OAuth protected resource metadata
+
+```bash
+curl -sS https://mcp.sohopay.xyz/.well-known/oauth-protected-resource
+```
+
+## MCP session bootstrap
+
+1. Obtain OAuth access token from SohoPay Backend auth (issuer `https://api.sohopay.xyz`).
+2. `POST /mcp` with `Authorization: Bearer <token>` and `initialize`.
+3. Capture `Mcp-Session-Id` response header.
+4. Use session ID for `tools/list` and tool calls.
+
+Unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
+
+## Smoke test
+
+```bash
+npm run smoke
+# with auth:
+MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
+```
+
+Verifies: health, MCP initialize, tools/list.
+
+## Backend trust contract
+
+MCP → Backend requests carry:
+
+| Header | Purpose |
+|--------|---------|
+| `x-soho-service-token` | MCP service authentication |
+| `x-soho-borrower-id` | Canonical borrower UUID |
+| `x-soho-principal-id` | Authenticated caller |
+| `x-soho-executor-id` | Action performer |
+| `x-soho-principal-type` | HUMAN \| AGENT \| BUSINESS |
+
+Backend trusts `x-soho-*` headers **only** when the service token is valid.
+
+## Next steps
+
+- Onboard borrower: `curl -sL https://agents.sohopay.xyz/skills/borrower-onboard.md`
+- Back to setup: `curl -sL https://agents.sohopay.xyz/skills/setup.md`
+
+
+---
+
+# SohoPay Borrower Onboarding
+
+# Skill: SohoPay Borrower Onboarding
+
+Canonical identity: **borrowerId = User.id (UUID)**. Wallet is a verified credential, not the primary identifier.
+
+## Workflow
+
+1. **Register** — `POST /api/v1/borrowers/register`
+2. **Wallet proof** — challenge → sign off-device → submit
+3. **Status** — `GET /api/v1/borrowers/:id/status`
+4. **Token** — `POST /api/v1/borrowers/token` with `requested_scopes[]`
+5. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
+
+All MCP gateway paths require `x-soho-service-token`. Borrower-scoped routes also need `x-soho-borrower-id`.
+
+## Register borrower
+
+`POST /api/v1/borrowers/register`
+
+Body (snake_case): `borrower_type`, `wallet_address`, `email`, `username`, `network`, `wallet_type`, `country`
+
+Borrower types: `HUMAN`, `AGENT`, `BUSINESS`
+
+## Wallet proof (EIP-712)
+
+| Step | Endpoint | Idempotent |
+|------|----------|:----------:|
+| Challenge | `POST /api/v1/signature/challenge` | Yes |
+| Submit | `POST /api/v1/signature/submit` | Yes |
+
+Flow:
+
+1. Challenge returns `challenge_id`, `nonce`, `typed_data`, `expires_at`
+2. Borrower signs EIP-712 **off-device** (wallet/app — never in MCP)
+3. Submit `{ challenge_id, signature }` → `{ verified, wallet_address }`
+
+CRITICAL: Obtain explicit user consent before requesting a signature.
+
+## Request borrower token
+
+`POST /api/v1/borrowers/token`
+
+Body: `borrower_id` (UUID), `requested_scopes[]`
+
+Response: `access_token`, `token_type`, `expires_in`, `borrower_id`, `scopes[]`, optional `dropped_scopes[{scope, reason}]`
+
+### Dropped scope reason codes
+
+| Code | Meaning |
+|------|---------|
+| `WALLET_PROOF_REQUIRED` | Complete signature challenge first |
+| `KYC_NOT_APPROVED` | KYC not APPROVED |
+| `PREQUAL_DECLINED` | Prequal declined |
+| `STATE_UNAVAILABLE` | Gate state unreadable — fail closed |
+
+Ungated scopes are **dropped, not fatal**. Re-request after wallet proof or KYC completes.
+
+## Authorization context
+
+`POST /api/v1/auth/authorization-context`
+
+Returns live `{ permissions, scopes, roles, borrower_status, frozen, suspended, active, ... }`.
+
+JWT stays thin — always resolve fresh before privileged MCP tools.
+
+## Scope gates (summary)
+
+| Scope | Wallet proof | KYC approved |
+|-------|:------------:|:------------:|
+| session:* | — | — |
+| spend:intent:create | ✅ | ✅ |
+| payment:execute | ✅ | ✅ (+ 2FA-equiv) |
+| signing:request | ✅ | — (+ 2FA-equiv) |
+| credit:approve | — | ✅ (+ 2FA-equiv) |
+| repayment:execute | ✅ | NOT KYC-gated |
+
+## MCP tools (via soho-mcp-server)
+
+| Tool | Purpose |
+|------|---------|
+| `register_borrower` | Register HUMAN/AGENT/BUSINESS |
+| `request_signature_challenge` | Start wallet proof |
+| `submit_signature` | Complete wallet proof |
+| `get_borrower_status` | Onboarding status |
+| `request_borrower_token` | Scope-gated token |
+
+## Next steps
+
+- Agent session: `curl -sL https://agents.sohopay.xyz/skills/agent-session.md`
+- Idempotency: `curl -sL https://agents.sohopay.xyz/skills/idempotency.md`
+
+
+---
+
+# SohoPay Delegated Agent Sessions
+
+# Skill: SohoPay Delegated Agent Sessions
+
+Delegated sessions let an agent act on behalf of a borrower within borrower-approved constraints.
+
+## Prerequisites
+
+- Borrower registered with `borrowerId` (UUID)
+- OAuth/JWT for borrower (transport auth to MCP)
+- Scope `session:create` for creation; `session:read` / `session:revoke` for read/revoke
+
+## MCP tools
+
+| Tool | Scope | Idempotent |
+|------|-------|:----------:|
+| `create_agent_session` | session:create | Yes |
+| `get_session_context` | session:read | No |
+| `revoke_session` | session:revoke | Yes |
+
+## Backend endpoints
+
+| Method | Path |
+|--------|------|
+| POST | `/api/v1/sessions/agent` |
+| GET | `/api/v1/sessions/:id` |
+| POST | `/api/v1/sessions/:id/revoke` |
+
+Session DTOs use `borrower_id` (UUID) — **never** wallet address.
+
+## Required headers
+
+```http
+Authorization: Bearer <jwt>
+x-soho-service-token: <mcp-service-token>
+x-soho-borrower-id: <borrower-uuid>
+Idempotency-Key: <uuid-v4>   # on create and revoke
+```
+
+Delegated tool calls also require a valid session ID (`x-session-id` or MCP session context).
+
+## Principal model
+
+```text
+Principal = authenticated caller
+Borrower  = credit/fund owner
+Executor  = action performer
+```
+
+Supported patterns include human-owned credit with agent executor (`Principal=HUMAN, Borrower=HUMAN, Executor=AGENT`).
+
+## Security
+
+- ALWAYS validate session ownership on read/revoke
+- ALWAYS include idempotency keys on create/revoke
+- NEVER reuse a revoked session ID
+- Revoke sessions promptly when agent task completes
+
+## Next steps
+
+- Spend and pay: `curl -sL https://agents.sohopay.xyz/skills/spend-and-pay.md`
+- Setup index: `curl -sL https://agents.sohopay.xyz/skills/setup.md`
+
+
+---
+
+# SohoPay Spend, Policy, and Payment
+
+# Skill: SohoPay Spend, Policy, and Payment
+
+CRITICAL: `execute_payment` is **confirm-only** — MCP confirms an existing merchant-initiated `paymentId`. Agents do not initiate merchant payments.
+
+## Flow
+
+1. **Create spend intent** — `create_spend_intent` / `POST /api/v1/spend/intents`
+2. **Evaluate policy** — `evaluate_spend_policy` / `POST /api/v1/policy/evaluate`
+3. **Execute payment** — `execute_payment` / `POST /api/v1/payments/execute` (after merchant initiated payment)
+
+High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
+
+## MCP tools
+
+| Tool | Scope | Wallet proof | KYC | Idempotent |
+|------|-------|:------------:|:---:|:----------:|
+| `create_spend_intent` | spend:intent:create | ✅ | ✅ | Yes |
+| `evaluate_spend_policy` | policy:evaluate | — | — | Yes |
+| `execute_payment` | payment:execute | ✅ | ✅ | Yes |
+
+## Backend endpoints
+
+| Method | Path | Scope |
+|--------|------|-------|
+| POST | `/api/v1/spend/intents` | spend:intent:create |
+| GET | `/api/v1/spend/intents/:id` | spend:intent:create |
+| POST | `/api/v1/policy/evaluate` | policy:evaluate |
+| POST | `/api/v1/payments/execute` | payment:execute |
+
+## Before privileged calls
+
+1. Resolve live authz: `POST /api/v1/auth/authorization-context`
+2. Confirm borrower not frozen/suspended for money movement
+3. Attach `Idempotency-Key: <uuid-v4>` on all writes
+
+## Signing (separate from payment confirm)
+
+`sign_transaction` → `POST /api/v1/signing/request` (scope `signing:request`, wallet proof, 2FA-equivalent).
+
+MCP never signs locally — backend orchestrator handles signing.
+
+## Account-state gate
+
+Blocked for sanctioned/OFAC, fraud-held, inactive accounts. Frozen/suspended borrowers may still repay (separate flow).
+
+## Next steps
+
+- x402 HTTP rail: `curl -sL https://agents.sohopay.xyz/skills/x402-credit-pay.md`
+- Idempotency: `curl -sL https://agents.sohopay.xyz/skills/idempotency.md`
+
+
+---
+
+# SohoPay x402 v2 Credit Settlement
+
+# Skill: SohoPay x402 v2 Credit Settlement
+
+HTTP 402 Payment Required — credit scheme. Routes under `/api/v2/x402/`.
+
+Distinct from MCP: x402 serves HTTP-native paywalls; MCP serves agent orchestration. A payer may use both.
+
+## Prerequisites
+
+- Active row in `wallets` linked to a SohoPay User
+- On-chain creditor registration **alone is insufficient**
+- EIP-712 signature on every settlement request
+- Server-side nonce table — check before any chain call
+
+## Endpoints
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/api/v2/x402/check-eligibility` | Pre-flight eligibility |
+| POST | `/api/v2/x402/check-nonce` | Nonce availability |
+| POST | `/api/v2/x402/verify` | Full verification |
+| POST | `/api/v2/x402/settle` | Submit on-chain spend |
+| GET | `/api/v2/x402/health` | Liveness |
+
+Base URL: `https://api.sohopay.xyz/api/v2/x402/` (production)
+
+## Verify flow
+
+`POST /verify` with payment payload.
+
+Unlinked wallets return HTTP 200 with `isValid: false`:
+
+- `BORROWER_WALLET_UNKNOWN`
+- `BORROWER_WALLET_NOT_VERIFIED`
+
+Always verify before settle.
+
+## Settle flow
+
+1. Run `/verify` — must pass
+2. Attach `Idempotency-Key` (UUID v4) — check **before** `writeContract()`
+3. `POST /settle` with signed EIP-712 payload
+4. Requires JWT + 2FA on settle route
+5. Success: `202 Accepted` with `{ txHash, jobId }` — poll status; do not treat hash alone as settled
+
+On-chain idempotency TTL: 72h (`ON_CHAIN_TTL_MS`).
+
+## Policy denial
+
+HTTP 403 with `reasonCodes` and `policyDecisionId` — surface to user; do not retry blindly.
+
+## Integration checklist
+
+- [ ] Payer wallet linked and verified in SohoPay
+- [ ] Nonce not reused
+- [ ] Idempotency-Key on settle
+- [ ] 2FA verified on JWT for settle
+- [ ] Poll confirmation job
+- [ ] Handle policy 403 with reason codes
+
+## Next steps
+
+- Idempotency detail: `curl -sL https://agents.sohopay.xyz/skills/idempotency.md`
+- MCP setup: `curl -sL https://agents.sohopay.xyz/skills/setup.md`
+
+
+---
+
+# SohoPay Idempotency
+
+# Skill: SohoPay Idempotency
+
+Required on every endpoint that creates or mutates money, credit, or on-chain state.
+
+## Header contract
+
+```http
+Idempotency-Key: <uuid-v4>
+```
+
+- Format: UUID v4, max 64 chars
+- Scope: `(userId, key)` — MCP routes use resolved `borrowerId` from `x-soho-borrower-id`
+- Missing: `400 IDEMPOTENCY_KEY_MISSING`
+- Invalid: `400 IDEMPOTENCY_KEY_INVALID`
+
+## Response semantics
+
+| Situation | HTTP | Behavior |
+|-----------|------|----------|
+| Duplicate in flight | 409 | `IDEMPOTENCY_REQUEST_IN_FLIGHT` |
+| Same key + same body (complete) | Replay | Cached response + `X-Idempotent-Replayed: true` |
+| Same key + different body | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
+| Failed request | — | PENDING deleted; retry with same key allowed |
+
+## TTL
+
+| Class | TTL |
+|-------|-----|
+| Default financial writes | 24h |
+| On-chain writes (x402 settle) | 72h |
+
+## MCP routes requiring idempotency
+
+- `POST /signature/challenge`, `/signature/submit`
+- `POST /sessions/agent`, `/sessions/:id/revoke`
+- `POST /spend/intents`, `/policy/evaluate`
+- `POST /payments/execute`, `/signing/request`, `/credit/approve-limit`
+
+## Client guidance
+
+1. Fresh UUID v4 per logical operation
+2. Reuse same key when retrying after network failure (identical body)
+3. New key for genuinely new operations
+4. Never cache error responses — only successful completions replay
+
+Request body hash: RFC 8785 canonical JSON + SHA-256 on backend.
+
+## Next steps
+
+- Setup: `curl -sL https://agents.sohopay.xyz/skills/setup.md`

@@ -1,0 +1,11 @@
+{
+  "name": "@sohopay/agent-skills",
+  "private": true,
+  "version": "0.1.0",
+  "description": "SohoPay agent skills — hosted docs and open-registry packages",
+  "scripts": {
+    "validate": "node scripts/validate-skills.mjs",
+    "generate:llms-full": "node scripts/generate-llms-full.mjs"
+  },
+  "license": "UNLICENSED"
+}
