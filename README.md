@@ -28,6 +28,8 @@ npx skills add sohopay/skills -g
 
 See [docs/endpoints.md](docs/endpoints.md). Public skill host uses the `sohopay.xyz` Route53 zone (`agents.sohopay.xyz`).
 
+**Architecture plan:** [docs/PLAN.md](docs/PLAN.md)
+
 ## Bootstrap GitHub repo
 
 The `sohopay` org exists. Create the remote repo once (requires org admin):
