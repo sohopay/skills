@@ -27,6 +27,7 @@ curl -sL https://agents.sohopay.xyz/.well-known/agent-skills/index.json
 |------|----------------|
 | MCP connection | [mcp-connect.md](https://agents.sohopay.xyz/skills/mcp-connect.md) |
 | Borrower onboarding | [borrower-onboard.md](https://agents.sohopay.xyz/skills/borrower-onboard.md) |
+| Human-direct (no session) | [human-direct-flow.md](https://agents.sohopay.xyz/skills/human-direct-flow.md) |
 | Agent sessions | [agent-session.md](https://agents.sohopay.xyz/skills/agent-session.md) |
 | Spend / pay | [spend-and-pay.md](https://agents.sohopay.xyz/skills/spend-and-pay.md) |
 | x402 settlement | [x402-credit-pay.md](https://agents.sohopay.xyz/skills/x402-credit-pay.md) |
@@ -48,6 +49,6 @@ npx skills add sohopay/skills -g -y
 
 ## Additional resources
 
-- MCP server: [soho-mcp-server](https://github.com/sohopay/soho-mcp-server)
+- MCP server: [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
 - Backend: [sohopay-backend](https://github.com/sohopay/sohopay-backend)
 - Endpoints: [docs/endpoints.md](https://github.com/sohopay/skills/blob/main/docs/endpoints.md)

@@ -6,13 +6,13 @@
     {
       "name": "setup",
       "title": "SohoPay Agent Setup for AI Agents",
-      "description": "Install skills, connect soho-mcp-server, smoke test, and chain to onboarding and operation skills.",
+      "description": "Install skills, connect sohopay-mcp-server, smoke test, and chain to onboarding and operation skills.",
       "url": "https://agents.sohopay.xyz/skills/setup.md"
     },
     {
       "name": "mcp-connect",
       "title": "Connect to SohoPay MCP Server",
-      "description": "Configure local or hosted soho-mcp-server, OAuth transport, env vars, and smoke checks.",
+      "description": "Configure local or hosted sohopay-mcp-server, OAuth transport, env vars, and smoke checks.",
       "url": "https://agents.sohopay.xyz/skills/mcp-connect.md"
     },
     {
@@ -26,6 +26,12 @@
       "title": "SohoPay Delegated Agent Sessions",
       "description": "Create, read, and revoke borrower-approved agent sessions.",
       "url": "https://agents.sohopay.xyz/skills/agent-session.md"
+    },
+    {
+      "name": "human-direct-flow",
+      "title": "SohoPay Human-Direct Flow (Protocol v1)",
+      "description": "18-tool v1 catalog path without delegated agent sessions: onboard, spend, policy, execute, poll settlement.",
+      "url": "https://agents.sohopay.xyz/skills/human-direct-flow.md"
     },
     {
       "name": "spend-and-pay",
