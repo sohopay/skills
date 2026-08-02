@@ -1,4 +1,15 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1 -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
 # Skill: SohoPay Borrower Onboarding
+
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+**What this skill does:** registers a borrower and completes wallet proof so scope-gated tokens can be issued. **Before running it:** the MCP server is connected (`mcp-connect.md`).
+
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 Canonical identity: **borrowerId = User.id (UUID)**. Wallet is a verified credential, not the primary identifier.
 
@@ -33,7 +44,9 @@ Flow:
 2. Borrower signs EIP-712 **off-device** (wallet/app — never in MCP)
 3. Submit `{ challenge_id, signature }` → `{ verified, wallet_address }`
 
-CRITICAL: Obtain explicit user consent before requesting a signature.
+Before requesting the signature:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
 ## Request borrower token
 
@@ -42,6 +55,10 @@ CRITICAL: Obtain explicit user consent before requesting a signature.
 Body: `borrower_id` (UUID), `requested_scopes[]`
 
 Response: `access_token`, `token_type`, `expires_in`, `borrower_id`, `scopes[]`, optional `dropped_scopes[{scope, reason}]`
+
+The token grants real spending scopes. Before requesting it:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
 ### Dropped scope reason codes
 
@@ -85,5 +102,5 @@ JWT stays thin — always resolve fresh before privileged MCP tools.
 
 ## Next steps
 
-- Agent session: `curl -sL https://agents.sohopay.xyz/skills/agent-session.md`
-- Idempotency: `curl -sL https://agents.sohopay.xyz/skills/idempotency.md`
+- Agent session: `curl -fsSL {SKILLS_BASE}/agent-session.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
