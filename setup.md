@@ -1,21 +1,43 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1 -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
 # Skill: SohoPay Agent Setup for AI Agents
+
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
 CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
-CRITICAL: Run this setup in full-access mode (network access + read/write to the user's home directory). Without it, skill installation and MCP config writes fail or hang on permission prompts.
+Note to the agent: this setup requires network access and writes to the user's skills directory and MCP config. Request permission for each action normally. If a permission is denied, stop and explain to the operator what was blocked and why it is needed. Never ask the operator to turn off permission prompts or run in a bypass mode.
 
-Hosted skill base: `https://agents.sohopay.xyz`
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
-## Step 1: Check prerequisites
+Every step is safe to re-run (idempotent). If a step already appears done, verify and move on rather than duplicating it.
+
+## Step 1: Detect environment
+
+Determine which agent harness this is — later steps branch on it.
+
+```bash
+command -v claude >/dev/null 2>&1 && echo "harness=claude-code"
+test -d "$HOME/.cursor" && echo "harness=cursor"
+command -v codex >/dev/null 2>&1 && echo "harness=codex"
+```
+
+- If exactly one is detected, use it.
+- If none (or more than one) is detected, **ask the operator which harness this is and wait for their reply.** Record the answer; do not assume.
+
+## Step 2: Check prerequisites
 
 ```bash
 node --version
-which npm || command -v npm
+npm --version
 ```
 
 Required: Node.js `>=22.13.0`, npm `>=10`, network access.
 
-## Step 2: Install sticky SohoPay skills
+## Step 3: Install sticky SohoPay skills
 
 Install SohoPay's official skills so the agent has local guidance in every future session:
 
@@ -23,72 +45,103 @@ Install SohoPay's official skills so the agent has local guidance in every futur
 npx skills add sohopay/skills -g -y
 ```
 
-If the repo is not yet published on GitHub, skip this step and rely on curl-fetched hosted skills below. Re-run after `sohopay/skills` is public.
+Re-running is safe; it updates in place.
 
-## Step 3: Connect to SohoPay MCP
+## Step 4: Connect to SohoPay MCP
 
-Fetch the MCP connection skill:
+Fetch the MCP connection skill and follow it exactly:
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/mcp-connect.md
+curl -fsSL {SKILLS_BASE}/mcp-connect.md
 ```
 
-Follow those instructions exactly. Choose either:
+It gives per-harness (Claude Code / Cursor / Codex) registration commands. Choose one path:
 
 - **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
 - **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
 
-## Step 4: Smoke test MCP
+## Step 5: Smoke test MCP
 
-After configuring `.env`, verify the server:
+Verify the connection **using the path you chose** — do not run a server smoke test unless you actually cloned the server:
 
-```bash
-npm run smoke
-```
+- **Hosted MCP:** confirm reachability with the health probe and a read-only MCP tool call (e.g. `get_borrower_status`) as documented in `mcp-connect.md`. Do not run `npm run smoke`.
+- **Local MCP:** run the server's own smoke test from inside the cloned directory:
 
-If transport auth is enforced, provide `MCP_AUTH_TOKEN`:
+  ```bash
+  cd sohopay-mcp-server && npm run smoke
+  # with transport auth:
+  cd sohopay-mcp-server && MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
+  ```
 
-```bash
-MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
-```
+  Never run `npm run smoke` outside the cloned `sohopay-mcp-server` directory.
 
-## Step 5: Onboard a borrower
+## Step 6: Onboard a borrower
 
 Fetch the onboarding skill:
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/borrower-onboard.md
+curl -fsSL {SKILLS_BASE}/borrower-onboard.md
 ```
 
-Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal).
+Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
 
-## Step 6: Create a delegated agent session
+Wallet proof requires the borrower to sign an EIP-712 challenge off-device. Before wallet-proof signing:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+The token request then grants real spending scopes. Before requesting the OAuth access / borrower token:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+## Step 7: Choose delegation model
+
+- **Delegated agent session** (agent acts for a borrower):
+
+  ```bash
+  curl -fsSL {SKILLS_BASE}/agent-session.md
+  ```
+
+- **Human-direct** (borrower acts directly, no session):
+
+  ```bash
+  curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+  ```
+
+## Step 8: Operate — spend, policy, payment
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/agent-session.md
+curl -fsSL {SKILLS_BASE}/spend-and-pay.md
 ```
 
-## Step 7: Operate (spend / policy / payment)
+Before executing any payment (especially the first or any high-risk one):
 
-```bash
-curl -sL https://agents.sohopay.xyz/skills/spend-and-pay.md
-```
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-## Step 8: Optional — x402 HTTP credit rail
+## Step 9: Optional — x402 HTTP credit rail
 
 For HTTP 402 paywalls (distinct from MCP orchestration):
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/x402-credit-pay.md
+curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
 ```
 
-## Step 9: Idempotency reference
+## Step 10: Idempotency reference
 
 Before any mutating financial call:
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/idempotency.md
+curl -fsSL {SKILLS_BASE}/idempotency.md
 ```
+
+## Step 11: Report to the operator
+
+Close by summarizing to the operator, in plain language:
+
+- **Skills installed** — that `sohopay/skills` is installed and where the agent's skills directory is.
+- **MCP registered** — the MCP config file location and the server URL (hosted or local).
+- **Account status** — borrower status and the current spending limit / authority granted.
+- **Repayment obligation** — repayment is due **weekly, on Sunday**, and is settled by the operator.
+- **Any failures** — if any step failed, show the exact URL/command and error; do not paper over it.
 
 ## Staying current
 
@@ -101,10 +154,8 @@ npx skills update -g -y sohopay-integrate
 Browse all skills:
 
 ```bash
-curl -sL https://agents.sohopay.xyz/.well-known/agent-skills/index.json
+curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
 ```
-
-Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `sohopay-mcp-server` — scope drift must be a compile error, not a runtime authz bug.
 
 ## Rules
 
@@ -113,7 +164,7 @@ Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `sohopa
 - NEVER store, log, or display borrower private keys, JWTs, OTP codes, or full EIP-712 signatures beyond immediate use.
 - NEVER include real API keys or service tokens in skill files or chat transcripts.
 - NEVER bypass wallet-proof or KYC gates — re-request scopes after gates complete.
-- ALWAYS obtain explicit user consent before wallet-proof signing or high-risk payment execution.
+- ALWAYS obtain explicit operator consent before wallet-proof signing, OAuth token requests, or high-risk payment execution (see the STOP points above).
 - ALWAYS use `Idempotency-Key` (UUID v4) on mutating financial MCP and x402 routes.
 
 ### Best practices
@@ -125,6 +176,6 @@ Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `sohopa
 
 ---
 
-Current location: `/skills/setup.md`
+Current location: `{SKILLS_BASE}/setup.md`
 
-For full skill directory: `https://agents.sohopay.xyz/.well-known/agent-skills/index.json`
+For the full skill directory, fetch `{SKILLS_BASE}/.well-known/agent-skills/index.json`.
