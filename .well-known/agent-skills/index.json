@@ -2,57 +2,58 @@
   "version": "1.0",
   "name": "SohoPay Agent Skills",
   "description": "Skill index for AI agents integrating with SohoPay MCP gateway and x402 credit settlement.",
+  "dev_base": "https://raw.githubusercontent.com/sohopay/skills/main",
   "skills": [
     {
       "name": "setup",
       "title": "SohoPay Agent Setup for AI Agents",
-      "description": "Install skills, connect sohopay-mcp-server, smoke test, and chain to onboarding and operation skills.",
-      "url": "https://agents.sohopay.xyz/skills/setup.md"
+      "description": "Detect harness, install skills, connect sohopay-mcp-server, smoke test, onboard, operate, and report back.",
+      "url": "https://agents.sohopay.xyz/skills/v1/setup.md"
     },
     {
       "name": "mcp-connect",
       "title": "Connect to SohoPay MCP Server",
-      "description": "Configure local or hosted sohopay-mcp-server, OAuth transport, env vars, and smoke checks.",
-      "url": "https://agents.sohopay.xyz/skills/mcp-connect.md"
+      "description": "Per-harness registration (Claude Code, Cursor, Codex) for local or hosted sohopay-mcp-server, plus verification.",
+      "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect.md"
     },
     {
       "name": "borrower-onboard",
       "title": "SohoPay Borrower Onboarding",
       "description": "Register borrowers, complete wallet proof, request scope-gated tokens, handle dropped scopes.",
-      "url": "https://agents.sohopay.xyz/skills/borrower-onboard.md"
+      "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
       "name": "agent-session",
       "title": "SohoPay Delegated Agent Sessions",
       "description": "Create, read, and revoke borrower-approved agent sessions.",
-      "url": "https://agents.sohopay.xyz/skills/agent-session.md"
+      "url": "https://agents.sohopay.xyz/skills/v1/agent-session.md"
     },
     {
       "name": "human-direct-flow",
       "title": "SohoPay Human-Direct Flow (Protocol v1)",
       "description": "18-tool v1 catalog path without delegated agent sessions: onboard, spend, policy, execute, poll settlement.",
-      "url": "https://agents.sohopay.xyz/skills/human-direct-flow.md"
+      "url": "https://agents.sohopay.xyz/skills/v1/human-direct-flow.md"
     },
     {
       "name": "spend-and-pay",
       "title": "SohoPay Spend, Policy, and Payment",
       "description": "Spend intents, policy evaluation, and confirm-only payment execution via MCP.",
-      "url": "https://agents.sohopay.xyz/skills/spend-and-pay.md"
+      "url": "https://agents.sohopay.xyz/skills/v1/spend-and-pay.md"
     },
     {
       "name": "x402-credit-pay",
       "title": "SohoPay x402 v2 Credit Settlement",
       "description": "HTTP 402 verify and settle flows with idempotency and async on-chain confirmation.",
-      "url": "https://agents.sohopay.xyz/skills/x402-credit-pay.md"
+      "url": "https://agents.sohopay.xyz/skills/v1/x402-credit-pay.md"
     },
     {
       "name": "idempotency",
       "title": "SohoPay Idempotency",
       "description": "Idempotency-Key contract, replay semantics, and TTL rules for financial and on-chain routes.",
-      "url": "https://agents.sohopay.xyz/skills/idempotency.md"
+      "url": "https://agents.sohopay.xyz/skills/v1/idempotency.md"
     }
   ],
-  "fullContext": "https://agents.sohopay.xyz/llms-full.txt",
+  "fullContext": "https://agents.sohopay.xyz/skills/v1/llms-full.txt",
   "mcpServer": "https://mcp.sohopay.xyz",
   "openApi": "https://api.sohopay.xyz/api/docs"
 }

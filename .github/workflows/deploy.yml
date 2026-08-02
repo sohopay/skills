@@ -6,6 +6,12 @@
 #   AGENTS_SKILLS_CF_ID  — CloudFront distribution ID
 #
 # OIDC trust should scope to repo:sohopay/skills:ref:refs/heads/main
+#
+# TODO(confirm): index.json now uses the versioned prod path /skills/v1/<name>.md,
+# but the S3 sync below still publishes under /skills/. Before CDN go-live, update
+# the S3 key prefix (and CloudFront invalidation paths) to /skills/v1/ to match the
+# index, or add a CloudFront rewrite. Not changed here to avoid altering the
+# not-yet-deployed pipeline logic.
 name: Deploy agent skills
 
 on:
@@ -39,21 +45,29 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: Sync to S3
         run: |
-          aws s3 sync . "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/" \
-            --exclude ".git/*" \
-            --exclude "node_modules/*" \
-            --exclude "plugins/*" \
-            --exclude "scripts/*" \
-            --exclude ".github/*" \
-            --exclude "package.json" \
-            --exclude "README.md" \
-            --exclude "CODEOWNERS" \
-            --exclude "docs/*" \
-            --cache-control "public,max-age=300"
+          set -euo pipefail
+
+          CACHE_CONTROL="public,max-age=300"
+          SKILLS_DIR="$(mktemp -d)"
+
+          aws s3 sync .well-known "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/.well-known/" \
+            --delete \
+            --cache-control "$CACHE_CONTROL"
+
+          node -e "const idx=require('./.well-known/agent-skills/index.json'); for (const s of idx.skills) console.log(s.name + '.md')" \
+            | while read -r skill_file; do
+                cp "$skill_file" "$SKILLS_DIR/$skill_file"
+              done
+
+          aws s3 sync "$SKILLS_DIR" "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/skills/" \
+            --delete \
+            --cache-control "$CACHE_CONTROL" \
+            --content-type "text/markdown; charset=utf-8"
+
           aws s3 cp llms-full.txt "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/llms-full.txt" \
             --cache-control "public,max-age=300"
       - name: Invalidate CloudFront
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${{ secrets.AGENTS_SKILLS_CF_ID }}" \
-            --paths "/skills/setup.md" "/.well-known/agent-skills/index.json" "/llms-full.txt"
+            --paths "/skills/*" "/.well-known/agent-skills/index.json" "/llms-full.txt"

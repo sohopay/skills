@@ -1,24 +1,112 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1 -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
 # Skill: Connect to SohoPay MCP Server
 
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+**What this skill does:** registers the SohoPay MCP server with your agent harness and verifies the connection. **Before running it:** you have completed environment detection and prerequisites in `setup.md`.
+
 CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of truth**. Policy Engine is the decision authority. MCP tools never move money directly.
+
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+
+Note to the agent: registering an MCP server writes to your harness config. Request permission normally. If denied, stop and explain what was blocked and why. Never turn off permission prompts or run in a bypass mode.
 
 ## Architecture
 
 ```text
 MCP Client / AI Agent
         ↓
-SOHO MCP Server (soho-mcp-server)
+SOHO MCP Server (sohopay-mcp-server)
         ↓  x-soho-service-token + x-soho-* identity headers
 SOHO Backend API (sohopay-backend /api/v1/*)
         ↓
 Auth + Policy + Settlement
 ```
 
-## Option A: Local soho-mcp-server
+## Choose a path
+
+- **Option A — Hosted MCP** (recommended for most operators): point your harness at the hosted server URL.
+- **Option B — Local MCP**: clone and run `sohopay-mcp-server` yourself.
+
+Each option has its own registration and verification below.
+
+---
+
+## Option A: Hosted MCP
+
+Server URL: `https://mcp.sohopay.xyz` <!-- TODO(confirm): real hosted MCP URL once deployed -->
+
+Transport requires an OAuth 2.1 bearer token per the MCP spec. Export it (never write the token to a file):
 
 ```bash
-git clone https://github.com/sohopay/soho-mcp-server.git
-cd soho-mcp-server
+export SOHO_TOKEN=<oauth-access-token>
+```
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+> Obtaining `SOHO_TOKEN` is an operator action.
+
+### Register per harness
+
+<!-- TODO(confirm): exact auth header shape, and current-version config paths/schemas for Cursor and Codex. -->
+
+**Claude Code**
+
+```bash
+# Check whether it is already registered (idempotent):
+claude mcp get sohopay || claude mcp list
+
+# Add it (skip if already present):
+claude mcp add sohopay --transport http https://mcp.sohopay.xyz \
+  --header "Authorization: Bearer $SOHO_TOKEN"
+```
+
+**Cursor** — edit `~/.cursor/mcp.json` and add under `mcpServers` (create the file if absent):
+
+```json
+{
+  "mcpServers": {
+    "sohopay": {
+      "url": "https://mcp.sohopay.xyz",
+      "headers": { "Authorization": "Bearer ${SOHO_TOKEN}" }
+    }
+  }
+}
+```
+
+**Codex** — edit `~/.codex/config.toml` and add:
+
+```toml
+[mcp_servers.sohopay]
+url = "https://mcp.sohopay.xyz"
+headers = { Authorization = "Bearer ${SOHO_TOKEN}" }
+```
+
+### Verify (hosted)
+
+```bash
+curl -fsSL https://mcp.sohopay.xyz/health
+# Expected: { "ok": true }
+```
+
+Then confirm authenticated access with a **read-only** MCP tool call (e.g. `get_borrower_status`). An unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
+
+OAuth protected-resource metadata:
+
+```bash
+curl -fsSL https://mcp.sohopay.xyz/.well-known/oauth-protected-resource
+```
+
+---
+
+## Option B: Local sohopay-mcp-server
+
+```bash
+git clone https://github.com/sohopay/sohopay-mcp-server.git
+cd sohopay-mcp-server
 npm ci
 cp .env.example .env
 ```
@@ -40,50 +128,38 @@ RBAC_PROVIDER=soho_backend
 AUTHZ_CACHE_TTL_SECONDS=30
 ```
 
-Start dev server:
+Never commit `.env` or paste service tokens into chat.
+
+Start the dev server:
 
 ```bash
 npm run dev
 ```
 
-## Option B: Hosted MCP
+Register the local server with your harness exactly as in Option A, but use the local URL and port printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `https://mcp.sohopay.xyz`.
 
-When deployed, point MCP clients at `https://mcp.sohopay.xyz`. Transport requires OAuth 2.1 bearer tokens per MCP spec.
+### Verify (local)
 
-## Verify health
-
-```bash
-curl -sS https://mcp.sohopay.xyz/health
-```
-
-For local development, use the health URL and port documented in the soho-mcp-server README after `npm run dev`.
-
-Expected: `{ "ok": true }`
-
-## OAuth protected resource metadata
+Run the server's own smoke test **from inside the cloned directory**:
 
 ```bash
-curl -sS https://mcp.sohopay.xyz/.well-known/oauth-protected-resource
+cd sohopay-mcp-server && npm run smoke
+# with transport auth:
+cd sohopay-mcp-server && MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
 ```
 
-## MCP session bootstrap
+Verifies: health, MCP `initialize`, `tools/list`. Never run `npm run smoke` outside the cloned `sohopay-mcp-server` directory.
 
-1. Obtain OAuth access token from SohoPay Backend auth (issuer `https://api.sohopay.xyz`).
+---
+
+## MCP session bootstrap (both options)
+
+1. Obtain an OAuth access token from SohoPay Backend auth (issuer `https://api.sohopay.xyz`).
 2. `POST /mcp` with `Authorization: Bearer <token>` and `initialize`.
-3. Capture `Mcp-Session-Id` response header.
-4. Use session ID for `tools/list` and tool calls.
+3. Capture the `Mcp-Session-Id` response header.
+4. Use that session ID for `tools/list` and tool calls.
 
 Unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
-
-## Smoke test
-
-```bash
-npm run smoke
-# with auth:
-MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
-```
-
-Verifies: health, MCP initialize, tools/list.
 
 ## Backend trust contract
 
@@ -101,5 +177,5 @@ Backend trusts `x-soho-*` headers **only** when the service token is valid.
 
 ## Next steps
 
-- Onboard borrower: `curl -sL https://agents.sohopay.xyz/skills/borrower-onboard.md`
-- Back to setup: `curl -sL https://agents.sohopay.xyz/skills/setup.md`
+- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
+- Back to setup: `curl -fsSL {SKILLS_BASE}/setup.md`

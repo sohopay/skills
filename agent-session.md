@@ -1,4 +1,15 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1 -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
 # Skill: SohoPay Delegated Agent Sessions
+
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+**What this skill does:** creates, reads, and revokes borrower-approved agent sessions. **Before running it:** the borrower is onboarded (`borrower-onboard.md`) and holds a token with `session:*` scopes.
+
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 Delegated sessions let an agent act on behalf of a borrower within borrower-approved constraints.
 
@@ -47,6 +58,12 @@ Executor  = action performer
 
 Supported patterns include human-owned credit with agent executor (`Principal=HUMAN, Borrower=HUMAN, Executor=AGENT`).
 
+## Consent
+
+Creating a delegated session grants an agent spending authority on the borrower's behalf. Before creating the session:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
 ## Security
 
 - ALWAYS validate session ownership on read/revoke
@@ -56,5 +73,5 @@ Supported patterns include human-owned credit with agent executor (`Principal=HU
 
 ## Next steps
 
-- Spend and pay: `curl -sL https://agents.sohopay.xyz/skills/spend-and-pay.md`
-- Setup index: `curl -sL https://agents.sohopay.xyz/skills/setup.md`
+- Spend and pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
+- Setup index: `curl -fsSL {SKILLS_BASE}/setup.md`

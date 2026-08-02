@@ -1,4 +1,15 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1 -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
 # Skill: SohoPay Idempotency
+
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+**What this skill does:** defines the `Idempotency-Key` contract for financial and on-chain routes. **Before running it:** no prerequisites — reference this before any mutating call.
+
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 Required on every endpoint that creates or mutates money, credit, or on-chain state.
 
@@ -47,4 +58,4 @@ Request body hash: RFC 8785 canonical JSON + SHA-256 on backend.
 
 ## Next steps
 
-- Setup: `curl -sL https://agents.sohopay.xyz/skills/setup.md`
+- Setup: `curl -fsSL {SKILLS_BASE}/setup.md`

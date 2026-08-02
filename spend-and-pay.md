@@ -1,10 +1,25 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1 -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
 # Skill: SohoPay Spend, Policy, and Payment
+
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+**What this skill does:** creates spend intents, evaluates policy, and executes confirm-only payments. **Before running it:** the borrower is onboarded with spend/payment scopes and (if delegating) a session exists.
+
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 CRITICAL: `execute_payment` is **confirm-only** — MCP confirms an existing merchant-initiated `paymentId`. Agents do not initiate merchant payments.
 
 ## Human-direct path (no session)
 
-If the borrower acts directly (not via a delegated agent), use the [human-direct-flow](./human-direct-flow.md) skill — skip session tools and omit `session_id`.
+If the borrower acts directly (not via a delegated agent), use the human-direct-flow skill — skip session tools and omit `session_id`:
+
+```bash
+curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+```
 
 ## Flow
 
@@ -14,6 +29,10 @@ If the borrower acts directly (not via a delegated agent), use the [human-direct
 4. **Poll settlement** — `get_settlement_status` / `GET /api/v1/payments/:id/status` (protocol v1)
 
 High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
+
+Before executing any payment (especially the first or any high-risk one):
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
 ## MCP tools (protocol v1)
 
@@ -50,7 +69,9 @@ High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side
 
 `sign_transaction` → `POST /api/v1/signing/request` (scope `signing:request`, wallet proof, 2FA-equivalent).
 
-MCP never signs locally — backend orchestrator handles signing.
+MCP never signs locally — backend orchestrator handles signing. Before requesting a signature:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
 ## Account-state gate
 
@@ -58,5 +79,5 @@ Blocked for sanctioned/OFAC, fraud-held, inactive accounts. Frozen/suspended bor
 
 ## Next steps
 
-- x402 HTTP rail: `curl -sL https://agents.sohopay.xyz/skills/x402-credit-pay.md`
-- Idempotency: `curl -sL https://agents.sohopay.xyz/skills/idempotency.md`
+- x402 HTTP rail: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
