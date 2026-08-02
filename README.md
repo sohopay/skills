@@ -4,7 +4,7 @@ Canonical source for **SohoPay agent skills** — the docs an AI coding agent fe
 
 ## Quick start (agent-driven)
 
-Paste this into your agent (Claude Code, Cursor, or Codex):
+Paste this into your agent (Claude Code, Cursor, Codex, or Hermes):
 
 ```
 Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup.md and
@@ -72,11 +72,6 @@ See [SECURITY.md](SECURITY.md) for vulnerability reporting and doc-integrity gui
 
 ## License
 
-<!-- TODO(confirm): pick a license. This is unresolved and needs a human decision. -->
-
-**TODO — license decision required.** Two candidates:
-
-- **Apache-2.0** — permissive, appropriate if the skill docs are meant to be freely adopted and forked by integrators.
-- **Source-available** (e.g. BUSL-1.1 or a custom SohoPay license) — if usage should be restricted while remaining publicly readable.
-
-Do not treat this repo as licensed for reuse until this is resolved.
+Licensed under the [Apache License 2.0](LICENSE) — permissive reuse with an
+explicit patent grant. These skill docs are meant to be freely fetched, read,
+forked, and adapted by integrators.

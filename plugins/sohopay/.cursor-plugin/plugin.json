@@ -7,5 +7,5 @@
     "name": "SohoPay"
   },
   "keywords": ["sohopay", "mcp", "x402", "credit", "agents", "payments"],
-  "license": "UNLICENSED"
+  "license": "Apache-2.0"
 }
