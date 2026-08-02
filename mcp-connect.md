@@ -51,7 +51,7 @@ export SOHO_TOKEN=<oauth-access-token>
 
 ### Register per harness
 
-<!-- TODO(confirm): exact auth header shape, and current-version config paths/schemas for Cursor and Codex. -->
+<!-- TODO(confirm): exact auth header shape, and current-version config paths/schemas for Cursor, Codex, and Hermes. -->
 
 **Claude Code**
 
@@ -84,6 +84,22 @@ claude mcp add sohopay --transport http https://mcp.sohopay.xyz \
 url = "https://mcp.sohopay.xyz"
 headers = { Authorization = "Bearer ${SOHO_TOKEN}" }
 ```
+
+**Hermes** — Hermes stores its data under `~/.hermes/`. Register the MCP server with a Cursor-style JSON block (mirror the schema above):
+
+```json
+{
+  "mcpServers": {
+    "sohopay": {
+      "url": "https://mcp.sohopay.xyz",
+      "headers": { "Authorization": "Bearer ${SOHO_TOKEN}" }
+    }
+  }
+}
+```
+
+<!-- TODO(confirm): exact Hermes MCP config file path/format (assumed ~/.hermes/mcp.json), and whether `hermes gateway setup` is the intended interactive path for adding an MCP server. -->
+Write this to `~/.hermes/mcp.json`, or use the interactive `hermes gateway setup` wizard if that is the supported path.
 
 ### Verify (hosted)
 

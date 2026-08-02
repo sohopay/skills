@@ -7,7 +7,7 @@
 # payments product, so nothing here is obfuscated.
 #
 # Usage:
-#   ./install.sh [--harness claude|cursor|codex] [--key <api-key>] [--base <url>]
+#   ./install.sh [--harness claude|cursor|codex|hermes] [--key <api-key>] [--base <url>]
 #
 #   --harness   Target agent harness. Auto-detected if omitted.
 #   --key       SohoPay MCP token. Prompted (hidden) if omitted. Never written
@@ -87,6 +87,7 @@ if [[ -z "$HARNESS" ]]; then
   command -v claude >/dev/null 2>&1 && detected+=("claude")
   [[ -d "$HOME/.cursor" ]]          && detected+=("cursor")
   command -v codex  >/dev/null 2>&1 && detected+=("codex")
+  { command -v hermes >/dev/null 2>&1 || [[ -d "$HOME/.hermes" ]]; } && detected+=("hermes")
 
   if [[ ${#detected[@]} -eq 1 ]]; then
     HARNESS="${detected[0]}"
@@ -98,8 +99,8 @@ if [[ -z "$HARNESS" ]]; then
 fi
 
 case "$HARNESS" in
-  claude|cursor|codex) ;;
-  *) die "Unsupported harness: $HARNESS (expected claude|cursor|codex)." ;;
+  claude|cursor|codex|hermes) ;;
+  *) die "Unsupported harness: $HARNESS (expected claude|cursor|codex|hermes)." ;;
 esac
 info "Harness: $HARNESS"
 
@@ -110,6 +111,7 @@ case "$HARNESS" in
   claude) SKILLS_DIR="$HOME/.claude/skills/sohopay" ;;
   cursor) SKILLS_DIR="$HOME/.cursor/skills/sohopay" ;;
   codex)  SKILLS_DIR="$HOME/.codex/skills/sohopay" ;;
+  hermes) SKILLS_DIR="$HOME/.hermes/skills/sohopay" ;;
 esac
 
 info "Skills directory: $SKILLS_DIR"
@@ -169,6 +171,10 @@ case "$HARNESS" in
     ;;
   codex)
     register_note="config references \${SOHO_TOKEN}; export it, then add to ~/.codex/config.toml — see mcp-connect.md"
+    ;;
+  hermes)
+    # TODO(confirm): exact Hermes MCP config path (assumed ~/.hermes/mcp.json).
+    register_note="config references \${SOHO_TOKEN}; export it, then add to ~/.hermes/mcp.json (or 'hermes gateway setup') — see mcp-connect.md"
     ;;
 esac
 
