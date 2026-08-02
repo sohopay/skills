@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 /**
  * Validates hosted skill markdown and index.json before deploy.
- * Fails on localhost URLs, secret-like patterns, broken internal links, invalid index.
+ * Fails on: localhost URLs, secret-like patterns, broken internal links,
+ * invalid index, non-failing curl usage, permission-bypass language,
+ * hardcoded hosted URLs outside the SKILLS_BASE header, chained docs missing
+ * from the index, and a setup.md missing its safety scaffolding.
  */
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -19,6 +22,14 @@ const FORBIDDEN_PATTERNS = [
   /AKIA[0-9A-Z]{16}/,
   /-----BEGIN (RSA |EC )?PRIVATE KEY-----/,
   /x-soho-service-token:\s*[a-zA-Z0-9._-]{8,}/i,
+];
+
+// Language that would push an agent to escalate or bypass permission prompts.
+const BYPASS_PATTERNS = [
+  /full-access mode/i,
+  /dangerously-skip-permissions/i,
+  /disable permission/i,
+  /bypass permission/i,
 ];
 
 let failed = false;
@@ -44,22 +55,55 @@ const SKILL_FILES = (index.skills ?? []).map((skill) => `${skill.name}.md`);
 for (const file of SKILL_FILES) {
   const path = join(ROOT, file);
   const content = readFileSync(path, 'utf8');
+
   for (const pattern of FORBIDDEN_PATTERNS) {
     if (pattern.test(content)) {
       fail(`${file} matches forbidden pattern ${pattern}`);
     }
   }
+
+  // Markdown links must be absolute (http...) unless they point at our GitHub
+  // repo or use the {SKILLS_BASE} placeholder that agents substitute.
   const localLinks = content.match(/\]\([^h][^)]*\)/g) ?? [];
   for (const link of localLinks) {
-    if (!link.includes('github.com/sohopay')) {
+    if (!link.includes('github.com/sohopay') && !link.includes('{SKILLS_BASE}')) {
       fail(`${file} has non-absolute markdown link: ${link}`);
     }
   }
+
+  // Every remote fetch must fail loudly: curl needs -f, and never plain -sL.
+  for (const rawLine of content.split('\n')) {
+    const idx = rawLine.search(/\bcurl\s+\S/);
+    if (idx === -1) continue;
+    const cmd = rawLine.slice(idx).trim();
+    if (/\bcurl\s+-sL\b/.test(cmd)) {
+      fail(`${file}: uses 'curl -sL' (use 'curl -fsSL'): ${cmd}`);
+    }
+    const flags = cmd.match(/-[A-Za-z]+/g) ?? [];
+    if (!flags.some((f) => f.includes('f'))) {
+      fail(`${file}: curl without -f flag (use 'curl -fsSL'): ${cmd}`);
+    }
+  }
+
+  // No permission-escalation language.
+  for (const pattern of BYPASS_PATTERNS) {
+    if (pattern.test(content)) {
+      fail(`${file} contains permission-bypass language ${pattern}`);
+    }
+  }
+
+  // Hosted host must only appear inside the SKILLS_BASE header comment; docs
+  // reference other skills via {SKILLS_BASE}, not a hardcoded hostname.
+  const withoutComments = content.replace(/<!--[\s\S]*?-->/g, '');
+  if (/agents\.sohopay\.xyz/.test(withoutComments)) {
+    fail(`${file} hardcodes agents.sohopay.xyz outside the SKILLS_BASE header — use {SKILLS_BASE}`);
+  }
+
   pass(`${file} content checks`);
 }
 
 for (const skill of index.skills ?? []) {
-  const expectedUrl = `${HOSTED_BASE}/skills/${skill.name}.md`;
+  const expectedUrl = `${HOSTED_BASE}/skills/v1/${skill.name}.md`;
   if (skill.url !== expectedUrl) {
     fail(`index skill ${skill.name} url must be ${expectedUrl}`);
   }
@@ -70,6 +114,28 @@ for (const skill of index.skills ?? []) {
   } catch {
     fail(`index skill ${skill.name} missing file ${skill.name}.md`);
   }
+}
+
+// Every doc chained from setup.md must exist in the index.
+const setup = readFileSync(join(ROOT, 'setup.md'), 'utf8');
+const indexNames = new Set((index.skills ?? []).map((s) => s.name));
+for (const match of setup.matchAll(/\{SKILLS_BASE\}\/([a-z0-9-]+)\.md/gi)) {
+  const name = match[1];
+  if (!indexNames.has(name)) {
+    fail(`setup.md references ${name}.md but it is missing from index.json`);
+  }
+}
+
+// setup.md must carry its safety scaffolding.
+if (!/Report the exact failed URL/.test(setup)) {
+  fail('setup.md missing the global failure rule');
+}
+const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
+if (stopCount < 3) {
+  fail(`setup.md must contain at least 3 STOP points (found ${stopCount})`);
+}
+if (!/Report to the operator/.test(setup)) {
+  fail('setup.md missing the final "Report to the operator" step');
 }
 
 const pluginSkill = join(ROOT, 'plugins/sohopay/skills/sohopay-integrate/SKILL.md');
