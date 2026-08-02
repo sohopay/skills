@@ -7,5 +7,5 @@
     "validate": "node scripts/validate-skills.mjs",
     "generate:llms-full": "node scripts/generate-llms-full.mjs"
   },
-  "license": "UNLICENSED"
+  "license": "Apache-2.0"
 }
