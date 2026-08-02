@@ -6,6 +6,12 @@
 #   AGENTS_SKILLS_CF_ID  — CloudFront distribution ID
 #
 # OIDC trust should scope to repo:sohopay/skills:ref:refs/heads/main
+#
+# TODO(confirm): index.json now uses the versioned prod path /skills/v1/<name>.md,
+# but the S3 sync below still publishes under /skills/. Before CDN go-live, update
+# the S3 key prefix (and CloudFront invalidation paths) to /skills/v1/ to match the
+# index, or add a CloudFront rewrite. Not changed here to avoid altering the
+# not-yet-deployed pipeline logic.
 name: Deploy agent skills
 
 on:

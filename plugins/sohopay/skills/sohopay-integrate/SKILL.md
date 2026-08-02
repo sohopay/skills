@@ -5,33 +5,41 @@ description: Integrates AI agents with SohoPay MCP gateway, borrower onboarding,
 
 # SohoPay Integration
 
-Hosted skills are the source of truth at `https://agents.sohopay.xyz`.
+Skill docs are served from raw GitHub in dev and from `https://agents.sohopay.xyz/skills/v1` at launch. Set `SKILLS_BASE` to whichever base you are using:
+
+```
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+```
 
 ## Bootstrap
 
-Run the setup skill:
+Run the setup skill (substitute `SKILLS_BASE`):
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/setup.md
+curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
 ```
 
 Browse the skill index:
 
 ```bash
-curl -sL https://agents.sohopay.xyz/.well-known/agent-skills/index.json
+curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
 ```
+
+If any fetch fails (non-2xx, HTML content, or empty body), STOP and report the exact URL to the operator; suggest support@sohopay.xyz. Never disable permission prompts or run in a bypass mode.
 
 ## Quick reference
 
-| Task | Hosted skill |
-|------|----------------|
-| MCP connection | [mcp-connect.md](https://agents.sohopay.xyz/skills/mcp-connect.md) |
-| Borrower onboarding | [borrower-onboard.md](https://agents.sohopay.xyz/skills/borrower-onboard.md) |
-| Human-direct (no session) | [human-direct-flow.md](https://agents.sohopay.xyz/skills/human-direct-flow.md) |
-| Agent sessions | [agent-session.md](https://agents.sohopay.xyz/skills/agent-session.md) |
-| Spend / pay | [spend-and-pay.md](https://agents.sohopay.xyz/skills/spend-and-pay.md) |
-| x402 settlement | [x402-credit-pay.md](https://agents.sohopay.xyz/skills/x402-credit-pay.md) |
-| Idempotency | [idempotency.md](https://agents.sohopay.xyz/skills/idempotency.md) |
+Fetch each with `curl -fsSL {SKILLS_BASE}/<file>`:
+
+| Task | Skill file |
+|------|------------|
+| MCP connection | `mcp-connect.md` |
+| Borrower onboarding | `borrower-onboard.md` |
+| Human-direct (no session) | `human-direct-flow.md` |
+| Agent sessions | `agent-session.md` |
+| Spend / pay | `spend-and-pay.md` |
+| x402 settlement | `x402-credit-pay.md` |
+| Idempotency | `idempotency.md` |
 
 ## Critical rules
 
