@@ -1,6 +1,6 @@
 # sohopay/skills
 
-Canonical source for **SohoPay agent skills** — Circle-style curl bootstrap plus open-registry install for Cursor, Claude Code, and Codex.
+Canonical source for **SohoPay agent skills** — curl bootstrap plus open-registry install for Cursor, Claude Code, and Codex.
 
 ## Quick start (integrators)
 

@@ -1,6 +1,6 @@
 ## Agent integration (for AI coding agents)
 
-SohoPay publishes Circle-style agent skills for Cursor, Claude Code, and Codex.
+SohoPay publishes agent skills for Cursor, Claude Code, and Codex.
 
 **Bootstrap:**
 
@@ -18,4 +18,4 @@ npx skills add sohopay/skills -g -y
 
 Canonical source: [sohopay/skills](https://github.com/sohopay/skills). See [docs/agent-skills.md](./docs/agent-skills.md).
 
-Copy this section into `soho-mcp-server/README.md` when editing that repository.
+Copy this section into `sohopay-mcp-server/README.md` when editing that repository.

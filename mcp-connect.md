@@ -7,18 +7,18 @@ CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of tru
 ```text
 MCP Client / AI Agent
         ↓
-SOHO MCP Server (soho-mcp-server)
+SOHO MCP Server (sohopay-mcp-server)
         ↓  x-soho-service-token + x-soho-* identity headers
 SOHO Backend API (sohopay-backend /api/v1/*)
         ↓
 Auth + Policy + Settlement
 ```
 
-## Option A: Local soho-mcp-server
+## Option A: Local sohopay-mcp-server
 
 ```bash
-git clone https://github.com/sohopay/soho-mcp-server.git
-cd soho-mcp-server
+git clone https://github.com/sohopay/sohopay-mcp-server.git
+cd sohopay-mcp-server
 npm ci
 cp .env.example .env
 ```
@@ -56,7 +56,7 @@ When deployed, point MCP clients at `https://mcp.sohopay.xyz`. Transport require
 curl -sS https://mcp.sohopay.xyz/health
 ```
 
-For local development, use the health URL and port documented in the soho-mcp-server README after `npm run dev`.
+For local development, use the health URL and port documented in the sohopay-mcp-server README after `npm run dev`.
 
 Expected: `{ "ok": true }`
 

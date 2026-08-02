@@ -1,4 +1,4 @@
-# SohoPay Agent Skills (Circle-style)
+# SohoPay Agent Skills
 
 > **Status:** MVP implemented (2026-06-27). Hosted URLs use the validated `sohopay.xyz` zone (`agents.sohopay.xyz`). The original plan referenced `agents.sohopay.com`; see [endpoints.md](./endpoints.md) for canonical production hostnames.
 
@@ -6,7 +6,7 @@
 
 | Layer | Convention | Example |
 |-------|------------|---------|
-| GitHub org + repo | `sohopay/skills` | Matches Circle's `circlefin/skills` pattern |
+| GitHub org + repo | `sohopay/skills` | Canonical public skills repository |
 | Open registry install | `npx skills add sohopay/skills -g` | Same org/repo as GitHub |
 | Public skill host | `sohopay` subdomain, no hyphen | `https://agents.sohopay.xyz/skills/setup.md` |
 | Registry skill ID | `sohopay-*` kebab-case | `sohopay-integrate` (avoids generic collisions) |
@@ -17,9 +17,9 @@
 
 **Prerequisite:** the `sohopay` GitHub org exists; canonical repo name is **`sohopay/skills`**. Fallback if org creation were blocked: `soho-pay/sohopay-skills`.
 
-## What Circle does (reference model)
+## Agent Skill Model
 
-Circle runs a three-layer agent stack:
+SohoPay uses a three-layer agent integration model:
 
 ```mermaid
 flowchart LR
@@ -28,24 +28,16 @@ flowchart LR
     Setup["/skills/setup.md"]
   end
   subgraph install [Sticky install]
-    Registry["npx skills add circlefin/skills -g"]
+    Registry["npx skills add sohopay/skills -g"]
   end
   subgraph runtime [Runtime]
-    CircleCLI["@circle-fin/cli"]
+    McpServer["sohopay-mcp-server"]
   end
   Landing["User: curl setup.md"] --> Setup
   Setup --> Registry
   Index --> Setup
+  Setup --> McpServer
 ```
-
-SohoPay equivalent:
-
-| Property | Circle | SohoPay |
-|----------|--------|---------|
-| GitHub repo | `circlefin/skills` | **`sohopay/skills`** |
-| Public entry | `agents.circle.com/skills/setup.md` | `agents.sohopay.xyz/skills/setup.md` |
-| Sticky install | `npx skills add circlefin/skills -g` | **`npx skills add sohopay/skills -g`** |
-| Runtime | Circle CLI | **`soho-mcp-server`** + `sohopay-backend` |
 
 **Do not build a SohoPay CLI for MVP.** Skills teach connection and operation; MCP server is the runtime.
 
@@ -77,7 +69,7 @@ Canonical source: **`sohopay/skills`**. Mirror in `sohopay-backend/.cursor/skill
 flowchart TB
   subgraph repos [Source repos]
     SkillsRepo["sohopay/skills"]
-    McpServer["soho-mcp-server"]
+    McpServer["sohopay-mcp-server"]
     Backend["sohopay-backend"]
     Contract["@soho/mcp-contract"]
   end

@@ -8,7 +8,7 @@ Skill index for AI agents integrating with SohoPay MCP gateway and x402 credit s
 
 # Skill: SohoPay Agent Setup for AI Agents
 
-CRITICAL: This skill uses **soho-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
+CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
 CRITICAL: Run this setup in full-access mode (network access + read/write to the user's home directory). Without it, skill installation and MCP config writes fail or hang on permission prompts.
 
@@ -44,7 +44,7 @@ curl -sL https://agents.sohopay.xyz/skills/mcp-connect.md
 Follow those instructions exactly. Choose either:
 
 - **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
-- **Local MCP** — clone and run [soho-mcp-server](https://github.com/sohopay/soho-mcp-server)
+- **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
 
 ## Step 4: Smoke test MCP
 
@@ -112,7 +112,7 @@ Browse all skills:
 curl -sL https://agents.sohopay.xyz/.well-known/agent-skills/index.json
 ```
 
-Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `soho-mcp-server` — scope drift must be a compile error, not a runtime authz bug.
+Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `sohopay-mcp-server` — scope drift must be a compile error, not a runtime authz bug.
 
 ## Rules
 
@@ -151,18 +151,18 @@ CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of tru
 ```text
 MCP Client / AI Agent
         ↓
-SOHO MCP Server (soho-mcp-server)
+SOHO MCP Server (sohopay-mcp-server)
         ↓  x-soho-service-token + x-soho-* identity headers
 SOHO Backend API (sohopay-backend /api/v1/*)
         ↓
 Auth + Policy + Settlement
 ```
 
-## Option A: Local soho-mcp-server
+## Option A: Local sohopay-mcp-server
 
 ```bash
-git clone https://github.com/sohopay/soho-mcp-server.git
-cd soho-mcp-server
+git clone https://github.com/sohopay/sohopay-mcp-server.git
+cd sohopay-mcp-server
 npm ci
 cp .env.example .env
 ```
@@ -200,7 +200,7 @@ When deployed, point MCP clients at `https://mcp.sohopay.xyz`. Transport require
 curl -sS https://mcp.sohopay.xyz/health
 ```
 
-For local development, use the health URL and port documented in the soho-mcp-server README after `npm run dev`.
+For local development, use the health URL and port documented in the sohopay-mcp-server README after `npm run dev`.
 
 Expected: `{ "ok": true }`
 
@@ -328,7 +328,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools.
 | credit:approve | — | ✅ (+ 2FA-equiv) |
 | repayment:execute | ✅ | NOT KYC-gated |
 
-## MCP tools (via soho-mcp-server)
+## MCP tools (via sohopay-mcp-server)
 
 | Tool | Purpose |
 |------|---------|
@@ -412,27 +412,90 @@ Supported patterns include human-owned credit with agent executor (`Principal=HU
 
 ---
 
+# SohoPay Human-Direct Flow (Protocol v1)
+
+# Skill: SohoPay Human-Direct Flow (Protocol v1)
+
+Use this path when the **human borrower** acts directly — no delegated agent session.
+
+## Skip these tools
+
+- `create_agent_session`
+- `get_session_context`
+- `revoke_session`
+
+Never pass `session_id` on spend, payment, or signing tools.
+
+## MCP v1 catalog (18 tools)
+
+Protocol v1 adds: `get_outstanding_balance`, `create_repayment`, `execute_repayment`, `get_signing_status`, `get_settlement_status`.
+
+## End-to-end flow
+
+```text
+register_borrower
+  → request_signature_challenge + submit_signature (wallet proof)
+  → request_borrower_token
+  → create_spend_intent (include order_ref / resource_identifier when using x402)
+  → evaluate_spend_policy
+  → execute_payment
+  → get_settlement_status (poll until terminal)
+```
+
+Optional repayment (permissionless payer model):
+
+```text
+get_outstanding_balance → create_repayment or execute_repayment → payer submits on-chain repay tx
+```
+
+## High-risk tools
+
+`execute_payment`, `sign_transaction`, and `approve_credit_limit` require:
+
+- Live `POST /api/v1/auth/authorization-context`
+- `AUTH_INTROSPECTION_ENABLED=true` on the MCP server
+- Wallet proof + 2FA-equivalent where applicable
+
+## Related skills
+
+- Onboarding: `borrower-onboard.md`
+- Spend/policy: `spend-and-pay.md`
+- x402 settlement: `x402-credit-pay.md`
+
+
+---
+
 # SohoPay Spend, Policy, and Payment
 
 # Skill: SohoPay Spend, Policy, and Payment
 
 CRITICAL: `execute_payment` is **confirm-only** — MCP confirms an existing merchant-initiated `paymentId`. Agents do not initiate merchant payments.
 
+## Human-direct path (no session)
+
+If the borrower acts directly (not via a delegated agent), use the [human-direct-flow](https://agents.sohopay.xyz/skills/human-direct-flow.md) skill — skip session tools and omit `session_id`.
+
 ## Flow
 
 1. **Create spend intent** — `create_spend_intent` / `POST /api/v1/spend/intents`
 2. **Evaluate policy** — `evaluate_spend_policy` / `POST /api/v1/policy/evaluate`
 3. **Execute payment** — `execute_payment` / `POST /api/v1/payments/execute` (after merchant initiated payment)
+4. **Poll settlement** — `get_settlement_status` / `GET /api/v1/payments/:id/status` (protocol v1)
 
 High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
 
-## MCP tools
+## MCP tools (protocol v1)
 
 | Tool | Scope | Wallet proof | KYC | Idempotent |
 |------|-------|:------------:|:---:|:----------:|
 | `create_spend_intent` | spend:intent:create | ✅ | ✅ | Yes |
 | `evaluate_spend_policy` | policy:evaluate | — | — | Yes |
 | `execute_payment` | payment:execute | ✅ | ✅ | Yes |
+| `get_settlement_status` | payment:read | — | — | No |
+| `get_outstanding_balance` | repayment:read | — | — | No |
+| `create_repayment` | repayment:execute | — | — | Yes |
+| `execute_repayment` | repayment:execute | — | — | Yes |
+| `get_signing_status` | signing:request | — | — | No |
 
 ## Backend endpoints
 
@@ -442,6 +505,9 @@ High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side
 | GET | `/api/v1/spend/intents/:id` | spend:intent:create |
 | POST | `/api/v1/policy/evaluate` | policy:evaluate |
 | POST | `/api/v1/payments/execute` | payment:execute |
+| GET | `/api/v1/payments/:id/status` | payment:read |
+| GET | `/api/v1/repayments/quote` | repayment:read |
+| POST | `/api/v1/repayments/prepare` | repayment:execute |
 
 ## Before privileged calls
 

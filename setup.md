@@ -1,6 +1,6 @@
 # Skill: SohoPay Agent Setup for AI Agents
 
-CRITICAL: This skill uses **soho-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
+CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
 CRITICAL: Run this setup in full-access mode (network access + read/write to the user's home directory). Without it, skill installation and MCP config writes fail or hang on permission prompts.
 
@@ -36,7 +36,7 @@ curl -sL https://agents.sohopay.xyz/skills/mcp-connect.md
 Follow those instructions exactly. Choose either:
 
 - **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
-- **Local MCP** — clone and run [soho-mcp-server](https://github.com/sohopay/soho-mcp-server)
+- **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
 
 ## Step 4: Smoke test MCP
 
@@ -104,7 +104,7 @@ Browse all skills:
 curl -sL https://agents.sohopay.xyz/.well-known/agent-skills/index.json
 ```
 
-Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `soho-mcp-server` — scope drift must be a compile error, not a runtime authz bug.
+Pin `@soho/mcp-contract` to the same semver across `sohopay-backend` and `sohopay-mcp-server` — scope drift must be a compile error, not a runtime authz bug.
 
 ## Rules
 

@@ -73,7 +73,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools.
 | credit:approve | — | ✅ (+ 2FA-equiv) |
 | repayment:execute | ✅ | NOT KYC-gated |
 
-## MCP tools (via soho-mcp-server)
+## MCP tools (via sohopay-mcp-server)
 
 | Tool | Purpose |
 |------|---------|

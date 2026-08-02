@@ -11,16 +11,6 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const HOSTED_BASE = 'https://agents.sohopay.xyz';
 
-const SKILL_FILES = [
-  'setup.md',
-  'mcp-connect.md',
-  'borrower-onboard.md',
-  'agent-session.md',
-  'spend-and-pay.md',
-  'x402-credit-pay.md',
-  'idempotency.md',
-];
-
 const FORBIDDEN_PATTERNS = [
   /\blocalhost\b/i,
   /\b127\.0\.0\.1\b/,
@@ -42,6 +32,15 @@ function pass(msg) {
   console.log(`OK: ${msg}`);
 }
 
+const indexPath = join(ROOT, '.well-known/agent-skills/index.json');
+const index = JSON.parse(readFileSync(indexPath, 'utf8'));
+
+if (!index.skills?.length) {
+  fail('index.json has no skills');
+}
+
+const SKILL_FILES = (index.skills ?? []).map((skill) => `${skill.name}.md`);
+
 for (const file of SKILL_FILES) {
   const path = join(ROOT, file);
   const content = readFileSync(path, 'utf8');
@@ -59,16 +58,10 @@ for (const file of SKILL_FILES) {
   pass(`${file} content checks`);
 }
 
-const indexPath = join(ROOT, '.well-known/agent-skills/index.json');
-const index = JSON.parse(readFileSync(indexPath, 'utf8'));
-
-if (!index.skills?.length) {
-  fail('index.json has no skills');
-}
-
-for (const skill of index.skills) {
-  if (!skill.url?.startsWith(HOSTED_BASE)) {
-    fail(`index skill ${skill.name} url must start with ${HOSTED_BASE}`);
+for (const skill of index.skills ?? []) {
+  const expectedUrl = `${HOSTED_BASE}/skills/${skill.name}.md`;
+  if (skill.url !== expectedUrl) {
+    fail(`index skill ${skill.name} url must be ${expectedUrl}`);
   }
   const mdFile = join(ROOT, `${skill.name}.md`);
   try {

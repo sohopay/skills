@@ -4,7 +4,7 @@ Validated on 2026-06-27 with `skills` CLI v1.5.13.
 
 ## Layout
 
-Matches Circle's `circlefin/skills` pattern:
+Open-registry package layout:
 
 ```text
 plugins/sohopay/skills/sohopay-integrate/SKILL.md

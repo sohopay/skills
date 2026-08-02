@@ -4,7 +4,7 @@ CRITICAL: `execute_payment` is **confirm-only** — MCP confirms an existing mer
 
 ## Human-direct path (no session)
 
-If the borrower acts directly (not via a delegated agent), use the [human-direct-flow](./human-direct-flow.md) skill — skip session tools and omit `session_id`.
+If the borrower acts directly (not via a delegated agent), use the [human-direct-flow](https://agents.sohopay.xyz/skills/human-direct-flow.md) skill — skip session tools and omit `session_id`.
 
 ## Flow
 
