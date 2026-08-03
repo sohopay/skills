@@ -51,7 +51,7 @@ stores and refreshes the token itself. You never paste a token on this path.
 
 ### Register per harness (OAuth — primary)
 
-<!-- Claude Code / Cursor / Codex OAuth verified 2026-08-02 against vendor docs; Hermes pending. -->
+<!-- Claude Code / Cursor / Codex / Hermes OAuth verified 2026-08-02 against vendor docs. -->
 
 **Claude Code** — register with no auth header, then authorize:
 
@@ -101,9 +101,20 @@ codex mcp login sohopay
 `auth = "oauth"` is the default; `codex mcp login` binds an ephemeral local callback
 port and opens the consent page in your browser.
 
-**Hermes** — Hermes OAuth support is unverified; use the headless-token fallback below.
+**Hermes** — edit `~/.hermes/config.yaml` and add under the top-level `mcp_servers:` key, then log in:
 
-<!-- TODO(confirm): Hermes OAuth / consent-flow support and MCP config path (assumed ~/.hermes/mcp.json). -->
+```yaml
+mcp_servers:
+  sohopay:
+    url: "https://mcp.sohopay.xyz"
+    auth: oauth
+```
+
+```bash
+hermes mcp login sohopay
+```
+
+Or add it in one step with `hermes mcp add sohopay --url https://mcp.sohopay.xyz --auth oauth`. On first connect Hermes opens a browser for approval and caches the token under `~/.hermes/mcp-tokens/`.
 
 ### Headless / CI fallback (no browser)
 
@@ -124,7 +135,7 @@ Then register with the token as a bearer header. Use exactly one path — token 
 - **Claude Code:** `claude mcp add sohopay --transport http https://mcp.sohopay.xyz --header "Authorization: Bearer $SOHO_TOKEN"`
 - **Cursor** (`~/.cursor/mcp.json`): `"headers": { "Authorization": "Bearer ${env:SOHO_TOKEN}" }` — keep the `${env:NAME}` form; a bare `${SOHO_TOKEN}` is sent literally.
 - **Codex** (`~/.codex/config.toml`): add `bearer_token_env_var = "SOHO_TOKEN"` (Codex has no generic `headers` field; it sends `Authorization: Bearer <token>`).
-- **Hermes** (`~/.hermes/mcp.json`, or `hermes gateway setup`): `"headers": { "Authorization": "Bearer ${SOHO_TOKEN}" }`.
+- **Hermes** (`~/.hermes/config.yaml`, under `mcp_servers:`): a `headers` mapping with `Authorization: "Bearer ${SOHO_TOKEN}"`. Hermes resolves the bare `${SOHO_TOKEN}` form from `~/.hermes/.env` or your shell — correct for Hermes (unlike Cursor, which needs `${env:...}`).
 
 For Claude Code non-interactive specifically, you can instead authenticate once from an
 interactive session (`/mcp` or `claude mcp login sohopay`); the stored token is reused
