@@ -4,7 +4,7 @@ Canonical source for **SohoPay agent skills** — the docs an AI coding agent fe
 
 ## Quick start (agent-driven)
 
-Paste this into your agent (Claude Code, Cursor, Codex, or Hermes):
+Paste this into your agent (Claude Code, Cursor, Codex, Hermes, or the ChatGPT app):
 
 ```
 Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup.md and

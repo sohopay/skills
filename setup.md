@@ -47,6 +47,7 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "harness=he
 
 - If exactly one is detected, use it.
 - If none (or more than one) is detected, **ask the operator which harness this is and wait for their reply.** Record the answer; do not assume.
+- **GUI clients are not on `PATH` and will not appear above.** If you are running inside the **ChatGPT app** (a supported MCP client via Developer Mode connectors), the commands above detect only installed CLIs — ChatGPT itself won't show up. Treat `chatgpt` as the harness and follow its connector path in `mcp-connect.md`; do not pick a CLI you don't actually use.
 
 ## Step 2: Check prerequisites
 
@@ -75,7 +76,7 @@ Fetch the MCP connection skill and follow it exactly:
 curl -fsSL {SKILLS_BASE}/mcp-connect.md
 ```
 
-It gives per-harness (Claude Code / Cursor / Codex / Hermes) registration commands. Choose one path:
+It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
 
 - **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
 - **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)

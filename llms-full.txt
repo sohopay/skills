@@ -55,6 +55,7 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "harness=he
 
 - If exactly one is detected, use it.
 - If none (or more than one) is detected, **ask the operator which harness this is and wait for their reply.** Record the answer; do not assume.
+- **GUI clients are not on `PATH` and will not appear above.** If you are running inside the **ChatGPT app** (a supported MCP client via Developer Mode connectors), the commands above detect only installed CLIs — ChatGPT itself won't show up. Treat `chatgpt` as the harness and follow its connector path in `mcp-connect.md`; do not pick a CLI you don't actually use.
 
 ## Step 2: Check prerequisites
 
@@ -83,7 +84,7 @@ Fetch the MCP connection skill and follow it exactly:
 curl -fsSL {SKILLS_BASE}/mcp-connect.md
 ```
 
-It gives per-harness (Claude Code / Cursor / Codex / Hermes) registration commands. Choose one path:
+It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
 
 - **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
 - **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
@@ -266,7 +267,7 @@ stores and refreshes the token itself. You never paste a token on this path.
 
 ### Register per harness (OAuth — primary)
 
-<!-- Claude Code / Cursor / Codex OAuth verified 2026-08-02; Hermes verified 2026-08-03 — all against vendor docs. -->
+<!-- Claude Code / Cursor / Codex OAuth verified 2026-08-02; Hermes + ChatGPT verified 2026-08-03 — all against vendor docs. ChatGPT connector UI labels shift between releases. -->
 
 **Claude Code** — register with no auth header, then authorize:
 
@@ -330,6 +331,17 @@ hermes mcp login sohopay
 ```
 
 Or add it in one step with `hermes mcp add sohopay --url https://mcp.sohopay.xyz --auth oauth`. On first connect Hermes opens a browser for approval and caches the token under `~/.hermes/mcp-tokens/`.
+
+**ChatGPT** — configured in ChatGPT's own settings, not a CLI or config file. **Creating** a connector is **web-only** (do it at `https://chatgpt.com`); once created, your ChatGPT **desktop app uses it** too. Requires a **paid plan** (Plus, Pro, Business, Enterprise, or Edu) with **Developer Mode**; not available on Free.
+
+1. At `https://chatgpt.com`, enable **Developer Mode**. As of 2026-08 it is under Settings → Apps/Connectors → Advanced settings, but ChatGPT's menu labels shift between releases — if the path differs, look for "Developer Mode" / "Connectors" under **Settings**. On Business/Enterprise workspaces an admin must first allow custom connectors in workspace settings.
+2. Open **Settings → Connectors → Create** and set:
+   - **Name:** `SohoPay`
+   - **MCP server URL:** `https://mcp.sohopay.xyz`
+   - **Authentication:** `OAuth`
+3. On first use ChatGPT opens a browser consent page — approve it to complete the OAuth flow. Then select the connector from the chat's tools menu (web or desktop app) to use its tools.
+
+ChatGPT connectors are **remote-only** (no local `sohopay-mcp-server`) and support **OAuth or no-auth only** — there is no static-header option, so the headless token fallback below does not apply to ChatGPT.
 
 ### Headless / CI fallback (no browser)
 
