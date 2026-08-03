@@ -7,7 +7,7 @@
 # payments product, so nothing here is obfuscated.
 #
 # Usage:
-#   ./install.sh [--harness claude|cursor|codex|hermes] [--key <api-key>] [--base <url>]
+#   ./install.sh [--harness claude|cursor|codex|hermes|chatgpt] [--key <api-key>] [--base <url>]
 #
 #   --harness   Target agent harness. Auto-detected if omitted.
 #   --key       Pre-issued SohoPay MCP token for the HEADLESS/CI fallback only.
@@ -93,17 +93,35 @@ if [[ -z "$HARNESS" ]]; then
   if [[ ${#detected[@]} -eq 1 ]]; then
     HARNESS="${detected[0]}"
   elif [[ ${#detected[@]} -eq 0 ]]; then
-    die "No harness detected. Re-run with --harness claude|cursor|codex."
+    die "No harness detected. Re-run with --harness claude|cursor|codex|hermes|chatgpt (chatgpt is a GUI app and is never auto-detected)."
   else
     die "Multiple harnesses detected (${detected[*]}). Re-run with --harness to disambiguate."
   fi
 fi
 
 case "$HARNESS" in
-  claude|cursor|codex|hermes) ;;
-  *) die "Unsupported harness: $HARNESS (expected claude|cursor|codex|hermes)." ;;
+  claude|cursor|codex|hermes|chatgpt) ;;
+  *) die "Unsupported harness: $HARNESS (expected claude|cursor|codex|hermes|chatgpt)." ;;
 esac
 info "Harness: $HARNESS"
+
+# ChatGPT is a GUI MCP client (Developer Mode connectors) — no CLI, no config file,
+# and no local skill-doc store. This installer cannot auto-configure it, so print the
+# manual connector steps and stop before the CLI-only install/register machinery.
+if [[ "$HARNESS" == "chatgpt" ]]; then
+  cat <<EOF
+==> ChatGPT is configured in the app, not by this installer.
+    Requires a paid plan (Plus/Pro/Business/Enterprise/Edu) with Developer Mode.
+      1. Enable Developer Mode:  Settings -> Apps/Connectors -> Advanced settings
+      2. Settings -> Connectors -> Create:
+           Name:  SohoPay
+           URL:   $MCP_URL
+           Auth:  OAuth   (approve the browser consent page on first use)
+    ChatGPT reads tools from the MCP server, so no local skill docs are installed.
+    Details and current UI notes: mcp-connect.md
+EOF
+  exit 0
+fi
 
 # --- Step 3: skills directory ------------------------------------------------
 # TODO(confirm): exact per-harness global skills directory for current versions.
