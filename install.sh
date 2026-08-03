@@ -26,7 +26,7 @@ set -euo pipefail
 # --- Configuration -----------------------------------------------------------
 
 DEFAULT_BASE="https://raw.githubusercontent.com/sohopay/skills/main"
-MCP_URL="https://mcp.sohopay.xyz"   # TODO(confirm): real hosted MCP URL once deployed
+MCP_URL="https://mcp.sohopay.xyz"   # canonical hosted MCP endpoint
 MIN_NODE_MAJOR=22
 MIN_NODE_MINOR=13
 MIN_NPM_MAJOR=10

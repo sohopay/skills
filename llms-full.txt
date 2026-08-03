@@ -253,7 +253,7 @@ Each option has its own registration and verification below.
 
 ## Option A: Hosted MCP
 
-Server URL: `https://mcp.sohopay.xyz` <!-- TODO(confirm): real hosted MCP URL once deployed -->
+Server URL: `https://mcp.sohopay.xyz` (canonical hosted MCP endpoint)
 
 The hosted server implements the MCP OAuth 2.1 authorization spec: it advertises
 protected-resource metadata at `/.well-known/oauth-protected-resource`, so your
