@@ -34,19 +34,22 @@ Every step is safe to re-run (idempotent). If a step already appears done, verif
 
 If any of the above does not check out, do not proceed — report to the operator.
 
-## Step 1: Detect environment
+## Step 1: Identify the harness
 
-Determine which agent harness this is — later steps branch on it.
+The harness is **the agent environment actually executing this document** — not merely a tool installed on the machine. You most likely already know which you are: Claude Code, Cursor, Codex, Hermes, or the ChatGPT desktop app. **Start from that self-knowledge.**
+
+The probes below only detect *installed* CLIs, which can differ from the harness you are running in — e.g. the ChatGPT desktop app may find `claude` / `cursor` / `codex` installed alongside it without being any of them. Treat the output as a hint, not the answer:
 
 ```bash
-command -v claude >/dev/null 2>&1 && echo "harness=claude-code"
-test -d "$HOME/.cursor" && echo "harness=cursor"
-command -v codex >/dev/null 2>&1 && echo "harness=codex"
-command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "harness=hermes"
+command -v claude >/dev/null 2>&1 && echo "installed: claude"
+test -d "$HOME/.cursor" && echo "installed: cursor"
+command -v codex >/dev/null 2>&1 && echo "installed: codex"
+command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed: hermes"
 ```
 
-- If exactly one is detected, use it.
-- If none (or more than one) is detected, **ask the operator which harness this is and wait for their reply.** Record the answer; do not assume.
+- If you know which harness you are, use that — even if the probes list other tools.
+- Configure SohoPay for the harness the operator will actually **use it from**, not merely one that happens to be installed.
+- If your own identity and the probes disagree, if more than one plausible target exists, or if you have no CLI signal at all (e.g. the ChatGPT desktop app), **ask the operator which harness to configure SohoPay for and wait.** Record the answer; do not assume.
 - **GUI clients are not on `PATH` and will not appear above.** If you are running inside the **ChatGPT app** (a supported MCP client via Developer Mode connectors), the commands above detect only installed CLIs — ChatGPT itself won't show up. Treat `chatgpt` as the harness and follow its connector path in `mcp-connect.md`; do not pick a CLI you don't actually use.
 
 ## Step 2: Check prerequisites
