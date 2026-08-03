@@ -51,7 +51,7 @@ stores and refreshes the token itself. You never paste a token on this path.
 
 ### Register per harness (OAuth — primary)
 
-<!-- Claude Code / Cursor / Codex / Hermes OAuth verified 2026-08-02 against vendor docs. -->
+<!-- Claude Code / Cursor / Codex OAuth verified 2026-08-02; Hermes verified 2026-08-03 — all against vendor docs. -->
 
 **Claude Code** — register with no auth header, then authorize:
 
