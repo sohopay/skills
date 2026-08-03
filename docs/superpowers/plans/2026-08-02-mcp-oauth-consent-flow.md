@@ -298,8 +298,7 @@ with:
     register_note="add [mcp_servers.sohopay] url + auth = \"oauth\" to ~/.codex/config.toml, then run 'codex mcp login sohopay' — see mcp-connect.md"
     ;;
   hermes)
-    # TODO(confirm): Hermes OAuth support + MCP config path (assumed ~/.hermes/mcp.json).
-    register_note="Hermes OAuth unverified; use the headless token fallback in mcp-connect.md (~/.hermes/mcp.json or 'hermes gateway setup')"
+    register_note="add sohopay under mcp_servers: in ~/.hermes/config.yaml with auth: oauth (or 'hermes mcp add sohopay --url $MCP_URL --auth oauth'), then 'hermes mcp login sohopay' — see mcp-connect.md"
     ;;
 ```
 
@@ -335,4 +334,10 @@ git commit -m "feat: install.sh registers MCP via OAuth by default, token is hea
 
 - If `scripts/verify-bootstrap.sh` is available and network access is permitted, `bash scripts/verify-bootstrap.sh` is the full E2E (generate + validate + registry list). It is optional here; the per-task `npm run validate` + `npm run generate:llms-full` are the required gates.
 - Line numbers are approximate ("~") because earlier uncommitted edits shift them; match on the quoted content, not the line number.
-- Hermes remains intentionally unverified — its `TODO(confirm)` markers are expected to stay.
+- Hermes was verified against NousResearch's official docs (2026-08-03) during Task 1
+  review: it supports OAuth (`auth: oauth`, browser consent on first connect), its
+  config is `~/.hermes/config.yaml` under a top-level `mcp_servers:` YAML key (NOT
+  `~/.hermes/mcp.json`), its CLI is `hermes mcp add … --auth oauth` / `hermes mcp login`
+  (there is no `hermes gateway setup`), and it resolves bare `${VAR}` from
+  `~/.hermes/.env` or the shell. Hermes is therefore an OAuth-primary harness like
+  Codex; its `TODO(confirm)` markers are resolved and removed.
