@@ -158,11 +158,15 @@ Expected: `All skill validations passed.` (includes `OK: mcp-connect.md content 
 
 - [ ] **Step 6: Verify — no bearer header on any primary block**
 
+Grep for `Bearer` (not `Authorization`) — the Claude Code caution sentence
+legitimately contains the word "Authorization", but no primary block should carry a
+`Bearer` token; every bearer reference lives in the fallback section.
+
 Run:
 ```bash
-awk '/^### Register per harness \(OAuth — primary\)/,/^### Headless \/ CI fallback/' mcp-connect.md | grep -n "Authorization" || echo "OK: no Authorization header in primary OAuth section"
+awk '/^### Register per harness \(OAuth — primary\)/,/^### Headless \/ CI fallback/' mcp-connect.md | grep -n "Bearer" || echo "OK: no bearer header in primary OAuth section"
 ```
-Expected: `OK: no Authorization header in primary OAuth section`
+Expected: `OK: no bearer header in primary OAuth section`
 
 - [ ] **Step 7: Verify — fallback section present and labeled**
 
