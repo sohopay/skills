@@ -10,9 +10,10 @@
 #   ./install.sh [--harness claude|cursor|codex|hermes] [--key <api-key>] [--base <url>]
 #
 #   --harness   Target agent harness. Auto-detected if omitted.
-#   --key       SohoPay MCP token. Prompted (hidden) if omitted. Never written
-#               to a file by this script; exported to the environment / passed
-#               to the harness's own secret store only.
+#   --key       Pre-issued SohoPay MCP token for the HEADLESS/CI fallback only.
+#               Omit it for the default OAuth flow (the harness opens a browser
+#               consent page). Never written to a file by this script; passed to
+#               the harness's own secret store only.
 #   --base      Base URL serving the skill docs.
 #               Default (dev): https://raw.githubusercontent.com/sohopay/skills/main
 #               At launch:     https://agents.sohopay.xyz/skills/v1
@@ -25,7 +26,7 @@ set -euo pipefail
 # --- Configuration -----------------------------------------------------------
 
 DEFAULT_BASE="https://raw.githubusercontent.com/sohopay/skills/main"
-MCP_URL="https://mcp.sohopay.xyz"   # TODO(confirm): real hosted MCP URL once deployed
+MCP_URL="https://mcp.sohopay.xyz"   # canonical hosted MCP endpoint
 MIN_NODE_MAJOR=22
 MIN_NODE_MINOR=13
 MIN_NPM_MAJOR=10
@@ -141,16 +142,10 @@ for f in "${skill_files[@]}"; do
 done
 
 # --- Step 5: register MCP server ---------------------------------------------
-# The key is never written to a file by this script. For Claude Code it is handed
-# to the CLI's own managed store; for Cursor/Codex the config references the
-# ${SOHO_TOKEN} environment variable, which you export yourself.
-
-if [[ -z "$KEY" ]]; then
-  # Prompt without echoing; skip in non-interactive contexts.
-  if [[ -t 0 ]]; then
-    read -rsp "SohoPay MCP token (input hidden, not stored): " KEY; echo
-  fi
-fi
+# Default path is OAuth: the harness discovers the server's protected-resource
+# metadata and runs the browser consent flow itself — no token is handled here. A
+# token is used only when explicitly supplied via --key / $SOHO_TOKEN (headless/CI
+# fallback), and even then is never written to a file.
 
 register_note=""
 case "$HARNESS" in
@@ -158,23 +153,24 @@ case "$HARNESS" in
     if claude mcp get sohopay >/dev/null 2>&1; then
       register_note="already registered (left in place)"
     elif [[ -n "$KEY" ]]; then
-      # TODO(confirm): exact auth header shape.
+      # Headless fallback: explicit token → bearer header.
       claude mcp add sohopay --transport http "$MCP_URL" \
         --header "Authorization: Bearer ${KEY}"
-      register_note="registered via 'claude mcp add'"
+      register_note="registered with token (headless fallback)"
     else
-      register_note="SKIPPED — no token; run: claude mcp add sohopay --transport http $MCP_URL --header \"Authorization: Bearer \$SOHO_TOKEN\""
+      # Default: register header-less so OAuth discovery engages.
+      claude mcp add sohopay --transport http "$MCP_URL"
+      register_note="registered; run '/mcp' (or 'claude mcp login sohopay') to approve in your browser"
     fi
     ;;
   cursor)
-    register_note="config references \${SOHO_TOKEN}; export it, then add to ~/.cursor/mcp.json — see mcp-connect.md"
+    register_note="add { \"url\": \"$MCP_URL\" } to ~/.cursor/mcp.json (no headers), then approve the OAuth 'Needs Login' prompt — see mcp-connect.md"
     ;;
   codex)
-    register_note="config references \${SOHO_TOKEN}; export it, then add to ~/.codex/config.toml — see mcp-connect.md"
+    register_note="add [mcp_servers.sohopay] url + auth = \"oauth\" to ~/.codex/config.toml, then run 'codex mcp login sohopay' — see mcp-connect.md"
     ;;
   hermes)
-    # TODO(confirm): exact Hermes MCP config path (assumed ~/.hermes/mcp.json).
-    register_note="config references \${SOHO_TOKEN}; export it, then add to ~/.hermes/mcp.json (or 'hermes gateway setup') — see mcp-connect.md"
+    register_note="add sohopay under mcp_servers: in ~/.hermes/config.yaml with auth: oauth (or 'hermes mcp add sohopay --url $MCP_URL --auth oauth'), then 'hermes mcp login sohopay' — see mcp-connect.md"
     ;;
 esac
 
