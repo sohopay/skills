@@ -117,7 +117,9 @@ if [[ "$HARNESS" == "chatgpt" ]]; then
            Name:  SohoPay
            URL:   $MCP_URL
            Auth:  OAuth   (approve the browser consent page on first use)
-    ChatGPT reads tools from the MCP server, so no local skill docs are installed.
+    ChatGPT reads tools from the MCP server, so no local skill docs are installed
+    (--base has no effect for this harness). Connector creation is web-only, at
+    https://chatgpt.com; the desktop app uses the connector once it exists.
     Details and current UI notes: mcp-connect.md
 EOF
   exit 0
