@@ -25,11 +25,16 @@ Browse the skill index:
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
 ```
 
-If any fetch fails (non-2xx, HTML content, or empty body), STOP and report the exact URL to the operator; suggest support@sohopay.xyz. Never disable permission prompts or run in a bypass mode.
+If any fetch fails (non-2xx, HTML content, or empty body), STOP and report the exact URL to the operator; suggest support@sohopay.xyz. Never turn off permission prompts or run in a bypass mode.
+
+## Local bundle (read these first)
+
+The full skill docs are shipped **with this package** under `docs/` — installed to `~/.agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` placed it). **Read them from disk first;** fetch over the network only if the local copy is missing. This keeps setup working in sandboxed harnesses whose fetch tool returns `Cache miss`.
 
 ## Quick reference
 
-Fetch each with `curl -fsSL {SKILLS_BASE}/<file>`:
+Read each from the local bundle first, falling back to the network — e.g.
+`cat ~/.agents/skills/sohopay-integrate/docs/<file> 2>/dev/null || curl -fsSL {SKILLS_BASE}/<file>`:
 
 | Task | Skill file |
 |------|------------|

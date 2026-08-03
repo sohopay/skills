@@ -42,19 +42,22 @@ Every step is safe to re-run (idempotent). If a step already appears done, verif
 
 If any of the above does not check out, do not proceed — report to the operator.
 
-## Step 1: Detect environment
+## Step 1: Identify the harness
 
-Determine which agent harness this is — later steps branch on it.
+The harness is **the agent environment actually executing this document** — not merely a tool installed on the machine. You most likely already know which you are: Claude Code, Cursor, Codex, Hermes, or the ChatGPT desktop app. **Start from that self-knowledge.**
+
+The probes below only detect *installed* CLIs, which can differ from the harness you are running in — e.g. the ChatGPT desktop app may find `claude` / `cursor` / `codex` installed alongside it without being any of them. Treat the output as a hint, not the answer:
 
 ```bash
-command -v claude >/dev/null 2>&1 && echo "harness=claude-code"
-test -d "$HOME/.cursor" && echo "harness=cursor"
-command -v codex >/dev/null 2>&1 && echo "harness=codex"
-command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "harness=hermes"
+command -v claude >/dev/null 2>&1 && echo "installed: claude"
+test -d "$HOME/.cursor" && echo "installed: cursor"
+command -v codex >/dev/null 2>&1 && echo "installed: codex"
+command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed: hermes"
 ```
 
-- If exactly one is detected, use it.
-- If none (or more than one) is detected, **ask the operator which harness this is and wait for their reply.** Record the answer; do not assume.
+- If you know which harness you are, use that — even if the probes list other tools.
+- Configure SohoPay for the harness the operator will actually **use it from**, not merely one that happens to be installed.
+- If your own identity and the probes disagree, if more than one plausible target exists, or if you have no CLI signal at all (e.g. the ChatGPT desktop app), **ask the operator which harness to configure SohoPay for and wait.** Record the answer; do not assume.
 - **GUI clients are not on `PATH` and will not appear above.** If you are running inside the **ChatGPT app** (a supported MCP client via Developer Mode connectors), the commands above detect only installed CLIs — ChatGPT itself won't show up. Treat `chatgpt` as the harness and follow its connector path in `mcp-connect.md`; do not pick a CLI you don't actually use.
 
 ## Step 2: Check prerequisites
@@ -76,12 +79,28 @@ npx skills add sohopay/skills -g -y
 
 Re-running is safe; it updates in place.
 
-## Step 4: Connect to SohoPay MCP
+## Reading the chained skills (local-first)
 
-Fetch the MCP connection skill and follow it exactly:
+Step 3 installs the **full skill set locally**, so you normally do not need the network to read the docs below. For every chained skill, **read the installed copy first and fall back to the network only if it is missing.** The installed docs live alongside the sticky skill — typically `~/.agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
+
+Each fetch below uses this form — local copy first, network fallback last:
 
 ```bash
-curl -fsSL {SKILLS_BASE}/mcp-connect.md
+cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/mcp-connect.md
+```
+
+If the local copy is absent **and** the network fetch fails — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise.
+
+## Step 4: Connect to SohoPay MCP
+
+Fetch the MCP connection skill (local-first) and follow it exactly:
+
+```bash
+cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/mcp-connect.md
 ```
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
@@ -106,10 +125,12 @@ Verify the connection **using the path you chose** — do not run a server smoke
 
 ## Step 6: Onboard a borrower
 
-Fetch the onboarding skill:
+Fetch the onboarding skill (local-first):
 
 ```bash
-curl -fsSL {SKILLS_BASE}/borrower-onboard.md
+cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md
 ```
 
 Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
@@ -127,19 +148,25 @@ The token request then grants real spending scopes. Before requesting the OAuth 
 - **Delegated agent session** (agent acts for a borrower):
 
   ```bash
-  curl -fsSL {SKILLS_BASE}/agent-session.md
+  cat ~/.agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
+    || cat ~/.config/agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
+    || curl -fsSL {SKILLS_BASE}/agent-session.md
   ```
 
 - **Human-direct** (borrower acts directly, no session):
 
   ```bash
-  curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+  cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+    || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+    || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
   ```
 
 ## Step 8: Operate — spend, policy, payment
 
 ```bash
-curl -fsSL {SKILLS_BASE}/spend-and-pay.md
+cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md
 ```
 
 Before executing any payment (especially the first or any high-risk one):
@@ -151,7 +178,9 @@ Before executing any payment (especially the first or any high-risk one):
 For HTTP 402 paywalls (distinct from MCP orchestration):
 
 ```bash
-curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
+cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
 ```
 
 ## Step 10: Idempotency reference
@@ -159,7 +188,9 @@ curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
 Before any mutating financial call:
 
 ```bash
-curl -fsSL {SKILLS_BASE}/idempotency.md
+cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/idempotency.md
 ```
 
 ## Step 11: Report to the operator
@@ -183,7 +214,8 @@ npx skills update -g -y sohopay-integrate
 Browse all skills:
 
 ```bash
-curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
+cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
 ```
 
 ## Rules
