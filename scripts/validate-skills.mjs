@@ -146,6 +146,25 @@ try {
   fail('missing plugins/sohopay/skills/sohopay-integrate/SKILL.md');
 }
 
+// Local-first bundle: the registry package must ship byte-identical copies of the
+// hosted docs so an installed agent can read them offline. Fail on drift.
+const BUNDLE = join(ROOT, 'plugins/sohopay/skills/sohopay-integrate/docs');
+function checkBundled(name, sourcePath) {
+  try {
+    if (readFileSync(join(BUNDLE, name), 'utf8') !== readFileSync(sourcePath, 'utf8')) {
+      fail(`bundle drift: ${name} differs from source — run 'npm run sync:bundle'`);
+    } else {
+      pass(`bundle ${name} in sync`);
+    }
+  } catch {
+    fail(`bundle missing ${name} — run 'npm run sync:bundle'`);
+  }
+}
+for (const skill of index.skills ?? []) {
+  checkBundled(`${skill.name}.md`, join(ROOT, `${skill.name}.md`));
+}
+checkBundled('index.json', indexPath);
+
 if (failed) {
   process.exit(1);
 }

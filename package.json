@@ -5,7 +5,9 @@
   "description": "SohoPay agent skills — hosted docs and open-registry packages",
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
-    "generate:llms-full": "node scripts/generate-llms-full.mjs"
+    "generate:llms-full": "node scripts/generate-llms-full.mjs",
+    "sync:bundle": "node scripts/sync-skill-bundle.mjs",
+    "build": "npm run generate:llms-full && npm run sync:bundle"
   },
   "license": "Apache-2.0"
 }
