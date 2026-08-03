@@ -40,66 +40,95 @@ Each option has its own registration and verification below.
 
 Server URL: `https://mcp.sohopay.xyz` <!-- TODO(confirm): real hosted MCP URL once deployed -->
 
-Transport requires an OAuth 2.1 bearer token per the MCP spec. Export it (never write the token to a file):
+The hosted server implements the MCP OAuth 2.1 authorization spec: it advertises
+protected-resource metadata at `/.well-known/oauth-protected-resource`, so your
+harness discovers the authorization server, runs the OAuth 2.1 + PKCE flow, and
+opens a **consent/approval page** in your browser. You approve there; the harness
+stores and refreshes the token itself. You never paste a token on this path.
+
+> The consent page is where the human authorizes the agent — it is the borrower
+> approval step, not a developer credential. Approve only the scopes you intend to grant.
+
+### Register per harness (OAuth — primary)
+
+<!-- Claude Code / Cursor / Codex OAuth verified 2026-08-02 against vendor docs; Hermes pending. -->
+
+**Claude Code** — register with no auth header, then authorize:
+
+```bash
+# Idempotent check:
+claude mcp get sohopay || claude mcp list
+
+# Add without a header so OAuth discovery engages:
+claude mcp add sohopay --transport http https://mcp.sohopay.xyz
+
+# Authorize: run /mcp inside Claude Code and pick "Authenticate" (opens your browser),
+# or from a shell:
+claude mcp login sohopay
+```
+
+Do **not** add `--header "Authorization: ..."` here — if the server rejects a
+supplied header, Claude Code marks the connection failed instead of falling back to OAuth.
+
+**Cursor** — edit `~/.cursor/mcp.json` and add under `mcpServers` (create the file if absent), with **no** `headers`:
+
+```json
+{
+  "mcpServers": {
+    "sohopay": {
+      "url": "https://mcp.sohopay.xyz"
+    }
+  }
+}
+```
+
+Cursor reads the server's protected-resource metadata and shows a "Needs Login"
+prompt; approve in the browser to complete the OAuth 2.1 + PKCE flow. No
+`type`/`transport` field is needed.
+
+**Codex** — edit `~/.codex/config.toml` and add, then log in:
+
+```toml
+[mcp_servers.sohopay]
+url = "https://mcp.sohopay.xyz"
+auth = "oauth"
+```
+
+```bash
+codex mcp login sohopay
+```
+
+`auth = "oauth"` is the default; `codex mcp login` binds an ephemeral local callback
+port and opens the consent page in your browser.
+
+**Hermes** — Hermes OAuth support is unverified; use the headless-token fallback below.
+
+<!-- TODO(confirm): Hermes OAuth / consent-flow support and MCP config path (assumed ~/.hermes/mcp.json). -->
+
+### Headless / CI fallback (no browser)
+
+Interactive OAuth needs a browser to render the consent page. In headless or CI
+environments — or Claude Code non-interactive runs (`claude -p`, Agent SDK) where the
+`/mcp` panel is unavailable — use a **pre-issued** token instead. Obtain it out of
+band and export it; never write it to a file:
 
 ```bash
 export SOHO_TOKEN=<oauth-access-token>
 ```
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+> **STOP — ask the operator and wait. Do not fabricate keys, tokens, or signatures.**
 > Obtaining `SOHO_TOKEN` is an operator action.
 
-### Register per harness
+Then register with the token as a bearer header. Use exactly one path — token OR OAuth, never both:
 
-<!-- TODO(confirm): exact auth header shape, and current-version config paths/schemas for Cursor, Codex, and Hermes. -->
+- **Claude Code:** `claude mcp add sohopay --transport http https://mcp.sohopay.xyz --header "Authorization: Bearer $SOHO_TOKEN"`
+- **Cursor** (`~/.cursor/mcp.json`): `"headers": { "Authorization": "Bearer ${env:SOHO_TOKEN}" }` — keep the `${env:NAME}` form; a bare `${SOHO_TOKEN}` is sent literally.
+- **Codex** (`~/.codex/config.toml`): add `bearer_token_env_var = "SOHO_TOKEN"` (Codex has no generic `headers` field; it sends `Authorization: Bearer <token>`).
+- **Hermes** (`~/.hermes/mcp.json`, or `hermes gateway setup`): `"headers": { "Authorization": "Bearer ${SOHO_TOKEN}" }`.
 
-**Claude Code**
-
-```bash
-# Check whether it is already registered (idempotent):
-claude mcp get sohopay || claude mcp list
-
-# Add it (skip if already present):
-claude mcp add sohopay --transport http https://mcp.sohopay.xyz \
-  --header "Authorization: Bearer $SOHO_TOKEN"
-```
-
-**Cursor** — edit `~/.cursor/mcp.json` and add under `mcpServers` (create the file if absent):
-
-```json
-{
-  "mcpServers": {
-    "sohopay": {
-      "url": "https://mcp.sohopay.xyz",
-      "headers": { "Authorization": "Bearer ${SOHO_TOKEN}" }
-    }
-  }
-}
-```
-
-**Codex** — edit `~/.codex/config.toml` and add:
-
-```toml
-[mcp_servers.sohopay]
-url = "https://mcp.sohopay.xyz"
-headers = { Authorization = "Bearer ${SOHO_TOKEN}" }
-```
-
-**Hermes** — Hermes stores its data under `~/.hermes/`. Register the MCP server with a Cursor-style JSON block (mirror the schema above):
-
-```json
-{
-  "mcpServers": {
-    "sohopay": {
-      "url": "https://mcp.sohopay.xyz",
-      "headers": { "Authorization": "Bearer ${SOHO_TOKEN}" }
-    }
-  }
-}
-```
-
-<!-- TODO(confirm): exact Hermes MCP config file path/format (assumed ~/.hermes/mcp.json), and whether `hermes gateway setup` is the intended interactive path for adding an MCP server. -->
-Write this to `~/.hermes/mcp.json`, or use the interactive `hermes gateway setup` wizard if that is the supported path.
+For Claude Code non-interactive specifically, you can instead authenticate once from an
+interactive session (`/mcp` or `claude mcp login sohopay`); the stored token is reused
+by later `claude -p` / Agent SDK runs.
 
 ### Verify (hosted)
 
@@ -170,7 +199,9 @@ Verifies: health, MCP `initialize`, `tools/list`. Never run `npm run smoke` outs
 
 ## MCP session bootstrap (both options)
 
-1. Obtain an OAuth access token from SohoPay Backend auth (issuer `https://api.sohopay.xyz`).
+1. Your harness obtains an OAuth access token via the consent flow above (issuer
+   discovered from the server's protected-resource metadata; `https://api.sohopay.xyz`).
+   On the headless fallback, this is the pre-issued `SOHO_TOKEN`.
 2. `POST /mcp` with `Authorization: Bearer <token>` and `initialize`.
 3. Capture the `Mcp-Session-Id` response header.
 4. Use that session ID for `tools/list` and tool calls.
