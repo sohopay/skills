@@ -32,7 +32,9 @@ Distinct from MCP: x402 serves HTTP-native paywalls; MCP serves agent orchestrat
 | POST | `/api/v2/x402/settle` | Submit on-chain spend |
 | GET | `/api/v2/x402/health` | Liveness |
 
-Base URL: `https://api.sohopay.xyz/api/v2/x402/` (production)
+Base URL (production): `https://api.sohopay.xyz/api/v2/x402/`
+
+Base URL (staging): `https://staging.api.sohopay.xyz/api/v2/x402/` — use this when following `setup-staging.md`.
 
 ## Verify flow
 

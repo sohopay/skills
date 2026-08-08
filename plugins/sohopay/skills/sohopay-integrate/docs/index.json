@@ -11,10 +11,22 @@
       "url": "https://agents.sohopay.xyz/skills/v1/setup.md"
     },
     {
+      "name": "setup-staging",
+      "title": "SohoPay Agent Setup (Staging)",
+      "description": "Internal-developer staging bootstrap: connect staging MCP/API, smoke test, onboard, and operate against the full staging stack.",
+      "url": "https://agents.sohopay.xyz/skills/v1/setup-staging.md"
+    },
+    {
       "name": "mcp-connect",
       "title": "Connect to SohoPay MCP Server",
       "description": "Per-harness registration (Claude Code, Cursor, Codex, Hermes, ChatGPT) for local or hosted sohopay-mcp-server, plus verification.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect.md"
+    },
+    {
+      "name": "mcp-connect-staging",
+      "title": "Connect to SohoPay MCP Server (Staging)",
+      "description": "Per-harness registration against staging.mcp.sohopay.xyz and staging.api.sohopay.xyz for full staging E2E testing.",
+      "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect-staging.md"
     },
     {
       "name": "borrower-onboard",

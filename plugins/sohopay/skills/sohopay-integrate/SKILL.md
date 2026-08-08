@@ -19,6 +19,12 @@ Run the setup skill (substitute `SKILLS_BASE`):
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
 ```
 
+**Staging** (internal developers, full staging E2E — `staging.mcp` / `staging.api`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
+```
+
 Browse the skill index:
 
 ```bash
@@ -39,6 +45,8 @@ Read each from the local bundle first, falling back to the network — e.g.
 | Task | Skill file |
 |------|------------|
 | MCP connection | `mcp-connect.md` |
+| Staging setup | `setup-staging.md` |
+| Staging MCP connection | `mcp-connect-staging.md` |
 | Borrower onboarding | `borrower-onboard.md` |
 | Human-direct (no session) | `human-direct-flow.md` |
 | Agent sessions | `agent-session.md` |
