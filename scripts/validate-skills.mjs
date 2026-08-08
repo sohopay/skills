@@ -116,26 +116,29 @@ for (const skill of index.skills ?? []) {
   }
 }
 
-// Every doc chained from setup.md must exist in the index.
-const setup = readFileSync(join(ROOT, 'setup.md'), 'utf8');
+// Every doc chained from setup*.md must exist in the index.
 const indexNames = new Set((index.skills ?? []).map((s) => s.name));
-for (const match of setup.matchAll(/\{SKILLS_BASE\}\/([a-z0-9-]+)\.md/gi)) {
-  const name = match[1];
-  if (!indexNames.has(name)) {
-    fail(`setup.md references ${name}.md but it is missing from index.json`);
+for (const setupName of ['setup', 'setup-staging']) {
+  const setup = readFileSync(join(ROOT, `${setupName}.md`), 'utf8');
+  for (const match of setup.matchAll(/\{SKILLS_BASE\}\/([a-z0-9-]+)\.md/gi)) {
+    const name = match[1];
+    if (!indexNames.has(name)) {
+      fail(`${setupName}.md references ${name}.md but it is missing from index.json`);
+    }
   }
-}
 
-// setup.md must carry its safety scaffolding.
-if (!/Report the exact failed URL/.test(setup)) {
-  fail('setup.md missing the global failure rule');
-}
-const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
-if (stopCount < 3) {
-  fail(`setup.md must contain at least 3 STOP points (found ${stopCount})`);
-}
-if (!/Report to the operator/.test(setup)) {
-  fail('setup.md missing the final "Report to the operator" step');
+  // setup*.md must carry its safety scaffolding.
+  if (!/Report the exact failed URL/.test(setup)) {
+    fail(`${setupName}.md missing the global failure rule`);
+  }
+  const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
+  if (stopCount < 3) {
+    fail(`${setupName}.md must contain at least 3 STOP points (found ${stopCount})`);
+  }
+  if (!/Report to the operator/.test(setup)) {
+    fail(`${setupName}.md missing the final "Report to the operator" step`);
+  }
+  pass(`${setupName}.md safety scaffolding`);
 }
 
 const pluginSkill = join(ROOT, 'plugins/sohopay/skills/sohopay-integrate/SKILL.md');
