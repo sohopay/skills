@@ -32,7 +32,7 @@ Auth + Policy + Settlement
 - **Option A — Hosted MCP** (recommended for most operators): point your harness at the hosted server URL.
 - **Option B — Local MCP**: clone and run `sohopay-mcp-server` yourself.
 
-For **staging** (internal full-stack E2E against `staging.mcp.sohopay.xyz` / `staging.api.sohopay.xyz`), use `{SKILLS_BASE}/mcp-connect-staging.md` instead — do not mix production and staging hosts.
+For **staging** (internal full-stack E2E; register `https://staging.mcp.sohopay.xyz/mcp` against `staging.api.sohopay.xyz`), use `{SKILLS_BASE}/mcp-connect-staging.md` instead — do not mix production and staging hosts.
 
 Each option has its own registration and verification below.
 

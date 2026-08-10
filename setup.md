@@ -7,6 +7,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
+For **staging** (internal full-stack E2E against `staging.mcp` / `staging.api`), stop here and follow `{SKILLS_BASE}/setup-staging.md` instead — do not mix production and staging hosts.
+
 CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
 Note to the agent: this setup requires network access and writes to the user's skills directory and MCP config. Request permission for each action normally. If a permission is denied, stop and explain to the operator what was blocked and why it is needed. Never ask the operator to turn off permission prompts or run in a bypass mode.
