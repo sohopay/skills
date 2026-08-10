@@ -15,6 +15,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
+For **staging** (internal full-stack E2E against `staging.mcp` / `staging.api`), stop here and follow `{SKILLS_BASE}/setup-staging.md` instead — do not mix production and staging hosts.
+
 CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
 Note to the agent: this setup requires network access and writes to the user's skills directory and MCP config. Request permission for each action normally. If a permission is denied, stop and explain to the operator what was blocked and why it is needed. Never ask the operator to turn off permission prompts or run in a bypass mode.
@@ -253,7 +255,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Agent Setup (Staging)
 
-**Environment: STAGING — for internal developers testing the full staging stack.** Do not register production MCP (`https://mcp.sohopay.xyz`) or mix production tokens with this path. Staging API: `https://staging.api.sohopay.xyz`. Staging MCP: `https://staging.mcp.sohopay.xyz`.
+**Environment: STAGING — for internal developers testing the full staging stack.** Do not register production MCP (`https://mcp.sohopay.xyz`) or mix production tokens with this path. Staging API: `https://staging.api.sohopay.xyz`. Staging MCP (register this URL): `https://staging.mcp.sohopay.xyz/mcp`.
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
@@ -347,7 +349,7 @@ cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
 
-- **Hosted staging MCP** — `https://staging.mcp.sohopay.xyz` (recommended for full staging E2E), or
+- **Hosted staging MCP** — `https://staging.mcp.sohopay.xyz/mcp` (recommended for full staging E2E), or
 - **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server) with staging backend env vars
 
 Never register `https://mcp.sohopay.xyz` while following this staging setup.
@@ -442,7 +444,7 @@ cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
 Close by summarizing to the operator, in plain language:
 
 - **Skills installed** — that `sohopay/skills` is installed and where the agent's skills directory is.
-- **MCP registered** — the MCP config file location and the **staging** server URL (`staging.mcp.sohopay.xyz` or local pointed at staging API).
+- **MCP registered** — the MCP config file location and the **staging** server URL (`https://staging.mcp.sohopay.xyz/mcp` or local pointed at staging API).
 - **Account status** — borrower status and the current spending limit / authority granted.
 - **Repayment obligation** — repayment is due **weekly, on Sunday**, and is settled by the operator.
 - **Any failures** — if any step failed, show the exact URL/command and error; do not paper over it.
@@ -526,7 +528,7 @@ Auth + Policy + Settlement
 - **Option A — Hosted MCP** (recommended for most operators): point your harness at the hosted server URL.
 - **Option B — Local MCP**: clone and run `sohopay-mcp-server` yourself.
 
-For **staging** (internal full-stack E2E against `staging.mcp.sohopay.xyz` / `staging.api.sohopay.xyz`), use `{SKILLS_BASE}/mcp-connect-staging.md` instead — do not mix production and staging hosts.
+For **staging** (internal full-stack E2E; register `https://staging.mcp.sohopay.xyz/mcp` against `staging.api.sohopay.xyz`), use `{SKILLS_BASE}/mcp-connect-staging.md` instead — do not mix production and staging hosts.
 
 Each option has its own registration and verification below.
 
@@ -792,13 +794,14 @@ Each option has its own registration and verification below.
 
 ## Option A: Hosted staging MCP
 
-Server URL: `https://staging.mcp.sohopay.xyz` (canonical hosted **staging** MCP endpoint)
+Server URL: `https://staging.mcp.sohopay.xyz/mcp` (canonical hosted **staging** MCP endpoint — the streamable-HTTP resource path; distinct from Claude Code’s `/mcp` UI panel)
 
 The hosted server implements the MCP OAuth 2.1 authorization spec: it advertises
-protected-resource metadata at `/.well-known/oauth-protected-resource`, so your
-harness discovers the authorization server, runs the OAuth 2.1 + PKCE flow, and
-opens a **consent/approval page** in your browser. You approve there; the harness
-stores and refreshes the token itself. You never paste a token on this path.
+protected-resource metadata at `/.well-known/oauth-protected-resource` on the MCP
+origin (`https://staging.mcp.sohopay.xyz`), so your harness discovers the
+authorization server, runs the OAuth 2.1 + PKCE flow, and opens a
+**consent/approval page** in your browser. You approve there; the harness stores
+and refreshes the token itself. You never paste a token on this path.
 
 > The consent page is where the human authorizes the agent — it is the borrower
 > approval step, not a developer credential. Approve only the scopes you intend to grant.
@@ -814,7 +817,7 @@ stores and refreshes the token itself. You never paste a token on this path.
 claude mcp get sohopay-staging || claude mcp list
 
 # Add without a header so OAuth discovery engages:
-claude mcp add sohopay-staging --transport http https://staging.mcp.sohopay.xyz
+claude mcp add sohopay-staging --transport http https://staging.mcp.sohopay.xyz/mcp
 
 # Authorize: run /mcp inside Claude Code and pick "Authenticate" (opens your browser),
 # or from a shell:
@@ -830,7 +833,7 @@ supplied header, Claude Code marks the connection failed instead of falling back
 {
   "mcpServers": {
     "sohopay-staging": {
-      "url": "https://staging.mcp.sohopay.xyz"
+      "url": "https://staging.mcp.sohopay.xyz/mcp"
     }
   }
 }
@@ -844,7 +847,7 @@ prompt; approve in the browser to complete the OAuth 2.1 + PKCE flow. No
 
 ```toml
 [mcp_servers.sohopay-staging]
-url = "https://staging.mcp.sohopay.xyz"
+url = "https://staging.mcp.sohopay.xyz/mcp"
 auth = "oauth"
 ```
 
@@ -860,7 +863,7 @@ port and opens the consent page in your browser.
 ```yaml
 mcp_servers:
   sohopay-staging:
-    url: "https://staging.mcp.sohopay.xyz"
+    url: "https://staging.mcp.sohopay.xyz/mcp"
     auth: oauth
 ```
 
@@ -868,14 +871,14 @@ mcp_servers:
 hermes mcp login sohopay-staging
 ```
 
-Or add it in one step with `hermes mcp add sohopay-staging --url https://staging.mcp.sohopay.xyz --auth oauth`. On first connect Hermes opens a browser for approval and caches the token under `~/.hermes/mcp-tokens/`.
+Or add it in one step with `hermes mcp add sohopay-staging --url https://staging.mcp.sohopay.xyz/mcp --auth oauth`. On first connect Hermes opens a browser for approval and caches the token under `~/.hermes/mcp-tokens/`.
 
 **ChatGPT** — configured in ChatGPT's own settings, not a CLI or config file. **Creating** a connector is **web-only** (do it at `https://chatgpt.com`); once created, your ChatGPT **desktop app uses it** too. Requires a **paid plan** (Plus, Pro, Business, Enterprise, or Edu) with **Developer Mode**; not available on Free.
 
 1. At `https://chatgpt.com`, enable **Developer Mode**. As of 2026-08 it is under Settings → Apps/Connectors → Advanced settings, but ChatGPT's menu labels shift between releases — if the path differs, look for "Developer Mode" / "Connectors" under **Settings**. On Business/Enterprise workspaces an admin must first allow custom connectors in workspace settings.
 2. Open **Settings → Connectors → Create** and set:
    - **Name:** `SohoPay Staging`
-   - **MCP server URL:** `https://staging.mcp.sohopay.xyz`
+   - **MCP server URL:** `https://staging.mcp.sohopay.xyz/mcp`
    - **Authentication:** `OAuth`
 3. On first use ChatGPT opens a browser consent page — approve it to complete the OAuth flow. Then select the connector from the chat's tools menu (web or desktop app) to use its tools.
 
@@ -897,7 +900,7 @@ export SOHO_TOKEN=<oauth-access-token>
 
 Then register with the token as a bearer header. Use exactly one path — token OR OAuth, never both:
 
-- **Claude Code:** `claude mcp add sohopay-staging --transport http https://staging.mcp.sohopay.xyz --header "Authorization: Bearer $SOHO_TOKEN"`
+- **Claude Code:** `claude mcp add sohopay-staging --transport http https://staging.mcp.sohopay.xyz/mcp --header "Authorization: Bearer $SOHO_TOKEN"`
 - **Cursor** (`~/.cursor/mcp.json`): `"headers": { "Authorization": "Bearer ${env:SOHO_TOKEN}" }` — keep the `${env:NAME}` form; a bare `${SOHO_TOKEN}` is sent literally.
 - **Codex** (`~/.codex/config.toml`): add `bearer_token_env_var = "SOHO_TOKEN"` (Codex has no generic `headers` field; it sends `Authorization: Bearer <token>`).
 - **Hermes** (`~/.hermes/config.yaml`, under `mcp_servers:`): a `headers` mapping with `Authorization: "Bearer ${SOHO_TOKEN}"`. Hermes resolves the bare `${SOHO_TOKEN}` form from `~/.hermes/.env` or your shell — correct for Hermes (unlike Cursor, which needs `${env:...}`).
@@ -957,7 +960,7 @@ Start the dev server:
 npm run dev
 ```
 
-Register the local server with your harness exactly as in Option A, but use the local URL and port printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `https://staging.mcp.sohopay.xyz`.
+Register the local server with your harness exactly as in Option A, but use the local URL and port printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `https://staging.mcp.sohopay.xyz/mcp`.
 
 ### Verify (local)
 

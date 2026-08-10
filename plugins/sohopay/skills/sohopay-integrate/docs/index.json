@@ -25,7 +25,7 @@
     {
       "name": "mcp-connect-staging",
       "title": "Connect to SohoPay MCP Server (Staging)",
-      "description": "Per-harness registration against staging.mcp.sohopay.xyz and staging.api.sohopay.xyz for full staging E2E testing.",
+      "description": "Per-harness registration against https://staging.mcp.sohopay.xyz/mcp and staging.api.sohopay.xyz for full staging E2E testing.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect-staging.md"
     },
     {
@@ -67,5 +67,6 @@
   ],
   "fullContext": "https://agents.sohopay.xyz/skills/v1/llms-full.txt",
   "mcpServer": "https://mcp.sohopay.xyz",
+  "mcpServerStaging": "https://staging.mcp.sohopay.xyz/mcp",
   "openApi": "https://api.sohopay.xyz/api/docs"
 }

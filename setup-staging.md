@@ -5,7 +5,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Agent Setup (Staging)
 
-**Environment: STAGING — for internal developers testing the full staging stack.** Do not register production MCP (`https://mcp.sohopay.xyz`) or mix production tokens with this path. Staging API: `https://staging.api.sohopay.xyz`. Staging MCP: `https://staging.mcp.sohopay.xyz`.
+**Environment: STAGING — for internal developers testing the full staging stack.** Do not register production MCP (`https://mcp.sohopay.xyz`) or mix production tokens with this path. Staging API: `https://staging.api.sohopay.xyz`. Staging MCP (register this URL): `https://staging.mcp.sohopay.xyz/mcp`.
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
@@ -99,7 +99,7 @@ cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
 
-- **Hosted staging MCP** — `https://staging.mcp.sohopay.xyz` (recommended for full staging E2E), or
+- **Hosted staging MCP** — `https://staging.mcp.sohopay.xyz/mcp` (recommended for full staging E2E), or
 - **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server) with staging backend env vars
 
 Never register `https://mcp.sohopay.xyz` while following this staging setup.
@@ -194,7 +194,7 @@ cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
 Close by summarizing to the operator, in plain language:
 
 - **Skills installed** — that `sohopay/skills` is installed and where the agent's skills directory is.
-- **MCP registered** — the MCP config file location and the **staging** server URL (`staging.mcp.sohopay.xyz` or local pointed at staging API).
+- **MCP registered** — the MCP config file location and the **staging** server URL (`https://staging.mcp.sohopay.xyz/mcp` or local pointed at staging API).
 - **Account status** — borrower status and the current spending limit / authority granted.
 - **Repayment obligation** — repayment is due **weekly, on Sunday**, and is settled by the operator.
 - **Any failures** — if any step failed, show the exact URL/command and error; do not paper over it.

@@ -7,9 +7,11 @@
 # payments product, so nothing here is obfuscated.
 #
 # Usage:
-#   ./install.sh [--harness claude|cursor|codex|hermes|chatgpt] [--key <api-key>] [--base <url>]
+#   ./install.sh [--harness claude|cursor|codex|hermes|chatgpt] [--env production|staging] [--key <api-key>] [--base <url>]
 #
 #   --harness   Target agent harness. Auto-detected if omitted.
+#   --env       MCP environment: production (default) or staging.
+#               staging registers https://staging.mcp.sohopay.xyz/mcp as sohopay-staging.
 #   --key       Pre-issued SohoPay MCP token for the HEADLESS/CI fallback only.
 #               Omit it for the default OAuth flow (the harness opens a browser
 #               consent page). Never written to a file by this script; passed to
@@ -26,12 +28,12 @@ set -euo pipefail
 # --- Configuration -----------------------------------------------------------
 
 DEFAULT_BASE="https://raw.githubusercontent.com/sohopay/skills/main"
-MCP_URL="https://mcp.sohopay.xyz"   # canonical hosted MCP endpoint
 MIN_NODE_MAJOR=22
 MIN_NODE_MINOR=13
 MIN_NPM_MAJOR=10
 
 HARNESS=""
+ENV="production"
 KEY="${SOHO_TOKEN:-}"
 BASE="$DEFAULT_BASE"
 
@@ -42,7 +44,7 @@ info() { printf '==> %s\n' "$*"; }
 die()  { err "$*"; exit 1; }
 
 usage() {
-  sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -51,6 +53,7 @@ usage() {
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --harness) HARNESS="${2:-}"; shift 2 ;;
+    --env)     ENV="${2:-}"; shift 2 ;;
     --key)     KEY="${2:-}"; shift 2 ;;
     --base)    BASE="${2:-}"; shift 2 ;;
     -h|--help) usage 0 ;;
@@ -59,6 +62,27 @@ while [[ $# -gt 0 ]]; do
 done
 
 BASE="${BASE%/}"   # strip trailing slash
+
+case "$ENV" in
+  production)
+    MCP_SERVER_ID="sohopay"
+    MCP_URL="https://mcp.sohopay.xyz"
+    MCP_ORIGIN="https://mcp.sohopay.xyz"
+    MCP_CONNECT_DOC="mcp-connect.md"
+    CHATGPT_NAME="SohoPay"
+    ;;
+  staging)
+    MCP_SERVER_ID="sohopay-staging"
+    MCP_URL="https://staging.mcp.sohopay.xyz/mcp"
+    MCP_ORIGIN="https://staging.mcp.sohopay.xyz"
+    MCP_CONNECT_DOC="mcp-connect-staging.md"
+    CHATGPT_NAME="SohoPay Staging"
+    ;;
+  *)
+    die "Unsupported --env: $ENV (expected production|staging)."
+    ;;
+esac
+info "Environment: $ENV (MCP $MCP_URL)"
 
 # --- Step 1: prerequisites ---------------------------------------------------
 
@@ -114,13 +138,13 @@ if [[ "$HARNESS" == "chatgpt" ]]; then
     Requires a paid plan (Plus/Pro/Business/Enterprise/Edu) with Developer Mode.
       1. Enable Developer Mode:  Settings -> Apps/Connectors -> Advanced settings
       2. Settings -> Connectors -> Create:
-           Name:  SohoPay
+           Name:  $CHATGPT_NAME
            URL:   $MCP_URL
            Auth:  OAuth   (approve the browser consent page on first use)
     ChatGPT reads tools from the MCP server, so no local skill docs are installed
     (--base has no effect for this harness). Connector creation is web-only, at
     https://chatgpt.com; the desktop app uses the connector once it exists.
-    Details and current UI notes: mcp-connect.md
+    Details and current UI notes: $MCP_CONNECT_DOC
 EOF
   exit 0
 fi
@@ -170,27 +194,27 @@ done
 register_note=""
 case "$HARNESS" in
   claude)
-    if claude mcp get sohopay >/dev/null 2>&1; then
+    if claude mcp get "$MCP_SERVER_ID" >/dev/null 2>&1; then
       register_note="already registered (left in place)"
     elif [[ -n "$KEY" ]]; then
       # Headless fallback: explicit token → bearer header.
-      claude mcp add sohopay --transport http "$MCP_URL" \
+      claude mcp add "$MCP_SERVER_ID" --transport http "$MCP_URL" \
         --header "Authorization: Bearer ${KEY}"
       register_note="registered with token (headless fallback)"
     else
       # Default: register header-less so OAuth discovery engages.
-      claude mcp add sohopay --transport http "$MCP_URL"
-      register_note="registered; run '/mcp' (or 'claude mcp login sohopay') to approve in your browser"
+      claude mcp add "$MCP_SERVER_ID" --transport http "$MCP_URL"
+      register_note="registered; run '/mcp' (or 'claude mcp login $MCP_SERVER_ID') to approve in your browser"
     fi
     ;;
   cursor)
-    register_note="add { \"url\": \"$MCP_URL\" } to ~/.cursor/mcp.json (no headers), then approve the OAuth 'Needs Login' prompt — see mcp-connect.md"
+    register_note="add { \"url\": \"$MCP_URL\" } under mcpServers.$MCP_SERVER_ID in ~/.cursor/mcp.json (no headers), then approve the OAuth 'Needs Login' prompt — see $MCP_CONNECT_DOC"
     ;;
   codex)
-    register_note="add [mcp_servers.sohopay] url + auth = \"oauth\" to ~/.codex/config.toml, then run 'codex mcp login sohopay' — see mcp-connect.md"
+    register_note="add [mcp_servers.$MCP_SERVER_ID] url + auth = \"oauth\" to ~/.codex/config.toml, then run 'codex mcp login $MCP_SERVER_ID' — see $MCP_CONNECT_DOC"
     ;;
   hermes)
-    register_note="add sohopay under mcp_servers: in ~/.hermes/config.yaml with auth: oauth (or 'hermes mcp add sohopay --url $MCP_URL --auth oauth'), then 'hermes mcp login sohopay' — see mcp-connect.md"
+    register_note="add $MCP_SERVER_ID under mcp_servers: in ~/.hermes/config.yaml with auth: oauth (or 'hermes mcp add $MCP_SERVER_ID --url $MCP_URL --auth oauth'), then 'hermes mcp login $MCP_SERVER_ID' — see $MCP_CONNECT_DOC"
     ;;
 esac
 
@@ -198,10 +222,10 @@ esac
 
 info "Verifying MCP reachability (read-only)"
 verify_note=""
-if curl -fsSL --max-time 10 "${MCP_URL}/health" -o /dev/null 2>/dev/null; then
-  verify_note="health OK at ${MCP_URL}/health"
+if curl -fsSL --max-time 10 "${MCP_ORIGIN}/health" -o /dev/null 2>/dev/null; then
+  verify_note="health OK at ${MCP_ORIGIN}/health"
 else
-  verify_note="SKIP — ${MCP_URL}/health not reachable yet (expected before MCP go-live)"
+  verify_note="SKIP — ${MCP_ORIGIN}/health not reachable yet (expected before MCP go-live)"
 fi
 
 # --- Step 7: summary ---------------------------------------------------------
@@ -212,9 +236,11 @@ cat <<SUMMARY
 SohoPay install summary
 ------------------------------------------------------------
 Harness:        $HARNESS
+Environment:    $ENV
 Skills base:    $BASE
 Skills dir:     $SKILLS_DIR
 Skills written: ${downloaded[*]}
+MCP server id:  $MCP_SERVER_ID
 MCP server:     $MCP_URL
 MCP register:   $register_note
 Verification:   $verify_note
