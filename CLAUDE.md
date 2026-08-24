@@ -69,7 +69,7 @@ Because `index.json` is authoritative, adding a skill requires editing it **and*
 1. `borrowerId` is a UUID — never use a wallet address as primary identity. `whoami` often omits `borrower_id`; resolve it as `whoami.borrower_id ?? whoami.principal_id` (human-direct only — in delegated sessions `principal_id` is the agent, not the credit owner).
 2. Never hold borrower private keys — the MCP transport carries signatures only.
 3. Idempotency: `Idempotency-Key` **or** tool arg `idempotency_key` (required for Cursor/ChatGPT) on write tools.
-4. Resolve authorization fresh (`POST /api/v1/auth/authorization-context`) before privileged tools.
+4. Resolve authorization fresh (`POST /api/v1/auth/authorization-context`) before privileged tools. The borrower token from `request_borrower_token` is short-lived (staging 15 min) and is **not** the auto-refreshed OAuth transport token — re-request it before each spend.
 5. x402: prefer **merchant-as-settler** (`X-PAYMENT`); on 202 retry the same header; borrower-direct is `/api/v2/x402`; legacy `/api/v1/x402/v2` sunsets 2027-02-10.
 6. `get_signing_status.signature` is `intentSig`; pass `policy_decision_id` into `sign_transaction` for orderRef binding (`spend_intent_id` is not accepted there). `sign_transaction.payload` must be an object, and its `payment_intent` echo supplies the `X-PAYMENT` wire fields.
 7. Poll settlement by **`settlement_id`** (not `payment_id`). Base L2 `finalized` ~15–19 min; `available_credit` updates only after `CONFIRMED`.

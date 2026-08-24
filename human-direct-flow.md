@@ -44,6 +44,8 @@ whoami (optional if already authenticated)
   → get_settlement_status (poll by settlement_id until terminal: CONFIRMED / FAILED / DISPUTED / TIMED_OUT)
 ```
 
+`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
+
 Wallet proof, the token request, and payment execution are all consent-critical. At each of those points:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**

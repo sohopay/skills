@@ -118,9 +118,10 @@ Before requesting a signature:
 
 ## Before privileged calls
 
-1. Resolve live authz: `POST /api/v1/auth/authorization-context`
-2. Confirm borrower not frozen/suspended for money movement
-3. Attach `Idempotency-Key: <uuid-v4>` on all writes — or pass `idempotency_key` in tool args
+1. **Confirm the borrower token is still valid.** It is short-lived (staging: `expires_in: 900`, 15 minutes) and is not auto-refreshed. Re-request it via `request_borrower_token` immediately before spending rather than once per session — see `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
+2. Resolve live authz: `POST /api/v1/auth/authorization-context`
+3. Confirm borrower not frozen/suspended for money movement
+4. Attach `Idempotency-Key: <uuid-v4>` on all writes — or pass `idempotency_key` in tool args
 
 ## Account-state gate
 

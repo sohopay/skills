@@ -94,6 +94,21 @@ Response: `access_token`, `token_type`, `expires_in`, `borrower_id`, `scopes[]`,
 
 Note: MCP may **redact** `access_token` in tool responses; harness OAuth is the primary transport auth.
 
+### Token lifetime — the borrower token is short-lived
+
+**The scoped borrower token expires quickly** — staging returns `expires_in: 900` (15 minutes). Read `expires_in` from the response rather than hardcoding a value.
+
+This is a **different token from the OAuth transport token** your harness obtained at MCP login. The harness stores and refreshes that one automatically (`{SKILLS_BASE}/mcp-connect.md`); it does **not** refresh the borrower token, and there is no refresh call — you re-request it.
+
+Consequences an agent must plan for:
+
+- Spending authority **lapses silently**. Scopes such as `spend:intent:create`, `signing:request`, and `payment:execute` stop applying once the token expires; nothing notifies you.
+- After expiry, `whoami` reports only the base scopes (commonly `["borrower:token"]`), **not** the scopes you requested earlier. That is expiry, not a dropped-scope failure — do not re-run onboarding to "fix" it.
+- **Re-request the token immediately before each spend**, not once at session start. A flow that pauses for operator consent, waits on settlement, or resumes minutes later will likely need a fresh token before signing or paying.
+- Re-requesting is routine and does not repeat wallet proof or KYC. It is still consent-critical — honour the STOP gate below each time.
+
+### Consent
+
 The token grants real spending scopes. Before requesting it:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
