@@ -7,6 +7,10 @@
 #
 # OIDC trust should scope to repo:sohopay/skills:ref:refs/heads/main
 #
+# Until those secrets exist, the preflight job below reports "not configured" and the
+# deploy job is skipped rather than failing at credential load. Content correctness is
+# covered independently by validate.yml on every push and PR.
+#
 # TODO(confirm): index.json now uses the versioned prod path /skills/v1/<name>.md,
 # but the S3 sync below still publishes under /skills/. Before CDN go-live, update
 # the S3 key prefix (and CloudFront invalidation paths) to /skills/v1/ to match the
@@ -27,10 +31,40 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  deploy:
-    needs: []
+  # The secrets context is unavailable in `if:` conditions, so surface the check as a
+  # job output that the deploy job can gate on.
+  preflight:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - name: Check AWS deploy secrets
+        id: check
+        env:
+          ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          BUCKET: ${{ secrets.AGENTS_SKILLS_BUCKET }}
+          CF_ID: ${{ secrets.AGENTS_SKILLS_CF_ID }}
+        run: |
+          set -euo pipefail
+
+          missing=()
+          [[ -n "$ROLE_ARN" ]] || missing+=("AWS_DEPLOY_ROLE_ARN")
+          [[ -n "$BUCKET" ]]   || missing+=("AGENTS_SKILLS_BUCKET")
+          [[ -n "$CF_ID" ]]    || missing+=("AGENTS_SKILLS_CF_ID")
+
+          if [[ ${#missing[@]} -eq 0 ]]; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping publish to agents.sohopay.xyz — missing secrets: ${missing[*]}"
+          fi
+
+  deploy:
+    needs: preflight
+    runs-on: ubuntu-latest
+    if: |
+      needs.preflight.outputs.configured == 'true'
+      && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
