@@ -13,6 +13,17 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Delegated sessions let an agent act on behalf of a borrower within borrower-approved constraints.
 
+Pass `idempotency_key` (UUID v4) on create/revoke when the harness cannot set HTTP headers — see `{SKILLS_BASE}/idempotency.md`.
+
+## Session ID disambiguation (critical)
+
+| Identifier | What it is | Where it appears |
+|------------|------------|------------------|
+| `Mcp-Session-Id` | **MCP transport** session (HTTP stream) | Response header from MCP `initialize` |
+| `session_id` / `x-session-id` | **SohoPay delegated agent session** | Tool argument and/or header on spend/payment/signing |
+
+Never pass an MCP transport session id as SohoPay `session_id`. Never confuse the two when debugging auth.
+
 ## Prerequisites
 
 - Borrower registered with `borrowerId` (UUID)
@@ -26,6 +37,24 @@ Delegated sessions let an agent act on behalf of a borrower within borrower-appr
 | `create_agent_session` | session:create | Yes |
 | `get_session_context` | session:read | No |
 | `revoke_session` | session:revoke | Yes |
+
+### create_agent_session required fields
+
+`borrower_id`, `agent_id`, `permissions[]` (min 1), `max_per_tx`, `daily_limit`, `currency`, `valid_until` (RFC3339). Optional: `idempotency_key`.
+
+**Always send `allowed_merchants` explicitly** — pass `[]` when there is no allowlist. The server defaults it to `[]`, but the published MCP JSON Schema lists it under `required`, so strict harnesses reject the call when it is omitted.
+
+`get_session_context` and `revoke_session` take **`session_id` only** — neither accepts `borrower_id`.
+
+### revoke_session response
+
+**HTTP 200** (not 204):
+
+```json
+{ "session_id": "…", "status": "REVOKED", "revoked_at": "…" }
+```
+
+Body requires `reason` (string) plus `session_id` / `idempotency_key` as applicable.
 
 ## Backend endpoints
 
@@ -44,9 +73,8 @@ Authorization: Bearer <jwt>
 x-soho-service-token: <mcp-service-token>
 x-soho-borrower-id: <borrower-uuid>
 Idempotency-Key: <uuid-v4>   # on create and revoke
+x-session-id: <delegated-session-uuid>   # on delegated spend/pay/sign
 ```
-
-Delegated tool calls also require a valid session ID (`x-session-id` or MCP session context).
 
 ## Principal model
 
