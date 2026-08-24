@@ -1,67 +1,67 @@
 {
   "version": "1.0",
   "name": "SohoPay Agent Skills",
-  "description": "Skill index for AI agents integrating with SohoPay MCP gateway and x402 credit settlement.",
+  "description": "Skill index for AI agents integrating with SohoPay MCP gateway (catalog v2), merchant-as-settler x402, and credit settlement.",
   "dev_base": "https://raw.githubusercontent.com/sohopay/skills/main",
   "skills": [
     {
       "name": "setup",
       "title": "SohoPay Agent Setup for AI Agents",
-      "description": "Detect harness, install skills, connect sohopay-mcp-server, smoke test, onboard, operate, and report back.",
+      "description": "Env-parameterized bootstrap: detect harness, install skills, connect MCP (prod or staging), onboard, operate, troubleshoot, and report.",
       "url": "https://agents.sohopay.xyz/skills/v1/setup.md"
     },
     {
       "name": "setup-staging",
       "title": "SohoPay Agent Setup (Staging)",
-      "description": "Internal-developer staging bootstrap: connect staging MCP/API, smoke test, onboard, and operate against the full staging stack.",
+      "description": "Staging env-preset stub: pins staging.api / staging.mcp and chains to the canonical setup skill.",
       "url": "https://agents.sohopay.xyz/skills/v1/setup-staging.md"
     },
     {
       "name": "mcp-connect",
       "title": "Connect to SohoPay MCP Server",
-      "description": "Per-harness registration (Claude Code, Cursor, Codex, Hermes, ChatGPT) for local or hosted sohopay-mcp-server, plus verification.",
+      "description": "Per-harness registration (Claude Code, Cursor, Codex, Hermes, ChatGPT) for hosted or local MCP; catalog v2; idempotency_key for header-less clients.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect.md"
     },
     {
       "name": "mcp-connect-staging",
       "title": "Connect to SohoPay MCP Server (Staging)",
-      "description": "Per-harness registration against https://staging.mcp.sohopay.xyz/mcp and staging.api.sohopay.xyz for full staging E2E testing.",
+      "description": "Staging env-preset stub: sohopay-staging → staging.mcp.sohopay.xyz/mcp; chains to canonical mcp-connect.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect-staging.md"
     },
     {
       "name": "borrower-onboard",
       "title": "SohoPay Borrower Onboarding",
-      "description": "Register borrowers, complete wallet proof, request scope-gated tokens, handle dropped scopes.",
+      "description": "whoami, register, wallet proof (challenge_id submit), scope-gated tokens, dropped scopes.",
       "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
       "name": "agent-session",
       "title": "SohoPay Delegated Agent Sessions",
-      "description": "Create, read, and revoke borrower-approved agent sessions.",
+      "description": "Create, read, and revoke sessions; Mcp-Session-Id vs SohoPay session_id; revoke returns 200.",
       "url": "https://agents.sohopay.xyz/skills/v1/agent-session.md"
     },
     {
       "name": "human-direct-flow",
-      "title": "SohoPay Human-Direct Flow (Protocol v1)",
-      "description": "18-tool v1 catalog path without delegated agent sessions: onboard, spend, policy, execute, poll settlement.",
+      "title": "SohoPay Human-Direct Flow (Catalog v2)",
+      "description": "19-tool catalog v2 path without delegated sessions: whoami, onboard, spend, sign, execute, poll by settlement_id.",
       "url": "https://agents.sohopay.xyz/skills/v1/human-direct-flow.md"
     },
     {
       "name": "spend-and-pay",
       "title": "SohoPay Spend, Policy, and Payment",
-      "description": "Spend intents, policy evaluation, and confirm-only payment execution via MCP.",
+      "description": "Spend intents (merchant XOR merchant_id), policy, intentSig via get_signing_status, execute, poll by settlement_id.",
       "url": "https://agents.sohopay.xyz/skills/v1/spend-and-pay.md"
     },
     {
       "name": "x402-credit-pay",
-      "title": "SohoPay x402 v2 Credit Settlement",
-      "description": "HTTP 402 verify and settle flows with idempotency and async on-chain confirmation.",
+      "title": "SohoPay x402 Credit Settlement",
+      "description": "Merchant-as-settler X-PAYMENT primary path; facilitator API for merchants; borrower-direct /api/v2/x402 secondary.",
       "url": "https://agents.sohopay.xyz/skills/v1/x402-credit-pay.md"
     },
     {
       "name": "idempotency",
       "title": "SohoPay Idempotency",
-      "description": "Idempotency-Key contract, replay semantics, and TTL rules for financial and on-chain routes.",
+      "description": "idempotency_key tool arg for Cursor/ChatGPT, per-route TTLs, exempt routes, (userId, key) scope.",
       "url": "https://agents.sohopay.xyz/skills/v1/idempotency.md"
     }
   ],

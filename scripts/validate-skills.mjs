@@ -4,7 +4,8 @@
  * Fails on: localhost URLs, secret-like patterns, broken internal links,
  * invalid index, non-failing curl usage, permission-bypass language,
  * hardcoded hosted URLs outside the SKILLS_BASE header, chained docs missing
- * from the index, and a setup.md missing its safety scaffolding.
+ * from the index, setup.md missing its safety scaffolding, and env-preset
+ * stubs that do not link their canonical doc.
  */
 import { readFileSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -13,6 +14,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const HOSTED_BASE = 'https://agents.sohopay.xyz';
+
+/** Env-preset stubs: keep stable URLs; body must chain to the canonical skill. */
+const ENV_PRESET_STUBS = {
+  'setup-staging.md': 'setup.md',
+  'mcp-connect-staging.md': 'mcp-connect.md',
+};
 
 const FORBIDDEN_PATTERNS = [
   /\blocalhost\b/i,
@@ -116,29 +123,46 @@ for (const skill of index.skills ?? []) {
   }
 }
 
-// Every doc chained from setup*.md must exist in the index.
 const indexNames = new Set((index.skills ?? []).map((s) => s.name));
-for (const setupName of ['setup', 'setup-staging']) {
-  const setup = readFileSync(join(ROOT, `${setupName}.md`), 'utf8');
-  for (const match of setup.matchAll(/\{SKILLS_BASE\}\/([a-z0-9-]+)\.md/gi)) {
-    const name = match[1];
-    if (!indexNames.has(name)) {
-      fail(`${setupName}.md references ${name}.md but it is missing from index.json`);
-    }
-  }
 
-  // setup*.md must carry its safety scaffolding.
-  if (!/Report the exact failed URL/.test(setup)) {
-    fail(`${setupName}.md missing the global failure rule`);
+// Canonical setup.md: chained docs must be indexed; full safety scaffolding required.
+const setup = readFileSync(join(ROOT, 'setup.md'), 'utf8');
+for (const match of setup.matchAll(/\{SKILLS_BASE\}\/([a-z0-9-]+)\.md/gi)) {
+  const name = match[1];
+  if (!indexNames.has(name)) {
+    fail(`setup.md references ${name}.md but it is missing from index.json`);
   }
-  const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
-  if (stopCount < 3) {
-    fail(`${setupName}.md must contain at least 3 STOP points (found ${stopCount})`);
+}
+if (!/Report the exact failed URL/.test(setup)) {
+  fail('setup.md missing the global failure rule');
+}
+const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
+if (stopCount < 3) {
+  fail(`setup.md must contain at least 3 STOP points (found ${stopCount})`);
+}
+if (!/Report to the operator/.test(setup)) {
+  fail('setup.md missing the final "Report to the operator" step');
+}
+pass('setup.md safety scaffolding');
+
+// Env-preset stubs must exist and chain to their canonical skill via {SKILLS_BASE}.
+for (const [stubFile, canonical] of Object.entries(ENV_PRESET_STUBS)) {
+  const stubPath = join(ROOT, stubFile);
+  let stub;
+  try {
+    stub = readFileSync(stubPath, 'utf8');
+  } catch {
+    fail(`missing env-preset stub ${stubFile}`);
+    continue;
   }
-  if (!/Report to the operator/.test(setup)) {
-    fail(`${setupName}.md missing the final "Report to the operator" step`);
+  const linkRe = new RegExp(`\\{SKILLS_BASE\\}/${canonical.replace(/\.md$/, '')}\\.md`);
+  if (!linkRe.test(stub)) {
+    fail(`${stubFile} must link to {SKILLS_BASE}/${canonical}`);
   }
-  pass(`${setupName}.md safety scaffolding`);
+  if (!/STAGING/i.test(stub)) {
+    fail(`${stubFile} must declare the STAGING environment preset`);
+  }
+  pass(`${stubFile} env-preset stub`);
 }
 
 const pluginSkill = join(ROOT, 'plugins/sohopay/skills/sohopay-integrate/SKILL.md');
