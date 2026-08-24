@@ -40,7 +40,7 @@ Each option has its own registration and verification below.
 
 ## Option A: Hosted staging MCP
 
-Server URL: `https://staging.mcp.sohopay.xyz/mcp` (canonical hosted **staging** MCP endpoint — the streamable-HTTP resource path; distinct from Claude Code’s `/mcp` UI panel)
+Origin: `https://staging.mcp.sohopay.xyz`. **Register this MCP HTTP URL:** `https://staging.mcp.sohopay.xyz/mcp` (OAuth protected-resource `resource`; distinct from Claude Code’s `/mcp` UI panel). Health and well-known stay on the origin (`/health`, `/.well-known/oauth-protected-resource`).
 
 The hosted server implements the MCP OAuth 2.1 authorization spec: it advertises
 protected-resource metadata at `/.well-known/oauth-protected-resource` on the MCP
@@ -206,7 +206,7 @@ Start the dev server:
 npm run dev
 ```
 
-Register the local server with your harness exactly as in Option A, but use the local URL and port printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `https://staging.mcp.sohopay.xyz/mcp`.
+Register the local server with your harness exactly as in Option A, but use the local MCP HTTP URL printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `https://staging.mcp.sohopay.xyz/mcp`.
 
 ### Verify (local)
 

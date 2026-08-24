@@ -13,15 +13,24 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 ## Bootstrap
 
-Run the setup skill (substitute `SKILLS_BASE`):
+Paste into the agent (production):
+
+```
+Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup.md and
+follow the instructions in it to set up SohoPay in this environment.
+```
+
+Paste into the agent (**staging** — internal full-stack E2E against `staging.mcp` / `staging.api`):
+
+```
+Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md and
+follow the instructions in it to set up SohoPay in this environment.
+```
+
+Or curl the same URLs:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
-```
-
-**Staging** (internal developers, full staging E2E — `staging.mcp` / `staging.api`):
-
-```bash
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
 ```
 
@@ -35,12 +44,12 @@ If any fetch fails (non-2xx, HTML content, or empty body), STOP and report the e
 
 ## Local bundle (read these first)
 
-The full skill docs are shipped **with this package** under `docs/` — installed to `~/.agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` placed it). **Read them from disk first;** fetch over the network only if the local copy is missing. This keeps setup working in sandboxed harnesses whose fetch tool returns `Cache miss`.
+The full skill docs are shipped **with this package** under `docs/` — installed to `~/.claude/skills/sohopay-integrate/docs/` for Claude Code (`-g -a claude-code`), or `~/.agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` placed it). **Read them from disk first;** fetch over the network only if the local copy is missing. This keeps setup working in sandboxed harnesses whose fetch tool returns `Cache miss`.
 
 ## Quick reference
 
 Read each from the local bundle first, falling back to the network — e.g.
-`cat ~/.agents/skills/sohopay-integrate/docs/<file> 2>/dev/null || curl -fsSL {SKILLS_BASE}/<file>`:
+`cat ~/.claude/skills/sohopay-integrate/docs/<file> 2>/dev/null || cat ~/.agents/skills/sohopay-integrate/docs/<file> 2>/dev/null || curl -fsSL {SKILLS_BASE}/<file>`:
 
 | Task | Skill file |
 |------|------------|
@@ -65,7 +74,7 @@ Read each from the local bundle first, falling back to the network — e.g.
 ## Install (sticky)
 
 ```bash
-npx skills add sohopay/skills -g -y
+npx skills add sohopay/skills -g -y -a claude-code   # Claude Code; use -a cursor / -a codex / -a hermes-agent for those harnesses
 ```
 
 ## Additional resources

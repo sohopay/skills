@@ -40,6 +40,8 @@ If any of the above does not check out, do not proceed — report to the operato
 
 The harness is **the agent environment actually executing this document** — not merely a tool installed on the machine. You most likely already know which you are: Claude Code, Cursor, Codex, Hermes, or the ChatGPT desktop app. **Start from that self-knowledge.**
 
+**Claude.ai chat is not Claude Code.** If you are running on claude.ai (web chat, a Claude Project, or the claude.ai sandbox), you are **not** a supported MCP client: there is no `claude mcp` config to write, and sandbox egress often blocks `staging.mcp.sohopay.xyz` / `staging.api.sohopay.xyz`. **STOP**, report that to the operator, and tell them to re-run this setup from **Claude Code** on their machine.
+
 The probes below only detect *installed* CLIs, which can differ from the harness you are running in — e.g. the ChatGPT desktop app may find `claude` / `cursor` / `codex` installed alongside it without being any of them. Treat the output as a hint, not the answer:
 
 ```bash
@@ -65,22 +67,28 @@ Required: Node.js `>=22.13.0`, npm `>=10`, network access.
 
 ## Step 3: Install sticky SohoPay skills
 
-Install SohoPay's official skills so the agent has local guidance in every future session:
+Install SohoPay's official skills **only for the harness from Step 1**. Always pass `--agent` / `-a`. Omitting it (especially with `-y`) makes the CLI symlink into every detected agent directory.
 
-```bash
-npx skills add sohopay/skills -g -y
-```
+| Step 1 harness | Install command |
+|----------------|-----------------|
+| Claude Code | `npx skills add sohopay/skills -g -y -a claude-code` |
+| Cursor | `npx skills add sohopay/skills -g -y -a cursor` |
+| Codex | `npx skills add sohopay/skills -g -y -a codex` |
+| Hermes | `npx skills add sohopay/skills -g -y -a hermes-agent` |
+| ChatGPT app | Skip this step — no `npx skills` target; read hosted docs when connecting |
+| Claude.ai chat | Do not install. You should already have STOPped in Step 1. |
 
-Re-running is safe; it updates in place.
+Re-running is safe; it updates in place. Claude Code's global copy is `~/.claude/skills/sohopay-integrate/`.
 
 ## Reading the chained skills (local-first)
 
-Step 3 installs the **full skill set locally**, so you normally do not need the network to read the docs below. For every chained skill, **read the installed copy first and fall back to the network only if it is missing.** The installed docs live alongside the sticky skill — typically `~/.agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
+Step 3 installs the **full skill set locally**, so you normally do not need the network to read the docs below. For every chained skill, **read the installed copy first and fall back to the network only if it is missing.** Search in this order: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
 
 Each fetch below uses this form — local copy first, network fallback last:
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md
 ```
@@ -92,17 +100,18 @@ If the local copy is absent **and** the network fetch fails — including a sand
 Fetch the MCP connection skill (local-first) and follow it exactly:
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md
 ```
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
 
-- **Hosted staging MCP** — `https://staging.mcp.sohopay.xyz/mcp` (recommended for full staging E2E), or
+- **Hosted staging MCP** — register `https://staging.mcp.sohopay.xyz/mcp` (recommended for full staging E2E), or
 - **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server) with staging backend env vars
 
-Never register `https://mcp.sohopay.xyz` while following this staging setup.
+Never register `https://mcp.sohopay.xyz` or `https://mcp.sohopay.xyz/mcp` while following this staging setup.
 
 ## Step 5: Smoke test MCP
 
@@ -124,7 +133,8 @@ Verify the connection **using the path you chose** — do not run a server smoke
 Fetch the onboarding skill (local-first):
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/borrower-onboard.md
 ```
@@ -144,7 +154,8 @@ The token request then grants real spending scopes. Before requesting the OAuth 
 - **Delegated agent session** (agent acts for a borrower):
 
   ```bash
-  cat ~/.agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
+  cat ~/.claude/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
+    || cat ~/.agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
     || cat ~/.config/agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
     || curl -fsSL {SKILLS_BASE}/agent-session.md
   ```
@@ -152,7 +163,8 @@ The token request then grants real spending scopes. Before requesting the OAuth 
 - **Human-direct** (borrower acts directly, no session):
 
   ```bash
-  cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+  cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+    || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
     || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
     || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
   ```
@@ -160,7 +172,8 @@ The token request then grants real spending scopes. Before requesting the OAuth 
 ## Step 8: Operate — spend, policy, payment
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/spend-and-pay.md
 ```
@@ -174,7 +187,8 @@ Before executing any payment (especially the first or any high-risk one):
 For HTTP 402 paywalls (distinct from MCP orchestration). Use the **staging** x402 base URL from that skill (`https://staging.api.sohopay.xyz/api/v2/x402/`):
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
 ```
@@ -184,7 +198,8 @@ cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
 Before any mutating financial call:
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/idempotency.md
 ```
@@ -204,13 +219,14 @@ Close by summarizing to the operator, in plain language:
 Update installed skills:
 
 ```bash
-npx skills update -g -y sohopay-integrate
+npx skills update -g -y -a claude-code sohopay-integrate   # same -a as Step 3
 ```
 
 Browse all skills:
 
 ```bash
-cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
+cat ~/.claude/skills/sohopay-integrate/docs/index.json 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
 ```
 
