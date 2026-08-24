@@ -14,7 +14,7 @@ plugins/sohopay/.cursor-plugin/plugin.json
 ## Install command (after GitHub publish)
 
 ```bash
-npx skills add sohopay/skills -g -y
+npx skills add sohopay/skills -g -y -a claude-code
 ```
 
 ## Local preflight (before publish)

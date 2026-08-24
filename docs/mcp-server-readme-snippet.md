@@ -11,7 +11,7 @@ curl -sL https://agents.sohopay.xyz/skills/setup.md
 **Sticky install:**
 
 ```bash
-npx skills add sohopay/skills -g -y
+npx skills add sohopay/skills -g -y -a claude-code
 ```
 
 **Skill index:** https://agents.sohopay.xyz/.well-known/agent-skills/index.json

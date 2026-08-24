@@ -19,13 +19,26 @@ Prefer to read the instructions first (for humans):
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
 ```
 
+### Staging (internal developers)
+
+Paste this to exercise the full staging stack (`staging.mcp` / `staging.api`):
+
+```
+Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md and
+follow the instructions in it to set up SohoPay in this environment.
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
+```
+
 ## Sticky install
 
 Install the skills so the agent has SohoPay guidance in every future session:
 
 ```bash
-npx skills add sohopay/skills -g       # open skills registry
-gh skill install sohopay/skills        # GitHub CLI skills
+npx skills add sohopay/skills -g -a claude-code   # Claude Code; pass -a for the harness you use
+gh skill install sohopay/skills                   # GitHub CLI skills
 ```
 
 ## What this installs and what it can do
