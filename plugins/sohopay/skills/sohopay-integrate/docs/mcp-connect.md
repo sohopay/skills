@@ -174,6 +174,8 @@ curl -fsSL {MCP_ORIGIN}/health
 
 Then confirm authenticated access with a **read-only** MCP tool call (e.g. `whoami` or `get_borrower_status`). An unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
 
+After connect: read MCP tool descriptions (and initialize `instructions` if present) for call-time rules. For multi-step onboarding, spend/pay, or x402, fetch the matching skill from `{SKILLS_BASE}` (network is normal; local sticky copy if present) — start with `{SKILLS_BASE}/borrower-onboard.md` or `{SKILLS_BASE}/spend-and-pay.md`.
+
 OAuth protected-resource metadata:
 
 ```bash

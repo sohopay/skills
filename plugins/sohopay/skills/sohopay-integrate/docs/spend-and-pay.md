@@ -9,6 +9,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **What this skill does:** creates spend intents, evaluates policy, signs PaymentIntents when needed, and executes confirm-only payments. **Before running it:** the borrower is onboarded with spend/payment scopes and (if delegating) a session exists.
 
+MCP tool descriptions summarize call-time rules (XOR fields, required IDs); **this skill is authoritative** for ordering and operator STOP gates.
+
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 CRITICAL: `execute_payment` is **confirm-only** — MCP confirms a policy-approved spend (and optional merchant-initiated `payment_id`). Agents do not invent merchant payments out of band.

@@ -31,8 +31,8 @@ Auth + Policy + Settlement
 
 ## Choose a path
 
-- **Option A — Hosted staging MCP** (recommended for full staging E2E): point your harness at the staging server URL.
-- **Option B — Local MCP**: clone and run `sohopay-mcp-server` yourself against the staging backend.
+- **Option A — Hosted staging MCP** (recommended for full staging E2E; **no Node.js on your machine**): point your harness at the staging server URL.
+- **Option B — Local MCP** (developers only; **requires Node.js**): clone and run `sohopay-mcp-server` yourself against the staging backend.
 
 Each option has its own registration and verification below.
 
@@ -164,6 +164,8 @@ curl -fsSL https://staging.mcp.sohopay.xyz/health
 
 Then confirm authenticated access with a **read-only** MCP tool call (e.g. `get_borrower_status`). An unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
 
+After connect: read MCP tool descriptions (and initialize `instructions` if present) for call-time rules. For multi-step onboarding, spend/pay, or x402, fetch the matching skill from `{SKILLS_BASE}` (network is normal; local sticky copy if present) — start with `{SKILLS_BASE}/borrower-onboard.md` or `{SKILLS_BASE}/spend-and-pay.md`.
+
 OAuth protected-resource metadata:
 
 ```bash
@@ -172,7 +174,9 @@ curl -fsSL https://staging.mcp.sohopay.xyz/.well-known/oauth-protected-resource
 
 ---
 
-## Option B: Local sohopay-mcp-server
+## Option B: Local sohopay-mcp-server (requires Node.js)
+
+This path is for **developers** running the MCP server locally. End users on hosted staging MCP (Option A) do not need Node.js.
 
 ```bash
 git clone https://github.com/sohopay/sohopay-mcp-server.git

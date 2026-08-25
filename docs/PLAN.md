@@ -110,13 +110,13 @@ flowchart TB
 
 ## `setup.md` steps
 
-1. Prerequisites — Node `>=22.13.0`, network, writable home
-2. Install sticky skills — `npx skills add sohopay/skills -g`
-3. Choose MCP endpoint — hosted vs local `soho-mcp-server`
-4. Configure env — from `soho-mcp-server/.env.example`
-5. Smoke test — `npm run smoke` with `MCP_AUTH_TOKEN` when required
-6. Fetch sub-skills via absolute URLs on `agents.sohopay.xyz`
-7. Staying current — `npx skills update -g -y sohopay-integrate`
+1. Identify harness; prerequisites — **network only** (Node/npm **not** required for default hosted path)
+2. Optional sticky skills — only if the operator explicitly asks; then Node `>=22.13.0` + `npx skills add sohopay/skills -g -a <harness>`
+3. Connect MCP — hosted (recommended, no Node) vs local `sohopay-mcp-server` (developers; requires Node)
+4. Smoke test — hosted health + read-only tool call; or local `npm run smoke` only if you cloned the server
+5. Fetch sub-skills via absolute URLs (local copy if sticky was installed, else network)
+6. Onboard borrower → operate (consent STOP gates)
+7. Staying current — `npx skills update` only when sticky skills are in use
 
 **Landing one-liner:**
 

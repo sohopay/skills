@@ -9,6 +9,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **What this skill does:** registers a borrower and completes wallet proof so scope-gated tokens can be issued. **Before running it:** the MCP server is connected (`mcp-connect.md`).
 
+MCP tool descriptions summarize call-time rules for each onboarding tool; **this skill is authoritative** for ordering, STOP gates, and dropped-scope handling.
+
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 Canonical identity: **borrowerId = User.id (UUID)**. Wallet is a verified credential, not the primary identifier.
