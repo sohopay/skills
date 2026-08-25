@@ -32,6 +32,134 @@ follow the instructions in it to set up SohoPay in this environment.
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
 ```
 
+## Install MCP
+
+Register the hosted Streamable HTTP server, then complete OAuth in the harness (browser consent). Do **not** mix production and staging hosts. Staging uses server id `sohopay-staging` so it does not overwrite a production `sohopay` entry. Full OAuth / headless notes: [mcp-connect.md](mcp-connect.md) · [mcp-connect-staging.md](mcp-connect-staging.md).
+
+| | Production | Staging |
+|---|------------|---------|
+| Server id | `sohopay` | `sohopay-staging` |
+| MCP URL | `https://mcp.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` |
+
+Do **not** pass `--header "Authorization: …"` on the OAuth path. If the server rejects a supplied header, some harnesses mark the connection failed instead of falling back to OAuth.
+
+### Claude Code
+
+```bash
+# Production
+claude mcp add --transport http sohopay https://mcp.sohopay.xyz
+claude mcp login sohopay
+
+# Staging
+claude mcp add --transport http sohopay-staging https://staging.mcp.sohopay.xyz/mcp
+claude mcp login sohopay-staging
+```
+
+Or authorize from inside Claude Code: `/mcp` → Authenticate.
+
+### Codex
+
+```bash
+# Production
+codex mcp add sohopay --url https://mcp.sohopay.xyz
+codex mcp login sohopay
+
+# Staging
+codex mcp add sohopay-staging --url https://staging.mcp.sohopay.xyz/mcp
+codex mcp login sohopay-staging
+```
+
+Alternatively edit `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.sohopay]
+url = "https://mcp.sohopay.xyz"
+auth = "oauth"
+```
+
+### Cursor
+
+One-click: [Add production](https://cursor.com/en/install-mcp?name=sohopay&config=eyJ1cmwiOiJodHRwczovL21jcC5zb2hvcGF5Lnh5eiJ9) · [Add staging](https://cursor.com/en/install-mcp?name=sohopay-staging&config=eyJ1cmwiOiJodHRwczovL3N0YWdpbmcubWNwLnNvaG9wYXkueHl6L21jcCJ9)
+
+Or edit `~/.cursor/mcp.json` (create the file if absent), with **no** `headers`:
+
+```json
+{
+  "mcpServers": {
+    "sohopay": {
+      "url": "https://mcp.sohopay.xyz"
+    }
+  }
+}
+```
+
+Staging: use id `sohopay-staging` and `"url": "https://staging.mcp.sohopay.xyz/mcp"`. Cursor shows **Needs Login**; approve in the browser. No `type` / `transport` field is needed. Write tools must pass `idempotency_key` as a tool argument (UUID v4).
+
+### Gemini CLI
+
+```bash
+# Production
+gemini mcp add --transport http --scope user sohopay https://mcp.sohopay.xyz
+
+# Staging
+gemini mcp add --transport http --scope user sohopay-staging https://staging.mcp.sohopay.xyz/mcp
+```
+
+Then authenticate with `/mcp auth sohopay` (or `sohopay-staging`).
+
+### Hermes
+
+```bash
+# Production
+hermes mcp add sohopay --url https://mcp.sohopay.xyz --auth oauth
+hermes mcp login sohopay
+
+# Staging
+hermes mcp add sohopay-staging --url https://staging.mcp.sohopay.xyz/mcp --auth oauth
+hermes mcp login sohopay-staging
+```
+
+### VS Code / GitHub Copilot
+
+```bash
+# Production
+code --add-mcp '{"name":"sohopay","type":"http","url":"https://mcp.sohopay.xyz"}'
+
+# Staging
+code --add-mcp '{"name":"sohopay-staging","type":"http","url":"https://staging.mcp.sohopay.xyz/mcp"}'
+```
+
+Or Command Palette → **MCP: Add Server** → HTTP, paste the MCP URL, then complete OAuth when prompted.
+
+### ChatGPT
+
+Configured in ChatGPT settings (web), not a CLI. Requires a paid plan with **Developer Mode**.
+
+1. At `https://chatgpt.com`, enable **Developer Mode** (Settings → Apps/Connectors → Advanced settings; labels shift between releases).
+2. **Settings → Connectors → Create**:
+   - **Name:** `SohoPay` or `SohoPay Staging`
+   - **MCP server URL:** `https://mcp.sohopay.xyz` or `https://staging.mcp.sohopay.xyz/mcp`
+   - **Authentication:** `OAuth`
+3. Approve the browser consent page, then enable the connector in the chat tools menu.
+
+Write tools must pass `idempotency_key` as a tool argument (UUID v4).
+
+### Windsurf
+
+Edit `~/.codeium/windsurf/mcp_config.json` (or Cascade → Manage MCPs → View Raw Config). Use `serverUrl` for remote HTTP:
+
+```json
+{
+  "mcpServers": {
+    "sohopay": {
+      "serverUrl": "https://mcp.sohopay.xyz"
+    }
+  }
+}
+```
+
+Staging: id `sohopay-staging` and `"serverUrl": "https://staging.mcp.sohopay.xyz/mcp"`. Refresh MCP after saving.
+
 ## Sticky install (optional)
 
 Install the skills so the agent has SohoPay guidance in every future session. **Not required** for setup — the default agent flow fetches docs over the network and registers hosted MCP without Node.js. Sticky install needs Node.js / npm:
