@@ -75,3 +75,13 @@ Because `index.json` is authoritative, adding a skill requires editing it **and*
 7. Poll settlement by **`settlement_id`** (not `payment_id`). Base L2 `finalized` ~15–19 min; `available_credit` updates only after `CONFIRMED`.
 8. `Mcp-Session-Id` ≠ SohoPay `session_id` / `x-session-id`.
 9. **No Node for default setup** — hosted MCP + fetch docs; Node only for optional `npx` install or local MCP server.
+
+## Tool descriptions vs skills (ownership)
+
+| Layer | Owns | Lives in |
+|-------|------|----------|
+| MCP tool `description` + schema `.describe()` | Call-time invariants (XOR fields, required IDs, TTL, poll keys) | `sohopay-mcp-server` |
+| MCP initialize `instructions` | Short pointer to fetch skills for multi-step / money flows | `sohopay-mcp-server` (`agent-guidance.ts`) |
+| Skills (this repo) | Workflows, harness setup, consent STOP gates, ordering | root `*.md` |
+
+When you document a new agent trap in a skill, update the matching MCP tool description (see `sohopay-mcp-server/docs/PROTOCOL_TOOL_IMPACT.md` cascade). Do not paste full skill bodies into tool descriptions.

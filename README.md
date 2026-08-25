@@ -32,9 +32,9 @@ follow the instructions in it to set up SohoPay in this environment.
 curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
 ```
 
-## Sticky install
+## Sticky install (optional)
 
-Install the skills so the agent has SohoPay guidance in every future session:
+Install the skills so the agent has SohoPay guidance in every future session. **Not required** for setup — the default agent flow fetches docs over the network and registers hosted MCP without Node.js. Sticky install needs Node.js / npm:
 
 ```bash
 npx skills add sohopay/skills -g -a claude-code   # Claude Code; pass -a for the harness you use
@@ -45,8 +45,8 @@ gh skill install sohopay/skills                   # GitHub CLI skills
 
 Running setup will:
 
-- **Write skills** to your agent's skills directory (`sohopay/skills`).
-- **Register the SohoPay MCP server** in your harness config (hosted URL or local `sohopay-mcp-server`).
+- **Register the SohoPay MCP server** in your harness config (hosted URL by default; local `sohopay-mcp-server` only if you choose that path).
+- **Fetch skill docs over the network** as needed. Sticky install into the agent's skills directory is optional and only runs if you ask for it.
 - **After borrower onboarding**, the agent holds **USDC spending authority** under policy limits. **Repayment is due weekly, on Sunday**, and is settled by the operator.
 
 Every consent-critical step (wallet-proof signing, token requests, payment execution) pauses and asks you first. The docs never instruct an agent to disable permission prompts or run in a bypass mode.
