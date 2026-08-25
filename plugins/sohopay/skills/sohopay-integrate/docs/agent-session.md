@@ -38,30 +38,11 @@ Never pass an MCP transport session id as SohoPay `session_id`. Never confuse th
 | `get_session_context` | session:read | No |
 | `revoke_session` | session:revoke | Yes |
 
-### When to use sessions (and when not to)
+### create_agent_session required fields
 
-Sessions are **only** for **delegated agent executors** acting on a borrower's credit. Human-direct spend and HTTP 402 merchant paywalls do **not** need a session — follow `{SKILLS_BASE}/human-direct-flow.md` and `{SKILLS_BASE}/x402-credit-pay.md`.
+`borrower_id`, `agent_id`, `permissions[]` (min 1), `max_per_tx`, `daily_limit`, `currency`, `valid_until` (RFC3339). Optional: `idempotency_key`.
 
-Do **not** create a session to “fix” `SESSION_GATE_SKIPPED_NO_SESSION` on a human-direct / merchant-demo paywall. Re-check: principal type, whether spend scopes were requested (`borrower:token` alone is not enough), and whether `session_id` was incorrectly assumed. For 402 URLs, use merchant-as-settler (`X-PAYMENT`) without `create_agent_session`.
-
-### create_agent_session fields
-
-Aligns with backend `CreateAgentSessionDto` (`POST /api/v1/sessions/agent`):
-
-| Field | Required | Notes |
-|-------|:--------:|-------|
-| `borrower_id` | ✅ | Borrower UUID |
-| `agent_id` | ✅ | Agent id string (`^[a-zA-Z0-9_-]+$`, max 64) — **not** a borrower UUID |
-| `max_per_tx` | — | uint256 base-units digit string |
-| `period_limit` | — | uint256 base-units digit string |
-| `period_duration_sec` | — | number |
-| `allowed_merchant` | — | single merchant (bytes32/address string) |
-| `allowed_asset` | — | optional asset constraint |
-| `valid_after` / `valid_until` | — | **unix timestamp strings** (`^\d{1,10}$`), not RFC3339 |
-| `constraint` | — | optional nested `{ max_amount_per_tx, period_limit, period_hours, max_tx_count, allowed_merchants[] }` |
-| `idempotency_key` | — | UUID v4 when the harness cannot set headers |
-
-Do **not** send `permissions`, `daily_limit`, `currency`, or top-level `allowed_merchants` — the backend rejects unknown keys.
+**Always send `allowed_merchants` explicitly** — pass `[]` when there is no allowlist. The server defaults it to `[]`, but the published MCP JSON Schema lists it under `required`, so strict harnesses reject the call when it is omitted.
 
 `get_session_context` and `revoke_session` take **`session_id` only** — neither accepts `borrower_id`.
 

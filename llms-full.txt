@@ -1292,13 +1292,11 @@ Never pass an MCP transport session id as SohoPay `session_id`. Never confuse th
 | `get_session_context` | session:read | No |
 | `revoke_session` | session:revoke | Yes |
 
-### When to use sessions (and when not to)
+### create_agent_session required fields
 
-Sessions are **only** for **delegated agent executors**. Human-direct spend and HTTP 402 merchant paywalls do **not** need a session — follow human-direct-flow.md and x402-credit-pay.md. Do **not** create a session to “fix” `SESSION_GATE_SKIPPED_NO_SESSION` on a human-direct paywall.
+`borrower_id`, `agent_id`, `permissions[]` (min 1), `max_per_tx`, `daily_limit`, `currency`, `valid_until` (RFC3339). Optional: `idempotency_key`.
 
-### create_agent_session fields
-
-Required: `borrower_id`, `agent_id` (agent id string, not borrower UUID). Optional: `max_per_tx`, `period_limit`, `period_duration_sec`, `allowed_merchant`, `allowed_asset`, `valid_after`/`valid_until` as **unix timestamp strings**, nested `constraint`, `idempotency_key`. Do **not** send `permissions`, `daily_limit`, `currency`, or top-level `allowed_merchants`.
+**Always send `allowed_merchants` explicitly** — pass `[]` when there is no allowlist. The server defaults it to `[]`, but the published MCP JSON Schema lists it under `required`, so strict harnesses reject the call when it is omitted.
 
 `get_session_context` and `revoke_session` take **`session_id` only** — neither accepts `borrower_id`.
 
