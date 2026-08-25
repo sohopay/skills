@@ -13,6 +13,29 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Distinct from MCP orchestration: x402 is the HTTP paywall rail. MCP still creates the spend intent, evaluates policy, and produces the `intentSig`.
 
+**Default for any merchant URL that returns HTTP 402.** Use this skill — not MCP `execute_payment`, and not `create_agent_session` on the human-direct path.
+
+## Human-direct paywall checklist (mandatory)
+
+```text
+HTTP 402 merchant paywall (human-direct):
+1. whoami → borrower_id ??= principal_id
+2. If scopes are only borrower:token → request_borrower_token
+   (spend:intent:create, policy:evaluate, signing:request[, payment:read])
+3. create_spend_intent from challenge (merchant_id XOR merchant; amount; order_ref; resource_identifier)
+4. evaluate_spend_policy → keep decision_id
+5. sign_transaction(policy_decision_id, payload: {} as object, payload_type EIP712)
+6. get_signing_status → signature = intentSig; keep payment_intent echo
+7. Build X-PAYMENT (scheme credit) → retry same URL
+8. On 202: poll get_settlement_status(settlementId); replay SAME X-PAYMENT once CONFIRMED
+
+Do NOT:
+- create_agent_session / pass session_id on this path
+- call execute_payment (merchant settles via facilitator)
+- send payload as a stringified "{}"
+- mint a new spend intent when retrying a 202
+```
+
 ## Choose environment (API)
 
 | Environment | `{API_BASE}` |
@@ -38,9 +61,10 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 ```text
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge (X-SOHO-PAYMENT-REQUIRED / body.challenge)
-  → MCP: create_spend_intent (map challenge.payment fields)
+  → MCP: request_borrower_token if whoami scopes are only borrower:token
+  → MCP: create_spend_intent (map challenge.payment fields; no session_id)
   → MCP: evaluate_spend_policy
-  → MCP: sign_transaction (pass policy_decision_id) → keep the payment_intent echo
+  → MCP: sign_transaction (policy_decision_id; payload: {} object) → keep the payment_intent echo
   → MCP: get_signing_status → signature = intentSig
   → Build FacilitatorPaymentEnvelope → base64 → X-PAYMENT
   → GET {MERCHANT_BASE_URL}/api/premium  (same resource) with X-PAYMENT

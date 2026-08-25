@@ -15,6 +15,8 @@ MCP tool descriptions summarize call-time rules (XOR fields, required IDs); **th
 
 CRITICAL: `execute_payment` is **confirm-only** — MCP confirms a policy-approved spend (and optional merchant-initiated `payment_id`). Agents do not invent merchant payments out of band.
 
+**HTTP 402 merchant paywalls are a different rail.** Do **not** end that flow with `execute_payment`. After signing, follow `{SKILLS_BASE}/x402-credit-pay.md` (merchant-as-settler + `X-PAYMENT`). Human-direct paywalls also skip sessions — see `{SKILLS_BASE}/human-direct-flow.md`.
+
 Pass `idempotency_key` (UUID v4) on every write tool when the harness cannot set HTTP headers — see `{SKILLS_BASE}/idempotency.md`.
 
 ## Human-direct path (no session)
@@ -25,7 +27,14 @@ If the borrower acts directly (not via a delegated agent), use the human-direct-
 curl -fsSL {SKILLS_BASE}/human-direct-flow.md
 ```
 
-## Flow
+## Flow fork: MCP confirm vs HTTP 402
+
+| Situation | After `sign_transaction` + `get_signing_status` |
+|-----------|--------------------------------------------------|
+| Non-paywall / MCP confirm-only settle | `execute_payment` → poll `get_settlement_status` |
+| Merchant returns HTTP **402** | Build `X-PAYMENT` and retry the resource — `{SKILLS_BASE}/x402-credit-pay.md`. **Never** `execute_payment` on that path. |
+
+## Flow (MCP confirm-only)
 
 1. **Create spend intent** — `create_spend_intent` / `POST /api/v1/spend/intents`
 2. **Evaluate policy** — `evaluate_spend_policy` / `POST /api/v1/policy/evaluate`
@@ -61,7 +70,7 @@ Before executing any payment (especially the first or any high-risk one):
 |------|--------|
 | Binding | **`policy_decision_id` is required in practice.** The gateway maps it to `decision_id` and hydrates merchant / asset / amount / `orderRef` from the bound policy decision, keeping the PaymentIntent byte-identical across sign → execute / settle. The backend signing DTO declares `decision_id` as a required UUID. |
 | `spend_intent_id` | **Not accepted by this tool.** It is absent from the MCP signing schema and silently stripped, so passing it changes nothing. Bind through `policy_decision_id` — the decision already points at the spend intent. |
-| `payload` | Must be a **JSON object**, not a string. ⚠️ The published MCP JSON Schema mis-advertises this field as `"type": "string"`, but the server validates it as an object and rejects a string with `Expected object, received string`. Trust this rule over the advertised schema. Only `payload.payload_hash` is forwarded to the backend — every other key stays local. Pass `{}` when you have no precomputed hash. |
+| `payload` | Must be a **JSON object**, not a string. Pass `{}` when you have no precomputed hash — never a stringified `"{}"`. Only `payload.payload_hash` is forwarded to the backend; every other key stays local. |
 | `signing_purpose` / `payload_type` | Required by the tool schema but **not forwarded**; the gateway derives signing mode from `decision_id`. |
 
 Before requesting a signature:
