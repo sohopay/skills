@@ -57,6 +57,12 @@ claude mcp login sohopay-staging
 
 Or authorize from inside Claude Code: `/mcp` → Authenticate.
 
+### Claude.ai
+
+Prefills **Add custom connector** (web / Claude Desktop). You still confirm in Claude before it is added. This is not Claude Code.
+
+One-click: [Add production](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=SohoPay&connectorUrl=https%3A%2F%2Fmcp.sohopay.xyz) · [Add staging](https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=SohoPay%20Staging&connectorUrl=https%3A%2F%2Fstaging.mcp.sohopay.xyz%2Fmcp)
+
 ### Codex
 
 ```bash
@@ -121,6 +127,10 @@ hermes mcp login sohopay-staging
 
 ### VS Code / GitHub Copilot
 
+One-click: [Add production](https://vscode.dev/redirect/mcp/install?name=sohopay&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.sohopay.xyz%22%7D) · [Add staging](https://vscode.dev/redirect/mcp/install?name=sohopay-staging&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fstaging.mcp.sohopay.xyz%2Fmcp%22%7D)
+
+Or CLI:
+
 ```bash
 # Production
 code --add-mcp '{"name":"sohopay","type":"http","url":"https://mcp.sohopay.xyz"}'
@@ -130,6 +140,12 @@ code --add-mcp '{"name":"sohopay-staging","type":"http","url":"https://staging.m
 ```
 
 Or Command Palette → **MCP: Add Server** → HTTP, paste the MCP URL, then complete OAuth when prompted.
+
+### Visual Studio
+
+One-click: [Add production](https://vs-open.link/mcp-install?%7B%22name%22%3A%22sohopay%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.sohopay.xyz%22%7D) · [Add staging](https://vs-open.link/mcp-install?%7B%22name%22%3A%22sohopay-staging%22%2C%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fstaging.mcp.sohopay.xyz%2Fmcp%22%7D)
+
+Then complete OAuth when Visual Studio prompts.
 
 ### ChatGPT
 
@@ -143,6 +159,14 @@ Configured in ChatGPT settings (web), not a CLI. Requires a paid plan with **Dev
 3. Approve the browser consent page, then enable the connector in the chat tools menu.
 
 Write tools must pass `idempotency_key` as a tool argument (UUID v4).
+
+### Goose
+
+Requires the Goose desktop app. One-click: [Add production](goose://extension?url=https%3A%2F%2Fmcp.sohopay.xyz&type=streamable_http&id=sohopay&name=SohoPay&description=SohoPay%20USDC%20micro-credit%20for%20AI%20agents) · [Add staging](goose://extension?url=https%3A%2F%2Fstaging.mcp.sohopay.xyz%2Fmcp&type=streamable_http&id=sohopay-staging&name=SohoPay%20Staging&description=SohoPay%20USDC%20micro-credit%20for%20AI%20agents)
+
+### LM Studio
+
+Requires LM Studio 0.3.17+. One-click: [Add production](lmstudio://add_mcp?name=sohopay&config=eyJ1cmwiOiJodHRwczovL21jcC5zb2hvcGF5Lnh5eiJ9) · [Add staging](lmstudio://add_mcp?name=sohopay-staging&config=eyJ1cmwiOiJodHRwczovL3N0YWdpbmcubWNwLnNvaG9wYXkueHl6L21jcCJ9)
 
 ### Windsurf
 
