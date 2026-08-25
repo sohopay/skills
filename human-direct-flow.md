@@ -35,14 +35,19 @@ Harnesses may also expose an extra `mcp_auth` tool for connection auth. It is **
 whoami (optional if already authenticated)
   → register_borrower
   → request_signature_challenge + submit_signature (wallet proof)
-  → request_borrower_token
+  → request_borrower_token   # spend/policy/signing scopes — whoami often shows only borrower:token until then
   → create_spend_intent (include order_ref / resource_identifier when using x402)
   → evaluate_spend_policy
-  → sign_transaction (pass policy_decision_id; keep the payment_intent echo)
+  → sign_transaction (policy_decision_id; payload: {} as object; keep payment_intent echo)
   → get_signing_status (signature = intentSig)
-  → execute_payment  → keep settlement_id
-  → get_settlement_status (poll by settlement_id until terminal: CONFIRMED / FAILED / DISPUTED / TIMED_OUT)
+  → BRANCH:
+       HTTP 402 merchant paywall → {SKILLS_BASE}/x402-credit-pay.md (X-PAYMENT; no execute_payment)
+       else → execute_payment → keep settlement_id → get_settlement_status
 ```
+
+If `whoami` scopes are only `borrower:token`, that is base/expired token state — **re-request** `request_borrower_token` with spend/policy/signing scopes before creating a spend intent. It is not an onboarding failure.
+
+Never call `create_agent_session` / `get_session_context` / `revoke_session` on this path, and never pass `session_id`. Do not create a session to clear `SESSION_GATE_SKIPPED_NO_SESSION` on a human-direct merchant demo — fix scopes and follow x402 for 402 URLs.
 
 `request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
@@ -50,9 +55,9 @@ Wallet proof, the token request, and payment execution are all consent-critical.
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-After execute: a mined `tx_hash` is not final. Base L2 `finalized` often lags ~15–19 minutes; confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — tell the operator to expect a lag, and re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
+After execute (non-402 path): a mined `tx_hash` is not final. Base L2 `finalized` often lags ~15–19 minutes; confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — tell the operator to expect a lag, and re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 
-For HTTP 402 merchant paywalls, prefer merchant-as-settler (`X-PAYMENT`) after signing — see `{SKILLS_BASE}/x402-credit-pay.md`.
+**For HTTP 402 merchant paywalls, merchant-as-settler (`X-PAYMENT`) is mandatory after signing** — do not call `execute_payment`. See `{SKILLS_BASE}/x402-credit-pay.md`.
 
 Optional repayment (permissionless payer model):
 

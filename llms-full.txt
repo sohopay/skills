@@ -1400,14 +1400,19 @@ Harnesses may also expose an extra `mcp_auth` tool for connection auth. It is **
 whoami (optional if already authenticated)
   → register_borrower
   → request_signature_challenge + submit_signature (wallet proof)
-  → request_borrower_token
+  → request_borrower_token   # spend/policy/signing scopes — whoami often shows only borrower:token until then
   → create_spend_intent (include order_ref / resource_identifier when using x402)
   → evaluate_spend_policy
-  → sign_transaction (pass policy_decision_id; keep the payment_intent echo)
+  → sign_transaction (policy_decision_id; payload: {} as object; keep payment_intent echo)
   → get_signing_status (signature = intentSig)
-  → execute_payment  → keep settlement_id
-  → get_settlement_status (poll by settlement_id until terminal: CONFIRMED / FAILED / DISPUTED / TIMED_OUT)
+  → BRANCH:
+       HTTP 402 merchant paywall → {SKILLS_BASE}/x402-credit-pay.md (X-PAYMENT; no execute_payment)
+       else → execute_payment → keep settlement_id → get_settlement_status
 ```
+
+If `whoami` scopes are only `borrower:token`, that is base/expired token state — **re-request** `request_borrower_token` with spend/policy/signing scopes before creating a spend intent. It is not an onboarding failure.
+
+Never call `create_agent_session` / `get_session_context` / `revoke_session` on this path, and never pass `session_id`. Do not create a session to clear `SESSION_GATE_SKIPPED_NO_SESSION` on a human-direct merchant demo — fix scopes and follow x402 for 402 URLs.
 
 `request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
@@ -1415,9 +1420,9 @@ Wallet proof, the token request, and payment execution are all consent-critical.
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-After execute: a mined `tx_hash` is not final. Base L2 `finalized` often lags ~15–19 minutes; confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — tell the operator to expect a lag, and re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
+After execute (non-402 path): a mined `tx_hash` is not final. Base L2 `finalized` often lags ~15–19 minutes; confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — tell the operator to expect a lag, and re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 
-For HTTP 402 merchant paywalls, prefer merchant-as-settler (`X-PAYMENT`) after signing — see `{SKILLS_BASE}/x402-credit-pay.md`.
+**For HTTP 402 merchant paywalls, merchant-as-settler (`X-PAYMENT`) is mandatory after signing** — do not call `execute_payment`. See `{SKILLS_BASE}/x402-credit-pay.md`.
 
 Optional repayment (permissionless payer model):
 
@@ -1462,6 +1467,8 @@ MCP tool descriptions summarize call-time rules (XOR fields, required IDs); **th
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 CRITICAL: `execute_payment` is **confirm-only** — MCP confirms a policy-approved spend (and optional merchant-initiated `payment_id`). Agents do not invent merchant payments out of band.
+
+**HTTP 402 merchant paywalls are a different rail.** Do **not** end that flow with `execute_payment`. After signing, follow `{SKILLS_BASE}/x402-credit-pay.md` (merchant-as-settler + `X-PAYMENT`). Human-direct paywalls also skip sessions — see `{SKILLS_BASE}/human-direct-flow.md`.
 
 Pass `idempotency_key` (UUID v4) on every write tool when the harness cannot set HTTP headers — see `{SKILLS_BASE}/idempotency.md`.
 
@@ -1509,7 +1516,7 @@ Before executing any payment (especially the first or any high-risk one):
 |------|--------|
 | Binding | **`policy_decision_id` is required in practice.** The gateway maps it to `decision_id` and hydrates merchant / asset / amount / `orderRef` from the bound policy decision, keeping the PaymentIntent byte-identical across sign → execute / settle. The backend signing DTO declares `decision_id` as a required UUID. |
 | `spend_intent_id` | **Not accepted by this tool.** It is absent from the MCP signing schema and silently stripped, so passing it changes nothing. Bind through `policy_decision_id` — the decision already points at the spend intent. |
-| `payload` | Must be a **JSON object**, not a string. ⚠️ The published MCP JSON Schema mis-advertises this field as `"type": "string"`, but the server validates it as an object and rejects a string with `Expected object, received string`. Trust this rule over the advertised schema. Only `payload.payload_hash` is forwarded to the backend — every other key stays local. Pass `{}` when you have no precomputed hash. |
+| `payload` | Must be a **JSON object**, not a string. Pass `{}` when you have no precomputed hash — never a stringified `"{}"`. Only `payload.payload_hash` is forwarded to the backend; every other key stays local. |
 | `signing_purpose` / `payload_type` | Required by the tool schema but **not forwarded**; the gateway derives signing mode from `decision_id`. |
 
 Before requesting a signature:
@@ -1601,6 +1608,29 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 Distinct from MCP orchestration: x402 is the HTTP paywall rail. MCP still creates the spend intent, evaluates policy, and produces the `intentSig`.
+
+**Default for any merchant URL that returns HTTP 402.** Use this skill — not MCP `execute_payment`, and not `create_agent_session` on the human-direct path.
+
+## Human-direct paywall checklist (mandatory)
+
+```text
+HTTP 402 merchant paywall (human-direct):
+1. whoami → borrower_id ??= principal_id
+2. If scopes are only borrower:token → request_borrower_token
+   (spend:intent:create, policy:evaluate, signing:request[, payment:read])
+3. create_spend_intent from challenge (merchant_id XOR merchant; amount; order_ref; resource_identifier)
+4. evaluate_spend_policy → keep decision_id
+5. sign_transaction(policy_decision_id, payload: {} as object, payload_type EIP712)
+6. get_signing_status → signature = intentSig; keep payment_intent echo
+7. Build X-PAYMENT (scheme credit) → retry same URL
+8. On 202: poll get_settlement_status(settlementId); replay SAME X-PAYMENT once CONFIRMED
+
+Do NOT:
+- create_agent_session / pass session_id on this path
+- call execute_payment (merchant settles via facilitator)
+- send payload as a stringified "{}"
+- mint a new spend intent when retrying a 202
+```
 
 ## Choose environment (API)
 
