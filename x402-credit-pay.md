@@ -75,6 +75,16 @@ Before signing and before any real credit movement:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
+### First-time merchant at signing vs settle
+
+`evaluate_spend_policy` (signing-time) and facilitator `/settle` (settle-time) both run the policy engine, but they key first-time-merchant on **different** identifiers: spend-intent merchant **UUID** vs PaymentIntent **bytes32 `merchantId`**. Details and the once-per-merchant consent prompt: `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
+
+When signing-time is `ALLOW` but `X-PAYMENT` returns 402 with `POLICY_DECISION_DENIED` + `RISK_FIRST_TIME_MERCHANT`:
+
+1. Ask once: **please accept first-time spend consent for this merchant.** After they accept, do **not** re-ask on later pays to that merchant.
+2. Do **not** replay the same `X-PAYMENT` (merchants may cache the 403).
+3. After consent, mint a **new** spend intent → evaluate → sign → **new** `X-PAYMENT`. A later **202** means settle-time policy allowed that envelope.
+
 ### Map 402 challenge → create_spend_intent
 
 From `challenge.payment` (and `challenge.resource`):
@@ -137,7 +147,7 @@ Credential-free helper in the reference merchant repo: `src/agent/build-x-paymen
 
 | Status | Meaning | Agent action |
 |--------|---------|--------------|
-| **402** | Payment required or payment rejected | Read challenge / `reason`; fix binding or stop |
+| **402** | Payment required or payment rejected | Read challenge / `reason`; fix binding or stop. If `reason` / body contains `POLICY_DECISION_DENIED` + `RISK_FIRST_TIME_MERCHANT`, follow § First-time merchant at signing vs settle — do **not** treat this like a 202 replay |
 | **202** | Settle submitted; confirmation still pending | **Retry the identical `X-PAYMENT`** (same envelope). Honor `Retry-After`. **Do not** create a new spend intent |
 | **200** | Unlocked | Use resource; optional `X-PAYMENT-RESPONSE` header |
 
@@ -197,6 +207,7 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle
 - [ ] Poll confirmation; handle `CONFIRMED` / `FAILED` / `TIMED_OUT` / `DISPUTED`
 - [ ] Operator informed about available-credit lag
+- [ ] First-time merchant: once-per-merchant consent; new envelope after settle-time `RISK_FIRST_TIME_MERCHANT` (not a cached-403 replay)
 
 ## Next steps
 
