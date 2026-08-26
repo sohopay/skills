@@ -75,6 +75,7 @@ Because `index.json` is authoritative, adding a skill requires editing it **and*
 7. Poll settlement by **`settlement_id`** (not `payment_id`). Base L2 `finalized` ~15–19 min; `available_credit` updates only after `CONFIRMED`.
 8. `Mcp-Session-Id` ≠ SohoPay `session_id` / `x-session-id`.
 9. **No Node for default setup** — hosted MCP + fetch docs; Node only for optional `npx` install or local MCP server.
+10. **First-time merchant** — `RISK_FIRST_TIME_MERCHANT` is once-per-merchant operator consent ("please accept first-time spend for this merchant"); after they accept, do not re-ask on later pays to that merchant. Signing-time `evaluate_spend_policy` keys merchant UUID; settle-time facilitator `/settle` keys PaymentIntent bytes32 `merchantId`. Signing ALLOW can still DENY at settle; after consent mint a new spend/sign/`X-PAYMENT`, do not replay a cached 403. `SESSION_GATE_SKIPPED_NO_SESSION` is expected on human-direct.
 
 ## Tool descriptions vs skills (ownership)
 

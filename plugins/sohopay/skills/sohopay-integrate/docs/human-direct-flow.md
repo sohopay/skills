@@ -47,7 +47,7 @@ whoami (optional if already authenticated)
 
 If `whoami` scopes are only `borrower:token`, that is base/expired token state — **re-request** `request_borrower_token` with spend/policy/signing scopes before creating a spend intent. It is not an onboarding failure.
 
-Never call `create_agent_session` / `get_session_context` / `revoke_session` on this path, and never pass `session_id`. Do not create a session to clear `SESSION_GATE_SKIPPED_NO_SESSION` on a human-direct merchant demo — fix scopes and follow x402 for 402 URLs.
+Never call `create_agent_session` / `get_session_context` / `revoke_session` on this path, and never pass `session_id`. Do not create a session to clear `SESSION_GATE_SKIPPED_NO_SESSION` on a human-direct merchant demo — that code is expected without a session. First-time merchant (`RISK_FIRST_TIME_MERCHANT`) is a **once-per-merchant** operator consent, then a possible new envelope after settle-time deny — see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
 
 `request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 

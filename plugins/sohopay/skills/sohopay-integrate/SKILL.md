@@ -73,6 +73,7 @@ Read each from the local bundle first, falling back to the network — e.g.
 6. **x402** — HTTP 402 merchant URLs use merchant-as-settler (`X-PAYMENT`); never `execute_payment` or a session on human-direct. Verify before settle; poll confirmation; 72h on-chain idempotency TTL.
 7. **Signing** — pass `policy_decision_id` to `sign_transaction` (it does not accept `spend_intent_id`); `payload` must be a JSON object (`{}` ok, never a string); build `X-PAYMENT` from the returned `payment_intent` echo plus `get_signing_status.signature`.
 8. **Human-direct** — skip session tools; if `whoami` shows only `borrower:token`, request spend/policy/signing scopes before spending.
+9. **First-time merchant** — `RISK_FIRST_TIME_MERCHANT` needs a once-per-merchant operator accept ("please accept first-time spend for this merchant"). After they accept, do not re-ask on later pays to that merchant. Signing-time ALLOW can still DENY at x402 settle (UUID vs bytes32 `merchantId`); mint a new `X-PAYMENT` after consent, do not replay a cached 403. See `spend-and-pay.md` and `x402-credit-pay.md`.
 
 ## Install (sticky)
 
