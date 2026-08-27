@@ -71,9 +71,15 @@ GET {MERCHANT_BASE_URL}/api/premium
   → 200 resource  |  202 retry same header  |  402 with reason
 ```
 
-Before signing and before any real credit movement:
+### Operator consent — first-time merchant only
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+On an x402 payRequest, ask the operator **once** for first-time spend consent for this merchant (see § First-time merchant below). After they accept:
+
+- Do **not** STOP again for `request_borrower_token`, signing, `X-PAYMENT`, or settle.
+- If `whoami` scopes are only `borrower:token`, call `request_borrower_token` **without** a STOP — token refresh is part of completing the pay.
+- Later pays to the **same** merchant: complete merchant-as-settler end-to-end with **no** further operator questions.
+
+Wallet-proof (onboarding) still has its own STOP in `{SKILLS_BASE}/borrower-onboard.md`. Onboarding/setup STOP before `request_borrower_token` does **not** apply once the operator has asked to pay an x402 resource.
 
 ### First-time merchant at signing vs settle
 
@@ -81,9 +87,10 @@ Before signing and before any real credit movement:
 
 When signing-time is `ALLOW` but `X-PAYMENT` returns 402 with `POLICY_DECISION_DENIED` + `RISK_FIRST_TIME_MERCHANT`:
 
-1. Ask once: **please accept first-time spend consent for this merchant.** After they accept, do **not** re-ask on later pays to that merchant.
-2. Do **not** replay the same `X-PAYMENT` (merchants may cache the 403).
-3. After consent, mint a **new** spend intent → evaluate → sign → **new** `X-PAYMENT`. A later **202** means settle-time policy allowed that envelope.
+1. If the operator has **not** yet accepted first-time spend for this merchant, ask once: **please accept first-time spend consent for this merchant.** After they accept, do **not** re-ask on later pays to that merchant.
+2. If they **already** accepted, do **not** ask again — mint a new envelope immediately.
+3. Do **not** replay the same `X-PAYMENT` (merchants may cache the 403).
+4. Mint a **new** spend intent → evaluate → sign → **new** `X-PAYMENT` (no extra STOP after consent). A later **202** means settle-time policy allowed that envelope.
 
 ### Map 402 challenge → create_spend_intent
 
@@ -153,7 +160,7 @@ Credential-free helper in the reference merchant repo: `src/agent/build-x-paymen
 
 The 202 body carries `settlementId`, `jobId`, `paymentId`, and `facilitatorStatus` (typically `PENDING_CONFIRMATION`).
 
-**Prefer status polling over header replay.** `Retry-After` is usually ~2s, but Base L2 confirmation takes ~15–19 minutes, so a tight retry loop means hundreds of pointless replays of a payment authorization header. If the agent holds `payment:read`, poll `get_settlement_status` with the `settlementId` from the 202 body until the status is terminal, then send the identical `X-PAYMENT` **once** to collect the resource. Replaying the header is safe when you do need it — settle is idempotent for 72h and the confirmation worker re-polls the same `txHash` — but it is not a way to make settlement finish sooner.
+**Prefer status polling over header replay.** Confirmation uses **`l2_confirmations`** (L2 receipt + depth) — expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s). Poll about every **2 seconds**. If the agent holds `payment:read`, poll `get_settlement_status` with the `settlementId` from the 202 body until the status is terminal, then send the identical `X-PAYMENT` **once** to collect the resource. Replaying the header is safe when you do need it — settle is idempotent for 72h and the confirmation worker re-polls the same `txHash` — but prefer a short poll loop over tight `Retry-After` header spam.
 
 ### What the merchant does (for operators)
 
@@ -169,7 +176,7 @@ Merchant calls SohoPay with `X-API-Key` (never the borrower JWT):
 
 API key must be bound to the same merchant UUID as the resource server. Unbound key → `FACILITATOR_MERCHANT_BINDING_MISSING` (403).
 
-**Finality / credit lag:** merchant unlock on `CONFIRMED` still leaves off-chain `available_credit` subject to the same lag as MCP — tell the operator; see `{SKILLS_BASE}/spend-and-pay.md`.
+**Finality / credit lag:** merchant unlock on `CONFIRMED` (typically ~5s under `l2_confirmations`); off-chain `available_credit` updates only then — see `{SKILLS_BASE}/spend-and-pay.md`.
 
 ---
 
@@ -207,7 +214,7 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle
 - [ ] Poll confirmation; handle `CONFIRMED` / `FAILED` / `TIMED_OUT` / `DISPUTED`
 - [ ] Operator informed about available-credit lag
-- [ ] First-time merchant: once-per-merchant consent; new envelope after settle-time `RISK_FIRST_TIME_MERCHANT` (not a cached-403 replay)
+- [ ] First-time merchant: once-per-merchant consent; after accept, later pays need no further prompts; new envelope after settle-time `RISK_FIRST_TIME_MERCHANT` (not a cached-403 replay)
 
 ## Next steps
 

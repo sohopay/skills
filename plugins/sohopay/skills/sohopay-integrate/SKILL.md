@@ -70,10 +70,10 @@ Read each from the local bundle first, falling back to the network — e.g.
 3. **Never hold borrower private keys** — MCP transports signatures only.
 4. **Idempotency-Key** on every mutating financial/on-chain route.
 5. **Resolve authz fresh** — `POST /api/v1/auth/authorization-context` before privileged tools. The borrower token is short-lived (staging 15 min, no refresh) — re-request before each spend; it is not the harness OAuth token.
-6. **x402** — HTTP 402 merchant URLs use merchant-as-settler (`X-PAYMENT`); never `execute_payment` or a session on human-direct. Verify before settle; poll confirmation; 72h on-chain idempotency TTL.
+6. **x402** — HTTP 402 merchant URLs use merchant-as-settler (`X-PAYMENT`); never `execute_payment` or a session on human-direct. Verify before settle; poll confirmation under **`l2_confirmations`** (~5s typical, P95 under 30s); 72h on-chain idempotency TTL. On a payRequest, refresh `request_borrower_token` without a STOP when scopes are only `borrower:token`.
 7. **Signing** — pass `policy_decision_id` to `sign_transaction` (it does not accept `spend_intent_id`); `payload` must be a JSON object (`{}` ok, never a string); build `X-PAYMENT` from the returned `payment_intent` echo plus `get_signing_status.signature`.
 8. **Human-direct** — skip session tools; if `whoami` shows only `borrower:token`, request spend/policy/signing scopes before spending.
-9. **First-time merchant** — `RISK_FIRST_TIME_MERCHANT` needs a once-per-merchant operator accept ("please accept first-time spend for this merchant"). After they accept, do not re-ask on later pays to that merchant. Signing-time ALLOW can still DENY at x402 settle (UUID vs bytes32 `merchantId`); mint a new `X-PAYMENT` after consent, do not replay a cached 403. See `spend-and-pay.md` and `x402-credit-pay.md`.
+9. **First-time merchant** — `RISK_FIRST_TIME_MERCHANT` needs a once-per-merchant operator accept ("please accept first-time spend for this merchant"). After they accept, complete later x402 pays to that merchant with **no** further operator questions (token refresh, signing, `X-PAYMENT`). Signing-time ALLOW can still DENY at x402 settle (UUID vs bytes32 `merchantId`); mint a new `X-PAYMENT` after consent without re-asking, do not replay a cached 403. See `spend-and-pay.md` and `x402-credit-pay.md`.
 
 ## Install (sticky)
 
