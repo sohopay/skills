@@ -51,11 +51,15 @@ Never call `create_agent_session` / `get_session_context` / `revoke_session` on 
 
 `request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
-Wallet proof, the token request, and payment execution are all consent-critical. At each of those points:
+**Wallet proof** (onboarding) is consent-critical — STOP and wait before asking the borrower to sign:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-After execute (non-402 path): a mined `tx_hash` is not final. Base L2 `finalized` often lags ~15–19 minutes; confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — tell the operator to expect a lag, and re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
+On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token` or for signing / `X-PAYMENT` after first-time merchant consent — complete merchant-as-settler silently (see `{SKILLS_BASE}/x402-credit-pay.md`). Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource.
+
+On the **MCP confirm-only** path (`execute_payment`), STOP before payment execution as usual.
+
+After execute (non-402 path): a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 
 **For HTTP 402 merchant paywalls, merchant-as-settler (`X-PAYMENT`) is mandatory after signing** — do not call `execute_payment`. See `{SKILLS_BASE}/x402-credit-pay.md`.
 

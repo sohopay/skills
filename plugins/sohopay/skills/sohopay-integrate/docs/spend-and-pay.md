@@ -44,9 +44,11 @@ curl -fsSL {SKILLS_BASE}/human-direct-flow.md
 
 High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
 
-Before executing any payment (especially the first or any high-risk one):
+Before executing any payment on the **MCP confirm-only** path (`execute_payment`):
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+HTTP 402 merchant-as-settler does **not** use `execute_payment` — first-time merchant consent only; see `{SKILLS_BASE}/x402-credit-pay.md`.
 
 ## First-time merchant (`RISK_FIRST_TIME_MERCHANT`)
 
@@ -60,7 +62,7 @@ When `evaluate_spend_policy` or a later settle-time 402 returns `RISK_FIRST_TIME
 
 > Please accept first-time spend consent for this merchant (`merchantUuid` / on-chain `merchantId`). After you accept, I will not ask again for this merchant when you request pay.
 
-- If they **accept**, remember that merchant (UUID **and** bytes32 `merchantId` from the 402 challenge) for this borrower in the conversation. Later "pay here" requests **to that same merchant** must **not** re-ask first-time-merchant consent. Still honour the usual STOP gates for token, signing, and payment execution.
+- If they **accept**, remember that merchant (UUID **and** bytes32 `merchantId` from the 402 challenge) for this borrower in the conversation. Later "pay here" / x402 requests **to that same merchant** must **not** re-ask — complete merchant-as-settler with no further operator prompts (`request_borrower_token` refresh, signing, `X-PAYMENT`, settle). MCP `execute_payment` (non-402) still requires its usual STOP.
 - If they **refuse**, stop. Do not retry policy blindly.
 
 ### Signing-time vs settle-time (two merchant keys)
@@ -105,30 +107,34 @@ After a settle-time first-time DENY (and after operator consent if not already g
 | `payload` | Must be a **JSON object**, not a string. Pass `{}` when you have no precomputed hash — never a stringified `"{}"`. Only `payload.payload_hash` is forwarded to the backend; every other key stays local. |
 | `signing_purpose` / `payload_type` | Required by the tool schema but **not forwarded**; the gateway derives signing mode from `decision_id`. |
 
-Before requesting a signature:
+Before requesting a signature on the **MCP confirm-only** path (`execute_payment`):
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+On an **HTTP 402 / merchant-as-settler** payRequest, do **not** STOP for signing after first-time merchant consent — see § First-time merchant and `{SKILLS_BASE}/x402-credit-pay.md`.
 
 ## Settlement finality and available credit (tell the operator)
 
 `execute_payment` returning `202` / `SUBMITTED` with a `tx_hash` and `settlement_id` means the settle tx was **submitted**, not that credit has finished drawing down.
 
+Confirmation uses **`l2_confirmations`** (L2 receipt + confirmation depth, typically depth 2) — expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s). Poll about every **2 seconds**. Unlock and off-chain credit drawdown still happen only on `CONFIRMED`.
+
 | Status | Meaning |
 |--------|---------|
 | `CREATED` | Row created, not yet submitted |
 | `SUBMITTED` | On-chain tx submitted |
-| `PENDING_CONFIRMATION` | Waiting for Base L2 `finalized` (~15–19 min typical). Same `txHash` is re-polled — **not** a new payment |
-| `CONFIRMED` | Dual-confirm + finality passed; off-chain credit **drawdown** applied |
+| `PENDING_CONFIRMATION` | Waiting for L2 receipt + confirmation depth (`l2_confirmations`). Same `txHash` is re-polled — **not** a new payment. Typical ~5s after receipt |
+| `CONFIRMED` | L2 confirmation depth reached; off-chain credit **drawdown** applied |
 | `FAILED` | Terminal failure |
-| `TIMED_OUT` | Non-terminal past ~30 minutes — surface to operator; do not invent a second payment |
+| `TIMED_OUT` | Non-terminal past the confirmation mine window — surface to operator; do not invent a second payment |
 | `DISPUTED` | Dual-confirm mismatch |
 
 **Agent instructions:**
 
-1. After execute, poll `get_settlement_status` with **`settlement_id`** (UUID from execute). Optional legacy fallback: numeric `job_id` only. **`payment_id` is not accepted.** The tool schema marks only `borrower_id` as required, but you must still supply one of `settlement_id` or `job_id`.
-2. Tell the operator that **available credit / outstanding balance may lag** until `CONFIRMED`. `get_outstanding_balance` can look unchanged for many minutes even when Basescan already shows the tx.
+1. After execute (or merchant 202), poll `get_settlement_status` with **`settlement_id`** (UUID from execute / 202 body). Optional legacy fallback: numeric `job_id` only. **`payment_id` is not accepted.** The tool schema marks only `borrower_id` as required, but you must still supply one of `settlement_id` or `job_id`.
+2. Tell the operator that **available credit / outstanding balance update only after `CONFIRMED`** (usually within seconds under `l2_confirmations`). Do not treat `202` / `tx_hash` alone as drawn-down credit.
 3. Do **not** treat confirmation retries as duplicate spends; the confirmation worker only polls the existing `txHash`.
-4. If status stays non-terminal past ~30 minutes, surface `TIMED_OUT` (or stuck `PENDING_CONFIRMATION`) to the operator — admin re-drive may be required; do not invent a second payment.
+4. If status stays non-terminal past the confirmation window, surface `TIMED_OUT` (or stuck `PENDING_CONFIRMATION`) to the operator — admin re-drive may be required; do not invent a second payment.
 
 ## MCP tools (catalog v2)
 
