@@ -11,11 +11,10 @@
 # deploy job is skipped rather than failing at credential load. Content correctness is
 # covered independently by validate.yml on every push and PR.
 #
-# TODO(confirm): index.json now uses the versioned prod path /skills/v1/<name>.md,
-# but the S3 sync below still publishes under /skills/. Before CDN go-live, update
-# the S3 key prefix (and CloudFront invalidation paths) to /skills/v1/ to match the
-# index, or add a CloudFront rewrite. Not changed here to avoid altering the
-# not-yet-deployed pipeline logic.
+# Skill docs publish under the versioned prefix /skills/v1/ to match both
+# .well-known/agent-skills/index.json (url = .../skills/v1/<name>.md) and the MCP
+# server's SOHO_SKILLS_BASE default (https://agents.sohopay.xyz/skills/v1). Cut a
+# /skills/v2/ prefix for breaking doc changes so connected agents keep resolving.
 name: Deploy agent skills
 
 on:
@@ -93,7 +92,7 @@ jobs:
                 cp "$skill_file" "$SKILLS_DIR/$skill_file"
               done
 
-          aws s3 sync "$SKILLS_DIR" "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/skills/" \
+          aws s3 sync "$SKILLS_DIR" "s3://${{ secrets.AGENTS_SKILLS_BUCKET }}/skills/v1/" \
             --delete \
             --cache-control "$CACHE_CONTROL" \
             --content-type "text/markdown; charset=utf-8"
@@ -104,4 +103,4 @@ jobs:
         run: |
           aws cloudfront create-invalidation \
             --distribution-id "${{ secrets.AGENTS_SKILLS_CF_ID }}" \
-            --paths "/skills/*" "/.well-known/agent-skills/index.json" "/llms-full.txt"
+            --paths "/skills/v1/*" "/.well-known/agent-skills/index.json" "/llms-full.txt"
