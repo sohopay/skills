@@ -1,6 +1,6 @@
 ---
 name: sohopay-integrate
-description: Integrates AI agents with SohoPay MCP gateway, borrower onboarding, delegated sessions, spend/policy/payment flows, and x402 on-chain settlement. Use when building SohoPay borrowers, agent sessions, wallet-proof signing, MCP scopes, or HTTP 402 credit payments.
+description: Integrates AI agents with the SohoPay MCP gateway, borrower onboarding, spend/policy/signing flows, and x402 on-chain settlement. Use when building SohoPay borrowers, wallet-proof signing, MCP scopes, or HTTP 402 credit payments.
 ---
 
 # SohoPay Integration
@@ -57,8 +57,7 @@ Read each from the local bundle first, falling back to the network — e.g.
 | Staging setup | `setup-staging.md` |
 | Staging MCP connection | `mcp-connect-staging.md` |
 | Borrower onboarding | `borrower-onboard.md` |
-| Human-direct (no session) | `human-direct-flow.md` |
-| Agent sessions | `agent-session.md` |
+| Human-direct (default operate path) | `human-direct-flow.md` |
 | Spend / pay | `spend-and-pay.md` |
 | x402 settlement | `x402-credit-pay.md` |
 | Idempotency | `idempotency.md` |

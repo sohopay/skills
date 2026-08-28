@@ -56,7 +56,7 @@ All MCP gateway paths require `x-soho-service-token` (set by the MCP server). Bo
 borrower_id = whoami.borrower_id ?? whoami.principal_id
 ```
 
-Exception — **delegated agent sessions**: principal, borrower, and executor can be three different parties (see `{SKILLS_BASE}/agent-session.md` § Principal model). When acting through a session, use the explicit `borrower_id` and do not substitute `principal_id`, which there identifies the calling agent rather than the credit owner.
+This substitution holds for the human-direct flow (the default), where the caller is the borrower. If you ever hold an explicit `borrower_id` that differs from `principal_id`, use the explicit `borrower_id` — `principal_id` identifies the caller, not necessarily the credit owner.
 
 **Wallet and onboarding state:** `whoami` cannot supply these. Call `get_borrower_status`, which returns `wallet_address`, `kyc_status`, `prequal_status`, and `wallet_proof_verified` from the backend.
 
@@ -158,6 +158,5 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 
 ## Next steps
 
-- Agent session: `curl -fsSL {SKILLS_BASE}/agent-session.md`
-- Human-direct: `curl -fsSL {SKILLS_BASE}/human-direct-flow.md`
+- Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md`
 - Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`

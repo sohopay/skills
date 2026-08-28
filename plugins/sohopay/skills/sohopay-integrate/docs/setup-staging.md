@@ -157,25 +157,16 @@ The token request then grants real spending scopes. Before requesting the OAuth 
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-## Step 7: Choose delegation model
+## Step 7: Operate — human-direct flow
 
-- **Delegated agent session** (agent acts for a borrower):
+The borrower acts directly (the default operate path):
 
-  ```bash
-  cat ~/.claude/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
-    || cat ~/.agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
-    || cat ~/.config/agents/skills/sohopay-integrate/docs/agent-session.md 2>/dev/null \
-    || curl -fsSL {SKILLS_BASE}/agent-session.md
-  ```
-
-- **Human-direct** (borrower acts directly, no session):
-
-  ```bash
-  cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-    || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-    || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-    || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
-  ```
+```bash
+cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+```
 
 ## Step 8: Operate — spend, policy, payment
 
