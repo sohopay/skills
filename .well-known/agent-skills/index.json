@@ -1,7 +1,7 @@
 {
   "version": "1.0",
   "name": "SohoPay Agent Skills",
-  "description": "Skill index for AI agents integrating with SohoPay MCP gateway (catalog v2), merchant-as-settler x402, and credit settlement.",
+  "description": "Skill index for AI agents integrating with the SohoPay MCP gateway, merchant-as-settler x402, and credit settlement.",
   "dev_base": "https://raw.githubusercontent.com/sohopay/skills/main",
   "skills": [
     {
@@ -19,7 +19,7 @@
     {
       "name": "mcp-connect",
       "title": "Connect to SohoPay MCP Server",
-      "description": "Per-harness registration (Claude Code, Cursor, Codex, Hermes, ChatGPT) for hosted or local MCP; catalog v2; idempotency_key for header-less clients.",
+      "description": "Per-harness registration (Claude Code, Cursor, Codex, Hermes, ChatGPT) for hosted or local MCP; read the live tools/list; idempotency_key for header-less clients.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect.md"
     },
     {
@@ -35,21 +35,15 @@
       "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
-      "name": "agent-session",
-      "title": "SohoPay Delegated Agent Sessions",
-      "description": "Create, read, and revoke sessions; Mcp-Session-Id vs SohoPay session_id; revoke returns 200.",
-      "url": "https://agents.sohopay.xyz/skills/v1/agent-session.md"
-    },
-    {
       "name": "human-direct-flow",
-      "title": "SohoPay Human-Direct Flow (Catalog v2)",
-      "description": "19-tool catalog v2 path without delegated sessions: whoami, onboard, spend, sign, execute, poll by settlement_id.",
+      "title": "SohoPay Human-Direct Flow",
+      "description": "Default operate path: whoami, onboard, spend, policy, sign, x402 merchant-as-settler, poll by settlement_id.",
       "url": "https://agents.sohopay.xyz/skills/v1/human-direct-flow.md"
     },
     {
       "name": "spend-and-pay",
-      "title": "SohoPay Spend, Policy, and Payment",
-      "description": "Spend intents (merchant XOR merchant_id), policy, intentSig via get_signing_status, execute, poll by settlement_id.",
+      "title": "SohoPay Spend, Policy, and Signing",
+      "description": "Spend intents (merchant XOR merchant_id), policy, intentSig via get_signing_status, x402 settle, poll by settlement_id.",
       "url": "https://agents.sohopay.xyz/skills/v1/spend-and-pay.md"
     },
     {
