@@ -7,13 +7,13 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** pays HTTP 402 resource servers using SohoPay credit. **Primary path:** merchant-as-settler — the agent signs a PaymentIntent via MCP and retries with `X-PAYMENT`; the **merchant** calls SohoPay facilitator verify + settle. **Before running it:** the payer is onboarded (wallet proof + spend/signing scopes) and you have a merchant resource URL (`{MERCHANT_BASE_URL}`).
+**What this skill does:** pays HTTP 402 resource servers using SohoPay credit. **Primary path:** merchant-as-settler — the agent signs a PaymentIntent via MCP and retries with `X-PAYMENT`; the **merchant** calls SohoPay facilitator verify + settle. A composite `prepare_x402_payment` call and the x402 V2 `PAYMENT-SIGNATURE` retry header are documented in § Coming below — **check the connected server's `tools/list` first**; if `prepare_x402_payment` is absent, follow § Primary as written (that is the default today). **Before running it:** the payer is onboarded (wallet proof + spend/signing scopes) and you have a merchant resource URL (`{MERCHANT_BASE_URL}`).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
 Distinct from MCP orchestration: x402 is the HTTP paywall rail. MCP still creates the spend intent, evaluates policy, and produces the `intentSig`.
 
-**Default for any merchant URL that returns HTTP 402.** Use this skill — not MCP `execute_payment`, and not `create_agent_session` on the human-direct path.
+**Default for any merchant URL that returns HTTP 402.** Use this skill. `execute_payment` and `create_agent_session` are not published tools — there is no MCP confirm-pay or delegated-session alternative to fall back to.
 
 ## Human-direct paywall checklist (mandatory)
 
@@ -30,8 +30,8 @@ HTTP 402 merchant paywall (human-direct):
 8. On 202: poll get_settlement_status(settlementId); replay SAME X-PAYMENT once CONFIRMED
 
 Do NOT:
-- create_agent_session / pass session_id on this path
-- call execute_payment (merchant settles via facilitator)
+- pass session_id on this path — create_agent_session is not a published tool
+- reach for execute_payment — it is not a published tool; the merchant settles via facilitator
 - send payload as a stringified "{}"
 - mint a new spend intent when retrying a 202
 ```
@@ -180,6 +180,50 @@ API key must be bound to the same merchant UUID as the resource server. Unbound 
 
 ---
 
+## Coming: composite `prepare_x402_payment` (not yet available)
+
+**Not live yet.** This section documents the target flow once [`prepare_x402_payment`](https://github.com/sohopay/sohopay-mcp-server/issues/80) ships — the tool does not exist in the MCP catalog today, and is itself blocked on an `@sohopay/mcp-contract@0.4.0` pin (mcp-server#79) landing first. **The `tools/list` check is the only gate that matters** — do not treat "not yet available" as a permanent state; check live, every time. If `prepare_x402_payment` is absent, use § Primary above (`create_spend_intent` → `evaluate_spend_policy` → `sign_transaction` → `get_signing_status` → `X-PAYMENT`) — that path stays fully supported and does not change.
+
+Once available, the composite call collapses the first three MCP round-trips into one:
+
+```text
+GET {MERCHANT_BASE_URL}/api/premium
+  → 402 + challenge
+  → MCP: prepare_x402_payment (challenge fields; Idempotency-Key)
+  → response already COMPLETED with signature? skip get_signing_status
+     else: poll get_signing_status until COMPLETED
+  → Build retry header (see below) → GET same resource with it
+  → 200 resource | 202 retry same header | 402 with reason
+```
+
+### Retry header: `PAYMENT-SIGNATURE` (x402 V2), not `X-PAYMENT`
+
+The [x402 V2 launch](https://x402.org/x402-v2-launch/) renames the retry header from `X-PAYMENT` to **`PAYMENT-SIGNATURE`**. Once `prepare_x402_payment` is live:
+
+- If the response includes `header_name` / `header_value`, use them **verbatim** — do not re-derive, rename, or re-encode them. This is the only reliable path in `prepare_x402_payment`'s first shipped version.
+- If `header_name` / `header_value` are absent, the exact `PAYMENT-SIGNATURE` wire encoding is **not yet finalized** — it is the subject of backend#948 ("package `PAYMENT-SIGNATURE` header from merchant-demo capture"), still open against a live staging capture (merchant-demo#2). Until #948 lands, treat "base64 of the same envelope as § Build X-PAYMENT, sent as `PAYMENT-SIGNATURE` instead of `X-PAYMENT`" as a provisional best-guess, not a verified contract — confirm against #948 (or a live merchant response) before hardcoding it into automation. This also includes whether the envelope's own `x402Version` field bumps past `2` under the V2 retry-header rename — #948 has not confirmed either way.
+
+### Skip the signing poll once already `COMPLETED`
+
+`prepare_x402_payment` may return `COMPLETED` with `signature` in the same response (synchronous signing). Check the response before polling — only fall back to `get_signing_status` when it is still pending. The same check applies to `sign_transaction` on the day it starts echoing a synchronous `intentSig`: do not poll a status that has already arrived.
+
+### `execute_payment` and `get_settlement_status`
+
+`execute_payment` is not a published tool — there is no separate "confirm-pay" rail to confuse with this one. `get_settlement_status` is scope-gated exactly as in § Primary, **not** granted automatically: `prepare_x402_payment` requests only `spend:intent:create`, `policy:evaluate`, and `signing:request` (mcp-server#80) — it does not request `payment:read`. So after a merchant **202**:
+
+- If the agent separately holds `payment:read`, poll `get_settlement_status` by `settlement_id` as in § Primary.
+- Otherwise, fall back to replaying the identical retry header — do not request `payment:read` just to poll; settle is idempotent for 72h and replay is the documented fallback.
+
+### First-time merchant with `prepare_x402_payment`
+
+A 403 with `reason_codes` (`RISK_FIRST_TIME_MERCHANT`) from `prepare_x402_payment` follows the same once-per-merchant consent as § First-time merchant at signing vs settle above:
+
+1. If the operator has not yet accepted first-time spend for this merchant, ask once. After they accept, do not re-ask on later pays to that merchant.
+2. Issue a **new** `prepare_x402_payment` call. Reusing the **same** `idempotency_key` is safe here — a 403 is not cached, so the retry re-evaluates policy instead of replaying the denial.
+3. A `prepare_x402_payment` result of `ALLOW` / `COMPLETED` is **not** merchant unlock — unlock is still a settle-time `CONFIRMED`, exactly as in § Primary. A later 402 with `POLICY_DECISION_DENIED` at settle-time is possible even after an ALLOW here; handle it the same way as a settle-time denial on the `X-PAYMENT` path.
+
+---
+
 ## Secondary: borrower-direct settle (`/api/v2/x402`)
 
 Use when the **agent/borrower** settles against SohoPay directly (no merchant facilitator unlock). Canonical mount: **`{API_BASE}/api/v2/x402/`**.
@@ -215,6 +259,7 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 - [ ] Poll confirmation; handle `CONFIRMED` / `FAILED` / `TIMED_OUT` / `DISPUTED`
 - [ ] Operator informed about available-credit lag
 - [ ] First-time merchant: once-per-merchant consent; after accept, later pays need no further prompts; new envelope after settle-time `RISK_FIRST_TIME_MERCHANT` (not a cached-403 replay)
+- [ ] Checked `tools/list` for `prepare_x402_payment` before using § Coming — not present today, § Primary is the live path
 
 ## Next steps
 
