@@ -33,6 +33,8 @@ curl -fsSL {SKILLS_BASE}/human-direct-flow.md
 4. **Settle via x402** — send the merchant-as-settler `X-PAYMENT` envelope (see `{SKILLS_BASE}/x402-credit-pay.md`) → keep `settlement_id`
 5. **Poll settlement** — `get_settlement_status` with **`settlement_id`** until a **terminal** status
 
+For the HTTP 402 rail specifically, a composite `prepare_x402_payment` call (steps 1–3 in one round-trip, retry header `PAYMENT-SIGNATURE` instead of `X-PAYMENT`) is documented in `{SKILLS_BASE}/x402-credit-pay.md` § Coming. Check the connected server's `tools/list` — if `prepare_x402_payment` is absent, follow steps 1–3 above as written.
+
 High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
 
 Before signing or paying (first-time or any high-risk one):
@@ -86,7 +88,7 @@ After a settle-time first-time DENY (and after operator consent if not already g
 
 1. Call `sign_transaction` with `borrower_id`, `signing_purpose`, `payload_type`, `payload`, and **`policy_decision_id`** (the `decision_id` returned by `evaluate_spend_policy`).
 2. Keep `request_id` from the accepted response. The response also echoes **`payment_intent`** — `agentId`, `merchantId`, `asset`, `amount`, `feeAmount`, `orderRef`, `nonce`, `deadline`. Keep it: these are the exact wire values an `X-PAYMENT` envelope needs, and `nonce` / `deadline` are not available from any other tool.
-3. Poll `get_signing_status` until `COMPLETED`.
+3. Poll `get_signing_status` until `COMPLETED` — but check the `sign_transaction` response first: if it is already `COMPLETED` with a `signature`, skip the poll rather than polling a status that has already arrived. The same check applies to the coming `prepare_x402_payment` composite call — see `{SKILLS_BASE}/x402-credit-pay.md` § Coming.
 4. The returned **`signature`** is the unredacted **`intentSig`** (Envelope 1 over PaymentIntent). Use it for merchant `X-PAYMENT` envelopes and for borrower-direct x402 settle. It is the only tool response field exempt from MCP redaction.
 
 ### sign_transaction — field rules
@@ -140,7 +142,7 @@ Confirmation uses **`l2_confirmations`** (L2 receipt + confirmation depth, typic
 | `create_repayment` | repayment:execute | — | — | Yes |
 | `execute_repayment` | repayment:execute | — | — | Yes |
 
-Payment itself is the x402 `X-PAYMENT` rail, not an MCP tool — see `{SKILLS_BASE}/x402-credit-pay.md`.
+Payment itself is the x402 `X-PAYMENT` rail, not an MCP tool — see `{SKILLS_BASE}/x402-credit-pay.md`. `execute_payment` is not a published tool; there is no separate MCP confirm-pay call to reach for instead.
 
 ## Backend endpoints
 

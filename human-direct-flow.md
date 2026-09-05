@@ -34,6 +34,8 @@ whoami (optional if already authenticated)
   → get_settlement_status (poll by settlement_id until terminal)
 ```
 
+A composite `prepare_x402_payment` call would collapse `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction` into one round-trip and retry the merchant with `PAYMENT-SIGNATURE` instead of `X-PAYMENT` — see `{SKILLS_BASE}/x402-credit-pay.md` § Coming. Check the connected server's `tools/list`: if `prepare_x402_payment` is absent, the steps above are the live path.
+
 If `whoami` scopes are only `borrower:token`, that is base/expired token state — **re-request** `request_borrower_token` with spend/policy/signing scopes before creating a spend intent. It is not an onboarding failure.
 
 `SESSION_GATE_SKIPPED_NO_SESSION` is expected on this path and needs no action. First-time merchant (`RISK_FIRST_TIME_MERCHANT`) is a **once-per-merchant** operator consent, then a possible new envelope after settle-time deny — see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
