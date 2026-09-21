@@ -13,7 +13,7 @@ MCP tool descriptions summarize call-time rules (XOR fields, required IDs); **th
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
-CRITICAL: merchant payment is **x402 merchant-as-settler** (`X-PAYMENT`), not an MCP confirm-pay call. After signing, follow `{SKILLS_BASE}/x402-credit-pay.md` (merchant-as-settler + `X-PAYMENT`). Agents do not invent merchant payments out of band.
+CRITICAL: merchant payment is **x402 merchant-as-settler**, not an MCP confirm-pay call. For HTTP 402s prefer **`prepare_x402_payment`** (Protocol V2 may return `VOUCHER_ISSUED`; V1 returns `COMPLETED`) — follow `{SKILLS_BASE}/x402-credit-pay.md`. Agents do not invent merchant payments out of band.
 
 Pass `idempotency_key` (UUID v4) on every write tool when the harness cannot set HTTP headers — see `{SKILLS_BASE}/idempotency.md`.
 
@@ -27,11 +27,17 @@ curl -fsSL {SKILLS_BASE}/human-direct-flow.md
 
 ## Flow
 
+**HTTP 402 (preferred):** `prepare_x402_payment` → branch on status (`VOUCHER_ISSUED` / `COMPLETED`) → merchant header → poll `get_settlement_status`. Details: `{SKILLS_BASE}/x402-credit-pay.md`. Register the agent Ed25519 workload key first when V2 is on — `{SKILLS_BASE}/borrower-onboard.md` § Protocol V2 agent workload key.
+
+**Non-x402 spend / V1 multi-step (when V2 is off or prepare unavailable):**
+
 1. **Create spend intent** — `create_spend_intent` / `POST /api/v1/spend/intents`
 2. **Evaluate policy** — `evaluate_spend_policy` / `POST /api/v1/policy/evaluate`
 3. **Sign PaymentIntent** — `sign_transaction` with `policy_decision_id` (binds the evaluated intent, keeps `orderRef` byte-identical) → poll `get_signing_status` for `signature` (`intentSig`)
-4. **Settle via x402** — send the merchant-as-settler `X-PAYMENT` envelope (see `{SKILLS_BASE}/x402-credit-pay.md`) → keep `settlement_id`
+4. **Settle via x402** — send the merchant-as-settler `X-PAYMENT` envelope (see `{SKILLS_BASE}/x402-credit-pay.md` § V1 fallback) → keep `settlement_id`
 5. **Poll settlement** — `get_settlement_status` with **`settlement_id`** until a **terminal** status
+
+Under Protocol V2, `sign_transaction` may return **`CUSTODIAL_SIGNING_DISABLED`**. For HTTP 402s do **not** invent a custodial signature — use `prepare_x402_payment` + agent voucher sign instead.
 
 High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
 
@@ -84,10 +90,12 @@ After a settle-time first-time DENY (and after operator consent if not already g
 
 ## Signing and intentSig
 
+Use this section for **non-x402 spend** and the **V1 multi-step** path. For HTTP 402s under Protocol V2, prefer `prepare_x402_payment` — if prepare returns `VOUCHER_ISSUED` or `sign_transaction` returns `CUSTODIAL_SIGNING_DISABLED`, do **not** use this custodial path.
+
 1. Call `sign_transaction` with `borrower_id`, `signing_purpose`, `payload_type`, `payload`, and **`policy_decision_id`** (the `decision_id` returned by `evaluate_spend_policy`).
 2. Keep `request_id` from the accepted response. The response also echoes **`payment_intent`** — `agentId`, `merchantId`, `asset`, `amount`, `feeAmount`, `orderRef`, `nonce`, `deadline`. Keep it: these are the exact wire values an `X-PAYMENT` envelope needs, and `nonce` / `deadline` are not available from any other tool.
 3. Poll `get_signing_status` until `COMPLETED`.
-4. The returned **`signature`** is the unredacted **`intentSig`** (Envelope 1 over PaymentIntent). Use it for merchant `X-PAYMENT` envelopes and for borrower-direct x402 settle. It is the only tool response field exempt from MCP redaction.
+4. The returned **`signature`** is the unredacted **`intentSig`** (Envelope 1 over PaymentIntent). Use it for merchant `X-PAYMENT` envelopes and for borrower-direct x402 settle. It is the only tool response field exempt from MCP redaction on this path.
 
 ### sign_transaction — field rules
 
@@ -131,23 +139,27 @@ Confirmation uses **`l2_confirmations`** (L2 receipt + confirmation depth, typic
 
 | Tool | Scope | Wallet proof | KYC | Idempotent |
 |------|-------|:------------:|:---:|:----------:|
+| `register_agent_workload_key` | borrower:token | — | — | Yes |
 | `create_spend_intent` | spend:intent:create | ✅ | ✅ | Yes |
 | `evaluate_spend_policy` | policy:evaluate | — | — | Yes |
 | `sign_transaction` | signing:request | ✅ | — (+ 2FA-equiv) | Yes |
+| `prepare_x402_payment` | spend + policy + signing | ✅ | ✅ | Yes |
 | `get_signing_status` | signing:request | — | — | No |
 | `get_settlement_status` | payment:read | — | — | No |
 | `get_outstanding_balance` | repayment:read | — | — | No |
 | `create_repayment` | repayment:execute | — | — | Yes |
 | `execute_repayment` | repayment:execute | — | — | Yes |
 
-Payment itself is the x402 `X-PAYMENT` rail, not an MCP tool — see `{SKILLS_BASE}/x402-credit-pay.md`.
+Payment itself is the x402 merchant header rail (`PAYMENT-SIGNATURE` / `X-PAYMENT`), not an MCP settle tool — see `{SKILLS_BASE}/x402-credit-pay.md`.
 
 ## Backend endpoints
 
 | Method | Path | Scope |
 |--------|------|-------|
+| POST | `/api/v1/agents/:terminalId/keys` | borrower:token |
 | POST | `/api/v1/spend/intents` | spend:intent:create |
 | GET | `/api/v1/spend/intents/:id` | spend:intent:create |
+| POST | `/api/v1/spend/x402/prepare` | spend + policy + signing |
 | POST | `/api/v1/policy/evaluate` | policy:evaluate |
 | POST | `/api/v1/signing/request` | signing:request |
 | GET | `/api/v1/signing/request/:id` | signing:request |

@@ -24,7 +24,8 @@ Pass `idempotency_key` (UUID v4) on write tools when the harness cannot set HTTP
 2. **Wallet proof** — challenge → sign off-device → submit
 3. **Status** — `get_borrower_status` / `GET /api/v1/borrowers/:id/status`
 4. **Token** — `request_borrower_token` / `POST /api/v1/borrowers/token` with `requested_scopes[]`
-5. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
+5. **Protocol V2 workload key** (before any V2 x402 prepare) — agent Ed25519 keygen → `register_agent_workload_key`
+6. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
 
 All MCP gateway paths require `x-soho-service-token` (set by the MCP server). Borrower-scoped routes also need `x-soho-borrower-id`.
 
@@ -126,6 +127,35 @@ The token grants real spending scopes. Before requesting it:
 
 Ungated scopes are **dropped, not fatal**. Re-request after wallet proof or KYC completes.
 
+## Protocol V2 agent workload key
+
+Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). Without a registered key, prepare returns `X402_AGENT_KEY_NOT_REGISTERED`. Tool ships with MCP catalog **v5** ([sohopay-mcp-server#94](https://github.com/sohopay/sohopay-mcp-server/issues/94)); backend alignment [sohopay-backend#1144](https://github.com/sohopay/sohopay-backend/issues/1144).
+
+**Key ownership:** the **agent** (client runtime) generates and holds the Ed25519 workload keypair. SohoPay / MCP never see the private key. Do **not** ask the MCP host to keygen or store the private key. Lifecycle alias: `onboard_sohopay_agent` → tool name `register_agent_workload_key`.
+
+### Steps (once per terminal)
+
+1. Generate an Ed25519 keypair locally. Keep the private key only in agent-held storage.
+2. Build a public JWK `{ kty: "OKP", crv: "Ed25519", x }` — **never** include private material (`d` is rejected).
+3. Compute `jkt` (RFC 7638 JWK thumbprint of `public_jwk`).
+4. Create a single-use `nonce` and `iat` (unix seconds).
+5. Sign PoP over canonicalize(`{ borrowerId, terminalId, jkt, nonce, iat }`) with the workload private key → `pop_signature`.
+6. Call `register_agent_workload_key` → `POST /api/v1/agents/{terminal_id}/keys`.
+
+| Field | Detail |
+|-------|--------|
+| `borrower_id` | Canonical borrower UUID (`whoami.borrower_id ?? whoami.principal_id`) |
+| `terminal_id` | Optional; omit to use `SOHO_TERMINAL_ID` or the host default |
+| `public_jwk` | `{ kty: "OKP", crv: "Ed25519", x }` only — no `d` |
+| `jkt` | RFC 7638 thumbprint; gateway recomputes and must match |
+| `nonce` | Single-use PoP nonce (agent-generated) |
+| `iat` | Unix seconds; gateway enforces skew |
+| `pop_signature` | Ed25519 signature over the PoP payload |
+| Scope | `borrower:token` |
+| Idempotent | Yes — pass `idempotency_key` when the harness cannot set headers |
+
+Register once per terminal before the first V2 prepare. On later pays, reuse the same key. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
+
 ## Authorization context
 
 `POST /api/v1/auth/authorization-context`
@@ -155,6 +185,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
 | `get_borrower_status` | Onboarding status |
 | `request_borrower_token` | Scope-gated token |
+| `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
 
 ## Next steps
 

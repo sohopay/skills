@@ -26,6 +26,14 @@ whoami (optional if already authenticated)
   → register_borrower
   → request_signature_challenge + submit_signature (wallet proof)
   → request_borrower_token   # spend/policy/signing scopes — whoami often shows only borrower:token until then
+  → register_agent_workload_key   # Protocol V2: agent Ed25519 keygen + PoP (once per terminal); MCP never holds the private key
+  → HTTP 402: prepare_x402_payment  →  see {SKILLS_BASE}/x402-credit-pay.md
+       · VOUCHER_ISSUED (V2): agent signs voucher → PAYMENT-SIGNATURE → retry merchant
+       · COMPLETED (V1): header_name/header_value or payment_intent+signature → retry
+       · X402_AGENT_KEY_NOT_REGISTERED: register key, retry SAME idempotency_key
+  → get_settlement_status (poll by settlement_id until terminal)
+
+V1 / when V2 is off (multi-step fallback — non-x402 spend, or prepare unavailable):
   → create_spend_intent (include order_ref / resource_identifier when using x402)
   → evaluate_spend_policy
   → sign_transaction (policy_decision_id; payload: {} as object; keep payment_intent echo)
@@ -38,13 +46,13 @@ If `whoami` scopes are only `borrower:token`, that is base/expired token state �
 
 `SESSION_GATE_SKIPPED_NO_SESSION` is expected on this path and needs no action. First-time merchant (`RISK_FIRST_TIME_MERCHANT`) is a **once-per-merchant** operator consent, then a possible new envelope after settle-time deny — see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
 
-`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
+`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `prepare_x402_payment` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
 **Wallet proof** (onboarding) is consent-critical — STOP and wait before asking the borrower to sign:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token` or for signing / `X-PAYMENT` after first-time merchant consent — complete merchant-as-settler silently (see `{SKILLS_BASE}/x402-credit-pay.md`). Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource.
+On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token` or for signing / merchant retry after first-time merchant consent — complete merchant-as-settler silently (see `{SKILLS_BASE}/x402-credit-pay.md`). Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`.
 
 After the x402 settle submits: a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 

@@ -66,7 +66,7 @@ Note: MCP may still treat some of these as write tools and require `idempotency_
 
 ## MCP write tools that require idempotency
 
-`register_borrower`, `request_borrower_token`, `request_signature_challenge`, `submit_signature`, `create_agent_session`, `revoke_session`, `create_spend_intent`, `evaluate_spend_policy`, `execute_payment`, `sign_transaction`, `approve_credit_limit`, `create_repayment`, `execute_repayment`
+`register_borrower`, `request_borrower_token`, `register_agent_workload_key`, `request_signature_challenge`, `submit_signature`, `create_agent_session`, `revoke_session`, `create_spend_intent`, `evaluate_spend_policy`, `prepare_x402_payment`, `execute_payment`, `sign_transaction`, `approve_credit_limit`, `create_repayment`, `execute_repayment`
 
 ## Client guidance
 
