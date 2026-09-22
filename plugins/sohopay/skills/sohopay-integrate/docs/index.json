@@ -53,6 +53,12 @@
       "url": "https://agents.sohopay.xyz/skills/v1/x402-credit-pay.md"
     },
     {
+      "name": "authorize-agent",
+      "title": "SohoPay Authorize Agent (Borrower Grant)",
+      "description": "STOP on AGENT_AUTHORIZATION_REQUIRED: challenge → consent page wallet sign → submit grant; then retry prepare with the same payment idempotency key.",
+      "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
+    },
+    {
       "name": "idempotency",
       "title": "SohoPay Idempotency",
       "description": "idempotency_key tool arg for Cursor/ChatGPT, per-route TTLs, exempt routes, (userId, key) scope.",

@@ -60,6 +60,7 @@ Read each from the local bundle first, falling back to the network — e.g.
 | Human-direct (default operate path) | `human-direct-flow.md` |
 | Spend / pay | `spend-and-pay.md` |
 | x402 settlement | `x402-credit-pay.md` |
+| Authorize agent (borrower grant) | `authorize-agent.md` |
 | Idempotency | `idempotency.md` |
 
 ## Critical rules
