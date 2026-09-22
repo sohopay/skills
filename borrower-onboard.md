@@ -108,13 +108,17 @@ Consequences an agent must plan for:
 - Spending authority **lapses silently**. Scopes such as `spend:intent:create`, `signing:request`, and `payment:execute` stop applying once the token expires; nothing notifies you.
 - After expiry, `whoami` reports only the base scopes (commonly `["borrower:token"]`), **not** the scopes you requested earlier. That is expiry, not a dropped-scope failure — do not re-run onboarding to "fix" it.
 - **Re-request the token immediately before each spend**, not once at session start. A flow that pauses for operator consent, waits on settlement, or resumes minutes later will likely need a fresh token before signing or paying.
-- Re-requesting is routine and does not repeat wallet proof or KYC. It is still consent-critical — honour the STOP gate below each time.
+- Re-requesting is routine and does not repeat wallet proof or KYC.
 
 ### Consent
 
-The token grants real spending scopes. Before requesting it:
+The token grants real spending scopes.
+
+**Onboarding / first grant (setup):** before the first scoped token outside a payRequest:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+**HTTP 402 payRequest** (“pay” / merchant URL): call `request_borrower_token` **without** a STOP when refreshing scopes — the pay utterance already authorized the payment. Do **not** honour the onboarding STOP “each time” on pay.
 
 ### Dropped scope reason codes
 
@@ -133,9 +137,17 @@ Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). 
 
 **Key ownership:** the **agent** (client runtime) generates and holds the Ed25519 workload keypair. SohoPay / MCP never see the private key. Do **not** ask the MCP host to keygen or store the private key. Lifecycle alias: `onboard_sohopay_agent` → tool name `register_agent_workload_key`.
 
+**Fixed local path** (look here first on pay — do not grep all AgentStores / other chats):
+
+```text
+~/.agents/sohopay-agent-workload/secret.json
+```
+
+or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `{ private_key_base64url, public_jwk, jkt, terminal_id, borrower_id }`. Match `jkt` to `voucher.agentKeyJkt` when signing. Voucher recipe: `{SKILLS_BASE}/x402-credit-pay.md` § Protocol V2 sign recipe.
+
 ### Steps (once per terminal)
 
-1. Generate an Ed25519 keypair locally. Keep the private key only in agent-held storage.
+1. Generate an Ed25519 keypair locally. Persist the private key only at the fixed path above.
 2. Build a public JWK `{ kty: "OKP", crv: "Ed25519", x }` — **never** include private material (`d` is rejected).
 3. Compute `jkt` (RFC 7638 JWK thumbprint of `public_jwk`).
 4. Create a single-use `nonce` and `iat` (unix seconds).

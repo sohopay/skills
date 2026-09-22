@@ -44,15 +44,17 @@ V1 / when V2 is off (multi-step fallback — non-x402 spend, or prepare unavaila
 
 If `whoami` scopes are only `borrower:token`, that is base/expired token state — **re-request** `request_borrower_token` with spend/policy/signing scopes before creating a spend intent. It is not an onboarding failure.
 
-`SESSION_GATE_SKIPPED_NO_SESSION` is expected on this path and needs no action. First-time merchant (`RISK_FIRST_TIME_MERCHANT`) is a **once-per-merchant** operator consent, then a possible new envelope after settle-time deny — see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
+`SESSION_GATE_SKIPPED_NO_SESSION` is expected on this path and needs no action.
 
-`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Because this flow pauses at consent gates, the token often expires before signing — re-request it immediately before `create_spend_intent` / `prepare_x402_payment` / `sign_transaction` rather than once at the start. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
+**payRequest:** operator says “pay” / “pay here” / supplies a merchant 402 URL. That utterance **is** consent for the full x402 fast path (token refresh, prepare, voucher sign, merchant retry, first-time merchant for that merchant). Follow `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path — complete in one short turn; do **not** invent extra STOPs. `RISK_FIRST_TIME_MERCHANT` on a payRequest: treat as accepted and retry (same key on prepare 403); see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
+
+`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Re-request it immediately before `prepare_x402_payment` / spend when scopes are only `borrower:token`. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
 **Wallet proof** (onboarding) is consent-critical — STOP and wait before asking the borrower to sign:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token` or for signing / merchant retry after first-time merchant consent — complete merchant-as-settler silently (see `{SKILLS_BASE}/x402-credit-pay.md`). Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`.
+On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, voucher signing, merchant retry, or first-time merchant — complete merchant-as-settler silently. Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`. Still STOP for `authorize_agent` when prepare returns `AGENT_AUTHORIZATION_REQUIRED`.
 
 After the x402 settle submits: a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 

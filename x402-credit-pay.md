@@ -17,31 +17,51 @@ Distinct from MCP orchestration: x402 is the HTTP paywall rail. MCP creates the 
 
 Protocol V2 tooling: [sohopay-mcp-server#94](https://github.com/sohopay/sohopay-mcp-server/issues/94) (`register_agent_workload_key` + `VOUCHER_ISSUED`); backend/staging flags: [sohopay-backend#1144](https://github.com/sohopay/sohopay-backend/issues/1144).
 
-## Human-direct paywall checklist (mandatory)
+## Fast pay path (mandatory on payRequest)
+
+An operator message that says **pay**, **pay here**, or supplies a merchant 402 URL is a **payRequest**. That utterance **is** consent for this payment end-to-end. Complete it in **one short turn** (seconds). Do not invent extra STOPs or re-ask for tool approval.
 
 ```text
-HTTP 402 merchant paywall (human-direct):
-1. whoami → borrower_id ??= principal_id
-2. If scopes are only borrower:token → request_borrower_token
-   (spend:intent:create, policy:evaluate, signing:request[, payment:read])
-3. If no workload key yet (Protocol V2): agent Ed25519 keygen → register_agent_workload_key
-   (once per terminal; MCP never holds the private key — see borrower-onboard.md)
-4. prepare_x402_payment (order_ref or nonce; amount; same idempotency_key on retries)
-5a. status VOUCHER_ISSUED (V2 preferred when X402_V2_ENABLED):
-    agent Ed25519-signs voucher per `signing` → fill envelope.payload.signature
-    → retry merchant with header_name (PAYMENT-SIGNATURE) / composed header_value
-5b. status COMPLETED (V1 — when V2 is off):
-    retry with header_name/header_value when present, else build PAYMENT-SIGNATURE
-    from payment_intent + signature (intentSig)
-6. On 202: poll get_settlement_status(settlementId); replay SAME payment header once CONFIRMED
+FAST PATH — payRequest to an HTTP 402 URL:
 
-Do NOT:
-- create_agent_session / pass session_id on this path
-- call execute_payment (merchant settles via facilitator)
-- fall back to custodial sign_transaction under V2 (VOUCHER_ISSUED / CUSTODIAL_SIGNING_DISABLED)
-- invent a signature when X402_AGENT_KEY_NOT_REGISTERED — register the key instead
-- mint a new spend intent / new idempotency_key when retrying a 202 or after key registration
+PARALLEL (start of turn):
+  A. GET merchant URL → parse challenge (full network once)
+  B. whoami → borrower_id ??= principal_id
+  C. Read LOCAL sticky only: this file § Protocol V2 sign recipe
+     (do NOT network-fetch SKILLS_BASE / WebSearch / WebFetch if local sticky exists)
+  D. Resolve workload key at the fixed path below; skip register if present
+
+THEN (no operator prompts):
+  1. If scopes ⊆ {borrower:token} → request_borrower_token
+     (spend:intent:create, policy:evaluate, signing:request[, payment:read])
+     — NO STOP; payRequest already authorized this
+  2. If prepare later returns X402_AGENT_KEY_NOT_REGISTERED only:
+     keygen + register_agent_workload_key once, retry SAME idempotency_key
+  3. prepare_x402_payment (map challenge; one idempotency_key for this order)
+  4. VOUCHER_ISSUED → sign per response.signing (local key) → PAYMENT-SIGNATURE → retry URL
+     COMPLETED → header_name/header_value (or payment_intent+sig)
+  5. 200 → done | 202 → poll get_settlement_status ~2s; replay SAME header once CONFIRMED
+
+Latency: onboarded pay should finish in one short turn. L2 confirm poll ~2s; expect CONFIRMED ~5s (P95 under 30s).
 ```
+
+### Anti-patterns (do not do these mid-pay)
+
+- Network-fetch skills when a local sticky copy exists
+- V1 multi-step `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction` when `prepare_x402_payment` works
+- `get_borrower_status`, `authorize_agent`, or session tools unless prepare/onboarding explicitly requires them
+- WebSearch / GitHub code search / `pip install` to rediscover signing
+- Grepping all AgentStores or other chats for keys — use the fixed path below
+- Asking for first-time merchant / token / voucher-sign consent after a payRequest
+- Serial `tools/list` rediscovery when schemas are already known this session
+
+### STOP only if
+
+| Gate | When |
+|------|------|
+| Wallet proof | Onboarding — borrower has not completed EIP-712 wallet proof |
+| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — borrower must sign the EIP-712 grant off-device |
+| Other policy deny | `POLICY_DECISION_DENIED` **without** `RISK_FIRST_TIME_MERCHANT` (or no payRequest) — surface and wait |
 
 ### Recoverable prepare errors
 
@@ -49,6 +69,8 @@ Do NOT:
 |-------|--------------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | Agent keygen + `register_agent_workload_key`, then retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
+| `AGENT_AUTHORIZATION_REQUIRED` | STOP for `authorize_agent` (borrower EIP-712 grant), then retry prepare. |
+| `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
 
 ## Choose environment (API)
 
@@ -141,30 +163,68 @@ Typical fields (use tool response, not this sketch, as source of truth):
 
 Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `intentSig`.
 
+### Protocol V2 sign recipe (copy this — do not rediscover)
+
+**Workload key path (fixed):** look here first, match `jkt` / `agentKeyJkt`:
+
+```text
+<Cursor AgentStores>/<this-or-known-store>/files/sohopay-agent-workload/secret.json
+```
+
+Canonical sticky copy when present:
+
+```text
+~/.agents/sohopay-agent-workload/secret.json
+```
+
+Shape:
+
+```json
+{
+  "borrower_id": "…",
+  "terminal_id": "mcp-staging",
+  "private_key_base64url": "…",
+  "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "…" },
+  "jkt": "…"
+}
+```
+
+**Sign steps:**
+
+1. Take `voucher` and `signing` from the prepare response (source of truth — do not re-fetch skills).
+2. `jcs = RFC8785/JCS(voucher)` (e.g. npm `canonicalize`).
+3. `preimage = utf8(signing.domain_tag) || 0x00 || utf8(jcs)`.
+4. Ed25519-sign `preimage` with `private_key_base64url` (e.g. `@noble/curves/ed25519`).
+5. Encode signature per `signing.signature_encoding` (usually `base64url`).
+6. Set `envelope.paymentPayload.payload.signature` (was `null`).
+7. Send `PAYMENT-SIGNATURE: <base64(JSON(envelope))>` (or use `header_value` if the tool already composed it). Prefer `header_name` from the response.
+
+Deps: prefer Node already on the machine (`@noble/curves` + `canonicalize` from a local SohoPay checkout). **Do not** WebSearch, GitHub-search, or `pip install` unless this recipe fails.
+
 ### Protocol V1 — `COMPLETED` (when V2 is off)
 
 When prepare returns `COMPLETED`, retry the merchant with `header_name` / `header_value` when the gateway composes them; otherwise build `PAYMENT-SIGNATURE` from `payment_intent` + `signature` (`intentSig`). Custodial signing may be disabled on V2 staging (`CUSTODIAL_SIGNING_DISABLED`) — if so, use the V2 path above, not this branch.
 
-### Operator consent — first-time merchant only
+### Operator consent on payRequest
 
-On an x402 payRequest, ask the operator **once** for first-time spend consent for this merchant (see § First-time merchant below). After they accept:
+A **payRequest** authorizes token refresh, prepare, agent voucher signing, merchant retry, and **first-time merchant** for that merchant in this turn.
 
-- Do **not** STOP again for `request_borrower_token`, signing, payment-header retry, or settle.
-- If `whoami` scopes are only `borrower:token`, call `request_borrower_token` **without** a STOP — token refresh is part of completing the pay.
-- Later pays to the **same** merchant: complete merchant-as-settler end-to-end with **no** further operator questions.
+- Do **not** STOP for `request_borrower_token`, voucher signing, payment-header retry, settle, or a separate first-time prompt.
+- If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately — no STOP.
+- Later pays to the **same** merchant: same silent fast path.
 
 Wallet-proof (onboarding) still has its own STOP in `{SKILLS_BASE}/borrower-onboard.md`. Onboarding/setup STOP before `request_borrower_token` does **not** apply once the operator has asked to pay an x402 resource.
 
 ### First-time merchant at signing vs settle
 
-`evaluate_spend_policy` (signing-time) and facilitator `/settle` (settle-time) both run the policy engine, but they key first-time-merchant on **different** identifiers: spend-intent merchant **UUID** vs PaymentIntent / voucher **bytes32 `merchantId`**. Details and the once-per-merchant consent prompt: `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
+`evaluate_spend_policy` (signing-time) and facilitator `/settle` (settle-time) both run the policy engine, but they key first-time-merchant on **different** identifiers: spend-intent merchant **UUID** vs PaymentIntent / voucher **bytes32 `merchantId`**. Details: `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
 
-When signing-time is `ALLOW` but the merchant returns 402 with `POLICY_DECISION_DENIED` + `RISK_FIRST_TIME_MERCHANT`:
+When a merchant returns 402 with `POLICY_DECISION_DENIED` + `RISK_FIRST_TIME_MERCHANT`:
 
-1. If the operator has **not** yet accepted first-time spend for this merchant, ask once: **please accept first-time spend consent for this merchant.** After they accept, do **not** re-ask on later pays to that merchant.
-2. If they **already** accepted, do **not** ask again — mint a new envelope immediately.
-3. Do **not** replay the same payment header (merchants may cache the 403).
-4. Mint a **new** prepare (new `idempotency_key`) → **new** payment header (no extra STOP after consent). A later **202** means settle-time policy allowed that envelope.
+1. On a **payRequest**, treat the pay utterance as accept — do **not** ask. Remember UUID **and** bytes32 `merchantId` for this conversation.
+2. Do **not** replay the same payment header (merchants may cache the 403).
+3. Mint a **new** prepare (new `idempotency_key` only when the denial was settle-time and a new envelope is required — for prepare-route 403 reuse the **same** key) → **new** payment header. A later **202** means settle-time policy allowed that envelope.
+4. Only if there was **no** payRequest (e.g. exploratory prepare) ask once: **please accept first-time spend consent for this merchant.**
 
 ### Map 402 challenge → prepare / spend intent
 
@@ -301,16 +361,16 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 
 ## Integration checklist
 
-- [ ] Workload key registered once per terminal before V2 prepare (`register_agent_workload_key`; agent holds private key)
+- [ ] Workload key registered once per terminal before V2 prepare (`register_agent_workload_key`; agent holds private key at the fixed path)
 - [ ] Prefer `prepare_x402_payment` for HTTP 402s; branch on `VOUCHER_ISSUED` vs `COMPLETED`
 - [ ] `VOUCHER_ISSUED`: sign per `signing`, fill `envelope.payload.signature`, retry with `header_name` (`PAYMENT-SIGNATURE`)
 - [ ] `X402_AGENT_KEY_NOT_REGISTERED`: register key, retry **same** idempotency key — no custodial invent
+- [ ] payRequest: no STOP for token / sign / first-time / settle — complete fast path in one turn
 - [ ] V1 fallback: challenge mapped; `policy_decision_id` on sign; `intentSig` from `get_signing_status`; envelope from `payment_intent` echo
 - [ ] On **202**, retry **same** payment header — never a new spend intent
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle
 - [ ] Poll confirmation; handle `CONFIRMED` / `FAILED` / `TIMED_OUT` / `DISPUTED`
 - [ ] Operator informed about available-credit lag
-- [ ] First-time merchant: once-per-merchant consent; after accept, later pays need no further prompts; new envelope after settle-time `RISK_FIRST_TIME_MERCHANT` (not a cached-403 replay)
 
 ## Next steps
 
