@@ -190,6 +190,17 @@ cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
 ```
 
+When `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, STOP and follow the borrower grant consent page flow:
+
+```bash
+cat ~/.claude/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/authorize-agent.md
+```
+
+Staging consent page: `https://staging.sohopay.xyz/agent/authorize` (hash payload). Production: `https://sohopay.xyz/agent/authorize`.
+
 ## Step 10: Idempotency reference
 
 Before any mutating financial call:

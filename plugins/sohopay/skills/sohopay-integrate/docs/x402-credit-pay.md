@@ -60,7 +60,7 @@ Latency: onboarded pay should finish in one short turn. L2 confirm poll ~2s; exp
 | Gate | When |
 |------|------|
 | Wallet proof | Onboarding — borrower has not completed EIP-712 wallet proof |
-| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — borrower must sign the EIP-712 grant off-device |
+| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant), then retry prepare |
 | Other policy deny | `POLICY_DECISION_DENIED` **without** `RISK_FIRST_TIME_MERCHANT` (or no payRequest) — surface and wait |
 
 ### Recoverable prepare errors
@@ -69,7 +69,7 @@ Latency: onboarded pay should finish in one short turn. L2 confirm poll ~2s; exp
 |-------|--------------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | Agent keygen + `register_agent_workload_key`, then retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
-| `AGENT_AUTHORIZATION_REQUIRED` | STOP for `authorize_agent` (borrower EIP-712 grant), then retry prepare. |
+| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page → submit), then retry prepare with the **same** order / **same** `idempotency_key`. |
 | `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
 
 ## Choose environment (API)
