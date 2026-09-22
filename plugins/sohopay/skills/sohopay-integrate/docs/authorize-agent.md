@@ -28,22 +28,31 @@ Do **not** invent custodial `sign_transaction` to bypass this grant.
 
 Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and sign in their wallet.
 
-| Environment | Consent base |
-|-------------|--------------|
+| Environment | Consent base (live) |
+|-------------|---------------------|
 | Staging | `https://staging.sohopay.xyz/agent/authorize` |
 | Production | `https://sohopay.xyz/agent/authorize` |
 
-Build the link as:
+**Page contract (must match):**
 
-```text
-{CONSENT_BASE}#{base64url(JSON.stringify({
+- Hash payload only: `{CONSENT_BASE}#{base64url(JSON)}` — never put the challenge in the query string.
+- JSON fields: `challenge_id` (UUID), `typed_data` (exact challenge `typed_data`), optional `expires_at` (ISO string from the challenge response).
+- `typed_data.primaryType` must be `AgentAuthorizationGrant`.
+- Empty / missing hash → page shows **Invalid authorization link** (expected without a challenge).
+- After wallet sign → page shows **Grant signed** and a copyable JSON result (below). The browser does **not** call SohoPay APIs; the agent still submits via MCP.
+
+Build the link (Node):
+
+```js
+const hash = Buffer.from(JSON.stringify({
   challenge_id,
-  expires_at,   // from authorize_agent challenge response when present
-  typed_data    // exact typed_data object from the challenge response
-}))}
+  expires_at, // omit if absent
+  typed_data, // exact object from authorize_agent challenge response
+})).toString("base64url");
+const url = `https://staging.sohopay.xyz/agent/authorize#${hash}`; // or sohopay.xyz in prod
 ```
 
-Use **standard base64url** (no padding). The page reads the **hash only** (nothing is sent to the site server as a query string). After the borrower signs, they copy a JSON result:
+Use **standard base64url** (no padding). The page reads the **hash only**. After the borrower signs, they copy:
 
 ```json
 {
