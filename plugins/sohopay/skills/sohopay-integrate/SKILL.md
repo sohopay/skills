@@ -1,6 +1,6 @@
 ---
 name: sohopay-integrate
-description: Integrates AI agents with SohoPay MCP gateway, borrower onboarding, delegated sessions, spend/policy/payment flows, and x402 on-chain settlement. Use when building SohoPay borrowers, agent sessions, wallet-proof signing, MCP scopes, or HTTP 402 credit payments.
+description: Integrates AI agents with the SohoPay MCP gateway, borrower onboarding, spend/policy/signing flows, and x402 on-chain settlement. Use when building SohoPay borrowers, wallet-proof signing, MCP scopes, or HTTP 402 credit payments.
 ---
 
 # SohoPay Integration
@@ -57,23 +57,23 @@ Read each from the local bundle first, falling back to the network — e.g.
 | Staging setup | `setup-staging.md` |
 | Staging MCP connection | `mcp-connect-staging.md` |
 | Borrower onboarding | `borrower-onboard.md` |
-| Human-direct (no session) | `human-direct-flow.md` |
-| Agent sessions | `agent-session.md` |
+| Human-direct (default operate path) | `human-direct-flow.md` |
 | Spend / pay | `spend-and-pay.md` |
 | x402 settlement | `x402-credit-pay.md` |
 | Idempotency | `idempotency.md` |
 
 ## Critical rules
 
-1. **Tool descriptions vs skills** — After MCP connect, use tool `description` / input schemas for single call-time rules. For multi-step or money-moving flows, **fetch** the matching skill from `SKILLS_BASE` (network is normal; local sticky copy under `sohopay-integrate/docs/` if present). MCP initialize `instructions` may repeat this pointer — follow it.
+1. **Tool descriptions vs skills** — After MCP connect, use tool `description` / input schemas for single call-time rules. For multi-step or money-moving flows, **read the local sticky** under `sohopay-integrate/docs/` first; fetch from `SKILLS_BASE` only if the local copy is missing. Never network-fetch mid-pay when sticky exists. MCP initialize `instructions` may repeat this pointer — follow it.
 2. **borrowerId is UUID** — never use wallet address as primary identity. `whoami` often omits `borrower_id`; use `principal_id` (human-direct only — in delegated sessions that is the agent, not the credit owner).
-3. **Never hold borrower private keys** — MCP transports signatures only.
+3. **Never hold borrower private keys** — MCP transports signatures only. Agent workload Ed25519 private keys stay in agent-held storage (`sohopay-agent-workload/secret.json`).
 4. **Idempotency-Key** on every mutating financial/on-chain route.
 5. **Resolve authz fresh** — `POST /api/v1/auth/authorization-context` before privileged tools. The borrower token is short-lived (staging 15 min, no refresh) — re-request before each spend; it is not the harness OAuth token.
-6. **x402** — HTTP 402 merchant URLs use merchant-as-settler (`X-PAYMENT`); never `execute_payment` or a session on human-direct. Verify before settle; poll confirmation under **`l2_confirmations`** (~5s typical, P95 under 30s); 72h on-chain idempotency TTL. On a payRequest, refresh `request_borrower_token` without a STOP when scopes are only `borrower:token`.
-7. **Signing** — pass `policy_decision_id` to `sign_transaction` (it does not accept `spend_intent_id`); `payload` must be a JSON object (`{}` ok, never a string); build `X-PAYMENT` from the returned `payment_intent` echo plus `get_signing_status.signature`.
-8. **Human-direct** — skip session tools; if `whoami` shows only `borrower:token`, request spend/policy/signing scopes before spending.
-9. **First-time merchant** — `RISK_FIRST_TIME_MERCHANT` needs a once-per-merchant operator accept ("please accept first-time spend for this merchant"). After they accept, complete later x402 pays to that merchant with **no** further operator questions (token refresh, signing, `X-PAYMENT`). Signing-time ALLOW can still DENY at x402 settle (UUID vs bytes32 `merchantId`); mint a new `X-PAYMENT` after consent without re-asking, do not replay a cached 403. See `spend-and-pay.md` and `x402-credit-pay.md`.
+6. **x402 payRequest = go** — “pay” / “pay here” / a merchant 402 URL authorizes the full fast path: token refresh, `prepare_x402_payment`, voucher sign, merchant retry, and first-time merchant for that merchant. No further consent prompts. Prefer `prepare_x402_payment`; never `execute_payment` or a session on human-direct. Poll confirmation under **`l2_confirmations`** (~5s typical, P95 under 30s). Complete onboarded pays in **one short turn**. See `x402-credit-pay.md` § Fast pay path.
+7. **Protocol V2** — agent generates Ed25519 workload key → `register_agent_workload_key` (once; MCP never holds the private key) → `prepare_x402_payment` may return `VOUCHER_ISSUED` → agent signs voucher / `PAYMENT-SIGNATURE`. On `X402_AGENT_KEY_NOT_REGISTERED`, register then retry the same idempotency key. Do not fall back to custodial `sign_transaction` under V2. Sign recipe + fixed key path: `x402-credit-pay.md`.
+8. **V1 Signing** — pass `policy_decision_id` to `sign_transaction` (it does not accept `spend_intent_id`); `payload` must be a JSON object (`{}` ok, never a string); build `X-PAYMENT` from the returned `payment_intent` echo plus `get_signing_status.signature`.
+9. **Human-direct** — skip session tools; if `whoami` shows only `borrower:token`, request spend/policy/signing scopes before spending (no STOP on payRequest).
+10. **First-time merchant** — on a payRequest, treat the pay utterance as accept (`RISK_FIRST_TIME_MERCHANT`); retry without asking. Only ask once when there is **no** payRequest. Signing-time ALLOW can still DENY at x402 settle (UUID vs bytes32 `merchantId`); mint a new payment header without re-asking, do not replay a cached 403. See `spend-and-pay.md` and `x402-credit-pay.md`.
 
 ## Install (sticky)
 

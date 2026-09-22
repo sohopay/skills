@@ -20,7 +20,7 @@ Pick **one** row. Substitute `{API_BASE}`, `{MCP_URL}`, `{MCP_ORIGIN}`, and `{MC
 
 For staging, you may start from `{SKILLS_BASE}/mcp-connect-staging.md` — it pins the staging row and chains here.
 
-CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of truth**. Policy Engine is the decision authority. MCP tools never move money directly. Catalog **v2** exposes **19 tools** (including `whoami`).
+CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of truth**. Policy Engine is the decision authority. MCP tools never move money directly. Read the live `tools/list` from the connected server rather than assuming a fixed tool count.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
@@ -245,7 +245,7 @@ Verifies: health, MCP `initialize`, `tools/list`. Never run `npm run smoke` outs
 3. Capture the `Mcp-Session-Id` response header — this is the **MCP transport** session.
 4. Use that session ID for `tools/list` and tool calls.
 
-**Do not confuse** `Mcp-Session-Id` (MCP transport) with SohoPay's delegated agent session (`x-session-id` header or `session_id` tool argument). See `{SKILLS_BASE}/agent-session.md`.
+`Mcp-Session-Id` is the **MCP transport** session — use it for `tools/list` and tool calls. It is not an application-level identity.
 
 Unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
 
