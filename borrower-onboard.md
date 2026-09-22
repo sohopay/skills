@@ -168,6 +168,8 @@ or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `
 
 Register once per terminal before the first V2 prepare. On later pays, reuse the same key. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
 
+Registering the key does **not** authorize spending. If `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant) before retrying prepare.
+
 ## Authorization context
 
 `POST /api/v1/auth/authorization-context`
