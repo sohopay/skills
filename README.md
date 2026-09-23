@@ -7,6 +7,14 @@ Canonical source for **SohoPay agent skills** — the docs an AI coding agent fe
 Paste this into your agent (Claude Code, Cursor, Codex, Hermes, or the ChatGPT app):
 
 ```
+Set up https://sohopay.xyz/install
+```
+
+The agent fetches that URL as markdown, then follows `setup.md` (MCP connect, optional sticky skills, borrower onboard STOPs).
+
+Fallback if the site is unreachable:
+
+```
 Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup.md and
 follow the instructions in it to set up SohoPay in this environment.
 ```
@@ -22,6 +30,12 @@ curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
 ### Staging (internal developers)
 
 Paste this to exercise the full staging stack (`staging.mcp` / `staging.api`):
+
+```
+Set up https://staging.sohopay.xyz/install
+```
+
+Fallback:
 
 ```
 Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md and
