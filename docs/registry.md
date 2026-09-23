@@ -28,7 +28,7 @@ npx skills add . --list
 
 Registry skill name: **`sohopay-integrate`** (brand-prefixed to avoid collisions with generic names like `setup`).
 
-Hosted workflow files (`setup.md`, etc.) use generic filenames under `/skills/` on `agents.sohopay.xyz`.
+Hosted workflow files (`setup.md`, etc.) use generic filenames under `/skills/v1/` on `agents.sohopay.xyz`.
 
 ## Phase 2
 

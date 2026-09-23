@@ -227,6 +227,7 @@ Every consent-critical step (wallet-proof signing, token requests, payment execu
 | `install.sh` | Deterministic non-agent installer for operators/CI |
 | `scripts/validate-skills.mjs` | CI guardrails |
 | `scripts/generate-llms-full.mjs` | Builds `llms-full.txt` |
+| `infra/` | CDK `AgentsSkillsStack` for `agents.sohopay.xyz` |
 
 ## Canonical endpoints
 
@@ -243,7 +244,9 @@ npm run generate:llms-full
 
 ## Deploy
 
-Push to `main` runs `.github/workflows/validate.yml` then `.github/workflows/deploy.yml` (requires AWS OIDC secrets — see workflow comments).
+Push to `main` runs `.github/workflows/validate.yml` then `.github/workflows/deploy.yml`. Publish writes skill markdown and `llms-full.txt` under `/skills/v1/` on `agents.sohopay.xyz`.
+
+First-time AWS bootstrap (CDK stack, GitHub secrets, first `workflow_dispatch`, go-live curls): [infra/MANUAL-BOOTSTRAP.md](infra/MANUAL-BOOTSTRAP.md). Until those secrets exist, deploy preflight skips publish.
 
 ## Security
 

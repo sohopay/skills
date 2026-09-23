@@ -36,14 +36,14 @@ ARTIFACT="${ROOT}/verify-bootstrap.log"
   echo
   echo "--- hosted URL probe (optional; requires deploy) ---"
   BASE="${AGENTS_SKILLS_BASE_URL:-https://agents.sohopay.xyz}"
-  if curl -sfL --max-time 10 "${BASE}/skills/setup.md" -o /tmp/sohopay-setup.md; then
+  if curl -sfL --max-time 10 "${BASE}/skills/v1/setup.md" -o /tmp/sohopay-setup.md; then
     if grep -q "SohoPay" /tmp/sohopay-setup.md; then
-      echo "setup.md reachable at ${BASE}"
+      echo "setup.md reachable at ${BASE}/skills/v1/setup.md"
     else
-      echo "WARN: ${BASE}/skills/setup.md returned unexpected content"
+      echo "WARN: ${BASE}/skills/v1/setup.md returned unexpected content"
     fi
   else
-    echo "SKIP: ${BASE}/skills/setup.md not yet deployed (expected before CDN go-live)"
+    echo "SKIP: ${BASE}/skills/v1/setup.md not yet deployed (expected before CDN go-live)"
   fi
 
   echo

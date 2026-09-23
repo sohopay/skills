@@ -1,0 +1,11 @@
+{
+  "app": "npx tsx bin/app.ts",
+  "watch": {
+    "include": ["**"],
+    "exclude": ["README.md", "cdk.out", "node_modules", "**/*.test.ts"]
+  },
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true,
+    "sohopay:githubOidcProviderArn": "arn:aws:iam::101166216984:oidc-provider/token.actions.githubusercontent.com"
+  }
+}
