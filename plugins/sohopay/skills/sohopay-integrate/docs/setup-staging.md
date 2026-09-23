@@ -1,13 +1,16 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Agent Setup (Staging)
 
 **Environment: STAGING — for internal developers testing the full staging stack.** Do not register production MCP (`https://mcp.sohopay.xyz`) or mix production tokens with this path. Staging API: `https://staging.api.sohopay.xyz`. Staging MCP (register this URL): `https://staging.mcp.sohopay.xyz/mcp`.
 
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`. Replace `{SKILLS_HOST}` with the CDN origin from the header comment (skill index lives at `{SKILLS_HOST}/.well-known/…`, not under `{SKILLS_BASE}`).
 
 CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
@@ -90,18 +93,19 @@ Re-running is safe; it updates in place. Claude Code's global copy is `~/.claude
 
 ## Reading the chained skills (local if present, else network)
 
-**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}`. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
+**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}` (CDN after publish). GitHub raw is **last-resort only**. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
 
-Each fetch below uses this form — local copy first (if any), network last:
+Each fetch below uses this form — local copy first (if any), then `{SKILLS_BASE}`, then GitHub raw:
 
 ```bash
 cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md
+  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect-staging.md
 ```
 
-If the local copy is absent **and** the network fetch fails — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise.
+If the local copy is absent **and** both network fetches fail — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise. Do not switch `{SKILLS_BASE}` to GitHub after a successful CDN fetch.
 
 ## Step 4: Connect to SohoPay MCP
 
@@ -111,7 +115,8 @@ Fetch the MCP connection skill and follow it exactly:
 cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md
+  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect-staging.md
 ```
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
@@ -144,7 +149,8 @@ Fetch the onboarding skill:
 cat ~/.claude/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md
+  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md
 ```
 
 Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
@@ -165,7 +171,8 @@ The borrower acts directly (the default operate path):
 cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
 ```
 
 ## Step 8: Operate — spend, policy, payment
@@ -174,7 +181,8 @@ cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
 cat ~/.claude/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md
+  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md
 ```
 
 Before executing any payment (especially the first or any high-risk one):
@@ -189,7 +197,8 @@ For HTTP 402 paywalls (distinct from MCP orchestration). Use the **staging** x40
 cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
+  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md
 ```
 
 ## Step 10: Idempotency reference
@@ -200,7 +209,8 @@ Before any mutating financial call:
 cat ~/.claude/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/idempotency.md
+  || curl -fsSL {SKILLS_BASE}/idempotency.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md
 ```
 
 ## Step 11: Report to the operator
@@ -226,7 +236,8 @@ Browse all skills (network works without sticky install):
 ```bash
 cat ~/.claude/skills/sohopay-integrate/docs/index.json 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
+  || curl -fsSL {SKILLS_HOST}/.well-known/agent-skills/index.json \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
 ```
 
 ## Rules
@@ -252,4 +263,4 @@ Current location: `{SKILLS_BASE}/setup-staging.md`
 
 For production setup instead, use `{SKILLS_BASE}/setup.md`.
 
-For the full skill directory, fetch `{SKILLS_BASE}/.well-known/agent-skills/index.json`.
+For the full skill directory, fetch `{SKILLS_HOST}/.well-known/agent-skills/index.json` (GitHub fallback: `https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json`).

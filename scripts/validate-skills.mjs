@@ -73,7 +73,11 @@ for (const file of SKILL_FILES) {
   // repo or use the {SKILLS_BASE} placeholder that agents substitute.
   const localLinks = content.match(/\]\([^h][^)]*\)/g) ?? [];
   for (const link of localLinks) {
-    if (!link.includes('github.com/sohopay') && !link.includes('{SKILLS_BASE}')) {
+    if (
+      !link.includes("github.com/sohopay") &&
+      !link.includes("{SKILLS_BASE}") &&
+      !link.includes("{SKILLS_HOST}")
+    ) {
       fail(`${file} has non-absolute markdown link: ${link}`);
     }
   }

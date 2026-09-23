@@ -17,8 +17,8 @@
 #               consent page). Never written to a file by this script; passed to
 #               the harness's own secret store only.
 #   --base      Base URL serving the skill docs.
-#               Default (dev): https://raw.githubusercontent.com/sohopay/skills/main
-#               At launch:     https://agents.sohopay.xyz/skills/v1
+#               Default:       https://agents.sohopay.xyz/skills/v1
+#               Last-resort:   https://raw.githubusercontent.com/sohopay/skills/main
 #
 # Idempotent: safe to re-run. Existing skills are refreshed; an already-registered
 # MCP server is left in place.
@@ -27,7 +27,10 @@ set -euo pipefail
 
 # --- Configuration -----------------------------------------------------------
 
-DEFAULT_BASE="https://raw.githubusercontent.com/sohopay/skills/main"
+CDN_HOST="https://agents.sohopay.xyz"
+CDN_BASE="${CDN_HOST}/skills/v1"
+GH_BASE="https://raw.githubusercontent.com/sohopay/skills/main"
+DEFAULT_BASE="$CDN_BASE"
 MIN_NODE_MAJOR=22
 MIN_NODE_MINOR=13
 MIN_NPM_MAJOR=10
@@ -165,8 +168,21 @@ mkdir -p "$SKILLS_DIR"
 # --- Step 4: download skill docs ---------------------------------------------
 
 info "Fetching skill index"
-index_json="$(curl -fsSL "${BASE}/.well-known/agent-skills/index.json")" \
-  || die "Could not fetch ${BASE}/.well-known/agent-skills/index.json"
+# CDN index lives at host root; GitHub index is repo-relative. --base override
+# still tries BASE/.well-known first, then the two canonical locations.
+index_json=""
+for index_url in \
+  "${BASE}/.well-known/agent-skills/index.json" \
+  "${CDN_HOST}/.well-known/agent-skills/index.json" \
+  "${GH_BASE}/.well-known/agent-skills/index.json"
+do
+  if index_json="$(curl -fsSL "$index_url")"; then
+    info "Skill index: $index_url"
+    break
+  fi
+  index_json=""
+done
+[[ -n "$index_json" ]] || die "Could not fetch skill index from CDN or GitHub raw"
 
 # Derive the skill filenames from the index (node is guaranteed present).
 # Portable read loop — mapfile is bash 4+ and macOS ships bash 3.2.
@@ -181,7 +197,15 @@ done < <(printf '%s' "$index_json" \
 downloaded=()
 for f in "${skill_files[@]}"; do
   info "Downloading $f"
-  curl -fsSL "${BASE}/${f}" -o "${SKILLS_DIR}/${f}" || die "Failed to download ${BASE}/${f}"
+  dest="${SKILLS_DIR}/${f}"
+  fetched=""
+  for file_url in "${BASE}/${f}" "${CDN_BASE}/${f}" "${GH_BASE}/${f}"; do
+    if curl -fsSL "$file_url" -o "$dest"; then
+      fetched="$file_url"
+      break
+    fi
+  done
+  [[ -n "$fetched" ]] || die "Failed to download $f from CDN or GitHub raw"
   downloaded+=("$f")
 done
 

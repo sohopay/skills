@@ -8,12 +8,15 @@ Skill index for AI agents integrating with the SohoPay MCP gateway, merchant-as-
 
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Agent Setup for AI Agents
 
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`. Replace `{SKILLS_HOST}` with the CDN origin from the header comment (skill index lives at `{SKILLS_HOST}/.well-known/…`, not under `{SKILLS_BASE}`).
 
 For **staging** (internal full-stack E2E against `staging.mcp` / `staging.api`), stop here and follow `{SKILLS_BASE}/setup-staging.md` instead — do not mix production and staging hosts.
 
@@ -98,18 +101,19 @@ Re-running is safe; it updates in place. Claude Code's global copy is `~/.claude
 
 ## Reading the chained skills (local if present, else network)
 
-**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}`. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
+**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}` (CDN after publish). GitHub raw is **last-resort only**. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
 
-Each fetch below uses this form — local copy first (if any), network last:
+Each fetch below uses this form — local copy first (if any), then `{SKILLS_BASE}`, then GitHub raw:
 
 ```bash
 cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect.md
+  || curl -fsSL {SKILLS_BASE}/mcp-connect.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect.md
 ```
 
-If the local copy is absent **and** the network fetch fails — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise.
+If the local copy is absent **and** both network fetches fail — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise. Do not switch `{SKILLS_BASE}` to GitHub after a successful CDN fetch.
 
 ## Step 4: Connect to SohoPay MCP
 
@@ -119,7 +123,8 @@ Fetch the MCP connection skill and follow it exactly:
 cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect.md
+  || curl -fsSL {SKILLS_BASE}/mcp-connect.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect.md
 ```
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
@@ -150,7 +155,8 @@ Fetch the onboarding skill:
 cat ~/.claude/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md
+  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md
 ```
 
 Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
@@ -171,7 +177,8 @@ The borrower acts directly (the default operate path):
 cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
 ```
 
 ## Step 8: Operate — spend, policy, payment
@@ -180,7 +187,8 @@ cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
 cat ~/.claude/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md
+  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md
 ```
 
 Before executing any payment (especially the first or any high-risk one):
@@ -195,7 +203,8 @@ For HTTP 402 paywalls (distinct from MCP orchestration):
 cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
+  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md
 ```
 
 When `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, STOP and follow the borrower grant consent page flow:
@@ -204,7 +213,8 @@ When `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, STOP and fol
 cat ~/.claude/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/authorize-agent.md
+  || curl -fsSL {SKILLS_BASE}/authorize-agent.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md
 ```
 
 Staging consent page: `https://staging.sohopay.xyz/agent/authorize` (hash payload). Production: `https://sohopay.xyz/agent/authorize`.
@@ -217,7 +227,8 @@ Before any mutating financial call:
 cat ~/.claude/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/idempotency.md
+  || curl -fsSL {SKILLS_BASE}/idempotency.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md
 ```
 
 ## Step 11: Report to the operator
@@ -243,7 +254,8 @@ Browse all skills (network works without sticky install):
 ```bash
 cat ~/.claude/skills/sohopay-integrate/docs/index.json 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
+  || curl -fsSL {SKILLS_HOST}/.well-known/agent-skills/index.json \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
 ```
 
 ## Rules
@@ -267,7 +279,7 @@ cat ~/.claude/skills/sohopay-integrate/docs/index.json 2>/dev/null \
 
 Current location: `{SKILLS_BASE}/setup.md`
 
-For the full skill directory, fetch `{SKILLS_BASE}/.well-known/agent-skills/index.json`.
+For the full skill directory, fetch `{SKILLS_HOST}/.well-known/agent-skills/index.json` (GitHub fallback: `https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json`).
 
 
 ---
@@ -276,14 +288,17 @@ For the full skill directory, fetch `{SKILLS_BASE}/.well-known/agent-skills/inde
 
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Agent Setup (Staging)
 
 **Environment: STAGING — for internal developers testing the full staging stack.** Do not register production MCP (`https://mcp.sohopay.xyz`) or mix production tokens with this path. Staging API: `https://staging.api.sohopay.xyz`. Staging MCP (register this URL): `https://staging.mcp.sohopay.xyz/mcp`.
 
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`. Replace `{SKILLS_HOST}` with the CDN origin from the header comment (skill index lives at `{SKILLS_HOST}/.well-known/…`, not under `{SKILLS_BASE}`).
 
 CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
 
@@ -366,18 +381,19 @@ Re-running is safe; it updates in place. Claude Code's global copy is `~/.claude
 
 ## Reading the chained skills (local if present, else network)
 
-**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}`. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
+**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}` (CDN after publish). GitHub raw is **last-resort only**. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
 
-Each fetch below uses this form — local copy first (if any), network last:
+Each fetch below uses this form — local copy first (if any), then `{SKILLS_BASE}`, then GitHub raw:
 
 ```bash
 cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md
+  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect-staging.md
 ```
 
-If the local copy is absent **and** the network fetch fails — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise.
+If the local copy is absent **and** both network fetches fail — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise. Do not switch `{SKILLS_BASE}` to GitHub after a successful CDN fetch.
 
 ## Step 4: Connect to SohoPay MCP
 
@@ -387,7 +403,8 @@ Fetch the MCP connection skill and follow it exactly:
 cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect-staging.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md
+  || curl -fsSL {SKILLS_BASE}/mcp-connect-staging.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect-staging.md
 ```
 
 It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
@@ -420,7 +437,8 @@ Fetch the onboarding skill:
 cat ~/.claude/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md
+  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md
 ```
 
 Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
@@ -441,7 +459,8 @@ The borrower acts directly (the default operate path):
 cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
 ```
 
 ## Step 8: Operate — spend, policy, payment
@@ -450,7 +469,8 @@ cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
 cat ~/.claude/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md
+  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md
 ```
 
 Before executing any payment (especially the first or any high-risk one):
@@ -465,7 +485,8 @@ For HTTP 402 paywalls (distinct from MCP orchestration). Use the **staging** x40
 cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md
+  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md
 ```
 
 ## Step 10: Idempotency reference
@@ -476,7 +497,8 @@ Before any mutating financial call:
 cat ~/.claude/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
   || cat ~/.config/agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/idempotency.md
+  || curl -fsSL {SKILLS_BASE}/idempotency.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md
 ```
 
 ## Step 11: Report to the operator
@@ -502,7 +524,8 @@ Browse all skills (network works without sticky install):
 ```bash
 cat ~/.claude/skills/sohopay-integrate/docs/index.json 2>/dev/null \
   || cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/.well-known/agent-skills/index.json
+  || curl -fsSL {SKILLS_HOST}/.well-known/agent-skills/index.json \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
 ```
 
 ## Rules
@@ -528,7 +551,7 @@ Current location: `{SKILLS_BASE}/setup-staging.md`
 
 For production setup instead, use `{SKILLS_BASE}/setup.md`.
 
-For the full skill directory, fetch `{SKILLS_BASE}/.well-known/agent-skills/index.json`.
+For the full skill directory, fetch `{SKILLS_HOST}/.well-known/agent-skills/index.json` (GitHub fallback: `https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json`).
 
 
 ---
@@ -804,8 +827,8 @@ Backend trusts `x-soho-*` headers **only** when the service token is valid.
 
 ## Next steps
 
-- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Back to setup: `curl -fsSL {SKILLS_BASE}/setup.md`
+- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Back to setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
 
 
 ---
@@ -1067,9 +1090,9 @@ Backend trusts `x-soho-*` headers **only** when the service token is valid.
 
 ## Next steps
 
-- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Back to staging setup: `curl -fsSL {SKILLS_BASE}/setup-staging.md`
-- Production connect (do not mix): `curl -fsSL {SKILLS_BASE}/mcp-connect.md`
+- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Back to staging setup: `curl -fsSL {SKILLS_BASE}/setup-staging.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md`
+- Production connect (do not mix): `curl -fsSL {SKILLS_BASE}/mcp-connect.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect.md`
 
 
 ---
@@ -1285,10 +1308,10 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 
 ## Next steps
 
-- Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md`
-- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
-- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
+- Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md`
+- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
 
 
 ---
@@ -1371,9 +1394,9 @@ get_outstanding_balance → create_repayment or execute_repayment → payer subm
 
 ## Related skills
 
-- Onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Spend/policy: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
-- x402 settlement: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
+- Onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Spend/policy: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
+- x402 settlement: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
 
 
 ---
@@ -1404,7 +1427,7 @@ Pass `idempotency_key` (UUID v4) on every write tool when the harness cannot set
 The borrower acts directly. Full end-to-end path:
 
 ```bash
-curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
 ```
 
 ## Flow
@@ -1565,8 +1588,8 @@ Blocked for sanctioned/OFAC, fraud-held, inactive accounts. Frozen/suspended bor
 
 ## Next steps
 
-- x402 HTTP rail (merchant-as-settler): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
+- x402 HTTP rail (merchant-as-settler): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
 
 
 ---
@@ -1647,7 +1670,8 @@ COLD START — first payment on a fresh borrower/terminal:
        when signing. If missing or secret.borrower_id differs → keygen + persist
        + register_agent_workload_key (PoP over the resolved terminal_id from step 2)
   5. prepare_x402_payment (pass operational_agent_id when the borrower has 2+ terminals)
-  6. AGENT_AUTHORIZATION_REQUIRED → authorize_agent (challenge → STOP wallet sign → submit)
+  6. AGENT_AUTHORIZATION_REQUIRED → authorize_agent challenge → STOP wallet sign
+       (consent page completes the grant; do not wait for paste; do not re-GET merchant)
        then retry prepare with the SAME order / SAME idempotency_key
   7. VOUCHER_ISSUED / COMPLETED → same as fast path
 ```
@@ -1670,7 +1694,7 @@ Do a single state check (`whoami` + `register_borrower`) rather than four serial
 | Gate | When |
 |------|------|
 | Wallet proof | Onboarding — borrower has not completed EIP-712 wallet proof |
-| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant), then retry prepare |
+| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (consent page completes the grant; poll prepare — do not wait for paste; do not re-GET the merchant) |
 | Other policy deny | `POLICY_DECISION_DENIED` **without** `RISK_FIRST_TIME_MERCHANT` (or no payRequest) — surface and wait |
 
 ### Recoverable prepare errors
@@ -1679,8 +1703,9 @@ Do a single state check (`whoami` + `register_borrower`) rather than four serial
 |-------|--------------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | First ensure the terminal exists for **this** borrower via `register_borrower` (returns `operational_agent_id` + `terminal_id`). Then keygen + `register_agent_workload_key` signing PoP over that resolved `terminal_id`. Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. Do **not** guess `terminal_id`. |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
-| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page → submit), then retry prepare with the **same** order / **same** `idempotency_key`. |
+| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page; page POSTs complete). Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** wait for a JSON paste. Do **not** re-GET the merchant. |
 | `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
+| `X402_INTENT_EXPIRED` | Do **not** re-GET the merchant. Retry `prepare_x402_payment` on the **same** order / **same** `idempotency_key` (backend remints an expired unsettled deadline). Only map a new `orderRef` if the merchant already issued a new challenge. |
 
 ## Choose environment (API)
 
@@ -1977,7 +2002,9 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 - [ ] Prefer `prepare_x402_payment` for HTTP 402s; branch on `VOUCHER_ISSUED` vs `COMPLETED`
 - [ ] `VOUCHER_ISSUED`: sign per `signing`, fill `envelope.payload.signature`, retry with `header_name` (`PAYMENT-SIGNATURE`)
 - [ ] `X402_AGENT_KEY_NOT_REGISTERED`: `register_borrower` if needed, then register key, retry **same** idempotency key — no custodial invent
-- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn; cold start uses § Cold start
+- [ ] `AGENT_AUTHORIZATION_REQUIRED`: consent page completes the grant; poll prepare; do not wait for paste; do not re-GET the merchant
+- [ ] `X402_INTENT_EXPIRED`: retry same order / same key — do not mint a new merchant `orderRef`
+- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn; cold start uses § Cold start. If a skill is needed, fetch CDN (`{SKILLS_BASE}` after publish), not GitHub raw.
 - [ ] V1 fallback: challenge mapped; `policy_decision_id` on sign; `intentSig` from `get_signing_status`; envelope from `payment_intent` echo
 - [ ] On **202**, retry **same** payment header — never a new spend intent
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle
@@ -1986,10 +2013,10 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 
 ## Next steps
 
-- Spend / signing detail: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
-- Workload key onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
-- MCP setup: `curl -fsSL {SKILLS_BASE}/setup.md`
+- Spend / signing detail: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
+- Workload key onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
+- MCP setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
 
 
 ---
@@ -2003,7 +2030,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Authorize Agent (Borrower Grant)
 
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`. GitHub raw is last-resort fallback only.
 
 **What this skill does:** obtains an ACTIVE off-chain `AgentAuthorizationGrant` so Protocol V2 `prepare_x402_payment` can issue vouchers. The **borrower** signs EIP-712 typed data with their linked EOA. The agent never holds the borrower private key and never invents a signature.
 
@@ -2037,7 +2064,7 @@ Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the 
 - JSON fields: `challenge_id` (UUID), `typed_data` (exact challenge `typed_data`), optional `expires_at` (ISO string from the challenge response).
 - `typed_data.primaryType` must be `AgentAuthorizationGrant`.
 - Empty / missing hash → page shows **Invalid authorization link** (expected without a challenge).
-- After wallet sign → page shows **Grant signed** and a copyable JSON result (below). The browser does **not** call SohoPay APIs; the agent still submits via MCP.
+- After wallet sign → the page POSTs the signature to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`) and shows **Grant signed**. The grant becomes ACTIVE in the backend. **Do not wait for the operator to paste JSON.**
 
 Build the link (Node):
 
@@ -2050,7 +2077,11 @@ const hash = Buffer.from(JSON.stringify({
 const url = `https://staging.sohopay.xyz/agent/authorize#${hash}`; // or sohopay.xyz in prod
 ```
 
-Use **standard base64url** (no padding). The page reads the **hash only**. After the borrower signs, they copy:
+Use **standard base64url** (no padding). The page reads the **hash only**.
+
+**Preferred completion:** poll `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key` until it returns `VOUCHER_ISSUED` (or a non-grant error). Do not re-GET the merchant. Do not mint a new payment idempotency key.
+
+**Fallback only** if the page cannot complete (shows an error, or the operator has no in-page success): they may copy:
 
 ```json
 {
@@ -2060,7 +2091,7 @@ Use **standard base64url** (no padding). The page reads the **hash only**. After
 }
 ```
 
-Paste that result into the agent chat. The agent then calls `authorize_agent` with `challenge_id` + `wallet_address` + `signature`.
+Then call `authorize_agent` with `challenge_id` + `wallet_address` + `signature` and a **new** submit-phase `idempotency_key`.
 
 ## STOP — operator consent
 
@@ -2071,9 +2102,9 @@ Show the operator:
 1. Why the stop happened (`AGENT_AUTHORIZATION_REQUIRED`).
 2. The proposed limits (USDC, validity window, merchant scope).
 3. The consent URL (staging or production) for them to open and sign.
-4. That they must paste the signed result back when the page shows **Grant signed**.
+4. That the page completes the grant after they sign — they should reply "done" (no JSON paste required).
 
-Wait for the paste. Do not poll, do not invent a signature, and do not continue the payment until submit succeeds.
+Do **not** invent a signature. After they confirm they signed (or after a short poll window), retry prepare with the same order / same payment idempotency key.
 
 ## Workflow
 
@@ -2087,15 +2118,15 @@ Wait for the paste. Do not poll, do not invent a signature, and do not continue 
      — fresh idempotency_key (UUID v4)
   → { challenge_id, typed_data, expires_at, authorization_version }
 
-2. STOP — open consent URL; wait for operator paste
-     { challenge_id, wallet_address, signature }
+2. STOP — open consent URL; borrower signs in-wallet
+     Page POSTs complete; grant becomes ACTIVE
 
-3. authorize_agent (submit phase)
-     — same operational_agent_id + borrower_id
-     — challenge_id + wallet_address + signature from the paste
-     — NEW idempotency_key (never reuse the challenge-phase key)
+3. Preferred: retry prepare_x402_payment (SAME order / SAME payment idempotency_key)
+     Fallback only: authorize_agent submit with pasted signature + NEW idempotency_key,
+     then retry prepare with the ORIGINAL payment key
 
-4. Retry the blocked prepare_x402_payment with the SAME order and SAME payment idempotency_key
+4. VOUCHER_ISSUED → sign locally → PAYMENT-SIGNATURE
+     Do not re-GET the merchant (orderRef must stay the first challenge)
 ```
 
 ### Idempotency
@@ -2118,9 +2149,8 @@ Pick limits that cover the pending payment (and a sane daily headroom). Example 
 
 Challenge and submit require `credit:facility:accept` (projected on the MCP tool). If the current borrower token lacks it, call `request_borrower_token` with that scope (plus any existing spend scopes needed to resume pay) **before** the challenge phase. On a payRequest, token refresh does not need a separate STOP once the operator already authorized the payment — but **this grant STOP still applies**.
 
-## After submit
+## After the grant is ACTIVE
 
-- Grant status becomes ACTIVE for that `operational_agent_id` + workload key `jkt`.
 - Resume the blocked payment: `prepare_x402_payment` with the **same** order tuple and the **same** payment `idempotency_key` used before the STOP.
 - Continue `{SKILLS_BASE}/x402-credit-pay.md` (VOUCHER_ISSUED → agent signs → PAYMENT-SIGNATURE).
 
@@ -2131,20 +2161,23 @@ Challenge and submit require `credit:facility:accept` (projected on the MCP tool
 | Consent page says challenge expired / `expiresAt` passed | Mint a **new** challenge (new idempotency key); do not reuse the old `challenge_id` |
 | Operator rejects / closes without signing | STOP; do not pay |
 | Submit fails (`WALLET_PROOF_SIGNER_MISMATCH`, typed-data mismatch, etc.) | Surface the error; mint a new challenge if the old one was consumed or expired |
+| `X402_INTENT_EXPIRED` on retry | Do **not** re-GET the merchant. Retry prepare on the **same** order / same payment key (backend remints an expired unsettled deadline). Only use a new `orderRef` if the merchant already issued a new challenge. |
 
 ## Anti-patterns
 
 - Pasting the full typed_data blob into chat as the only UX when the consent page is available
+- Waiting for a JSON paste when the page already completed the grant
 - Calling `sign_transaction` / inventing an `intentSig` to skip the grant
 - Reusing the challenge-phase `idempotency_key` on submit
 - Minting a **new** payment `idempotency_key` for the same 402 order after the grant succeeds (resume the original key)
+- Re-GETting the merchant after the grant STOP (new `orderRef` breaks resume)
 - Submitting a signature the borrower did not produce
 
 ## Next steps
 
-- x402 fast path: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
-- Workload key: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
+- x402 fast path: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Workload key: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
 
 
 ---
@@ -2233,5 +2266,5 @@ Request body hash: RFC 8785 canonical JSON + SHA-256 on backend.
 
 ## Next steps
 
-- Setup: `curl -fsSL {SKILLS_BASE}/setup.md`
-- Spend / pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
+- Setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
+- Spend / pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
