@@ -1,11 +1,35 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
-# Skill: SohoPay Delegated Agent Sessions
+# Skill: SohoPay Agent Sessions (Delegated)
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+Human-direct is the default. Do not create a session to fix `SESSION_GATE_SKIPPED_NO_SESSION`.
+
+`Mcp-Session-Id` is MCP transport. SohoPay `session_id` / `x-session-id` is the delegated session. Never swap them.
+
+Before `create_agent_session`:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+Required: `borrower_id`, `agent_id`, `permissions[]`, `max_per_tx`, `daily_limit`, `currency`, `valid_until`, and `allowed_merchants` (use `[]` if none). Pass `idempotency_key`. Field tables: [references/fields.md](#hosted-reference-fields).
+
+---
+
+## Hosted references (load only when the skill says to)
+
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-fields"></a>
+
+### Hosted reference: fields.md
 
 **What this skill does:** creates, reads, and revokes borrower-approved agent sessions. **Before running it:** the borrower is onboarded (`borrower-onboard.md`) and holds a token with `session:*` scopes.
 
@@ -101,5 +125,6 @@ Creating a delegated session grants an agent spending authority on the borrower'
 
 ## Next steps
 
-- Spend and pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
-- Setup index: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
+- Spend and pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
+- Setup index: `curl -fsSL {SKILLS_BASE}/setup.md`
+

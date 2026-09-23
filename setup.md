@@ -4,21 +4,59 @@
      SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
      Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
      Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Agent Setup for AI Agents
 
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`. Replace `{SKILLS_HOST}` with the CDN origin from the header comment (skill index lives at `{SKILLS_HOST}/.well-known/…`, not under `{SKILLS_BASE}`).
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-For **staging** (internal full-stack E2E against `staging.mcp` / `staging.api`), stop here and follow `{SKILLS_BASE}/setup-staging.md` instead — do not mix production and staging hosts.
+Execute this checklist in order. Do not write a plan, recap, or load other SohoPay skills until a step names them.
 
-CRITICAL: This skill uses **sohopay-mcp-server** as the MCP runtime and **sohopay-backend** as the source of truth. Do NOT hold borrower private keys. MCP transports signatures only; borrowers sign EIP-712 off-device.
+For **staging**, stop and follow **sohopay-setup-staging** (`{SKILLS_BASE}/setup-staging.md`) — do not mix production and staging hosts.
 
-Note to the agent: the default path needs **network access** and may write **MCP config only**. Do not write to the user's skills directory unless the operator explicitly asks for sticky skills (Step 3). Request permission for each action normally. If a permission is denied, stop and explain to the operator what was blocked and why it is needed. Never ask the operator to turn off permission prompts or run in a bypass mode.
+CRITICAL: **sohopay-mcp-server** is the MCP runtime and **sohopay-backend** is the source of truth. Do not hold borrower private keys. MCP transports signatures only.
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+Default path needs **network access** and may write **MCP config only**. Skip sticky skills unless the operator asked. Never turn off permission prompts.
 
-Every step is safe to re-run (idempotent). If a step already appears done, verify and move on rather than duplicating it.
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+
+Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
+
+## Checklist
+
+- [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](#hosted-reference-prereqs)
+- [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
+- [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP: `https://mcp.sohopay.xyz`
+- [ ] Step 5: smoke — hosted health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke` unless you cloned the server
+- [ ] Report — [references/report.md](#hosted-reference-report)
+- [ ] Then operate via **sohopay-human-direct** (`{SKILLS_BASE}/human-direct-flow.md`). Load onboard / spend / x402 / authorize-agent only when that checklist reaches them
+
+Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.
+
+Consent gates still apply after setup:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+Wallet-proof signing (onboarding).
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+First spending-scope token grant (not a 402 payRequest refresh).
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+`AGENT_AUTHORIZATION_REQUIRED` / wallet-proof / non-`RISK_FIRST_TIME_MERCHANT` policy deny. A payRequest is consent for the x402 fast path — **sohopay-x402**.
+
+---
+
+## Hosted references (load only when the skill says to)
+
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-prereqs"></a>
+
+### Hosted reference: prereqs.md
 
 ## Before you begin: what this is, and how to verify it
 
@@ -65,6 +103,26 @@ Required for the default hosted path: **network access** (ability to fetch skill
 
 Do **not** run `node --version` / `npm --version` on the default path.
 
+
+<a id="hosted-reference-report"></a>
+
+### Hosted reference: report.md
+
+## Report to the operator
+
+One short summary. No architecture recap.
+
+- Sticky skills: installed path, or **skipped**
+- MCP: server id + URL
+- Borrower status if you onboarded
+- Failures: exact URL and error
+- Repayment is due weekly, on Sunday, settled by the operator
+
+
+<a id="hosted-reference-sticky-install"></a>
+
+### Hosted reference: sticky-install.md
+
 ## Step 3: Optional — sticky SohoPay skills (skip by default)
 
 **Skip this step unless the operator explicitly asks for sticky / offline skills.** Do not run `npx skills add`, do not prompt the operator to install sticky skills, and do not ask them to install Node.js or npm.
@@ -89,186 +147,5 @@ npm --version
 | ChatGPT app | Skip — no `npx skills` target; read hosted docs when connecting |
 | Claude.ai chat | Do not install. You should already have STOPped in Step 1. |
 
-Re-running is safe; it updates in place. Claude Code's global copy is `~/.claude/skills/sohopay-integrate/`.
+Re-running is safe; it updates in place. Install lands sibling folders such as `~/.claude/skills/sohopay-setup/` (not `sohopay-integrate/docs/`).
 
-## Reading the chained skills (local if present, else network)
-
-**Network fetch is the normal path.** If sticky skills were already installed (or the operator just opted in above), prefer the local copy; otherwise fetch from `{SKILLS_BASE}` (CDN after publish). GitHub raw is **last-resort only**. Search local paths in this order when present: `~/.claude/skills/sohopay-integrate/docs/` (Claude Code), then `~/.agents/skills/sohopay-integrate/docs/`, then `~/.config/agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` reported installing it).
-
-Each fetch below uses this form — local copy first (if any), then `{SKILLS_BASE}`, then GitHub raw:
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect.md
-```
-
-If the local copy is absent **and** both network fetches fail — including a sandboxed fetch tool that returns `Cache miss` — the global failure rule applies: **STOP and report**; do not improvise. Do not switch `{SKILLS_BASE}` to GitHub after a successful CDN fetch.
-
-## Step 4: Connect to SohoPay MCP
-
-Fetch the MCP connection skill and follow it exactly:
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/mcp-connect.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect.md
-```
-
-It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
-
-- **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
-- **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
-
-## Step 5: Smoke test MCP
-
-Verify the connection **using the path you chose** — do not run a server smoke test unless you actually cloned the server:
-
-- **Hosted MCP:** confirm reachability with the health probe and a read-only MCP tool call (e.g. `get_borrower_status`) as documented in `mcp-connect.md`. Do not run `npm run smoke`.
-- **Local MCP:** run the server's own smoke test from inside the cloned directory:
-
-  ```bash
-  cd sohopay-mcp-server && npm run smoke
-  # with transport auth:
-  cd sohopay-mcp-server && MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
-  ```
-
-  Never run `npm run smoke` outside the cloned `sohopay-mcp-server` directory.
-
-## Step 6: Onboard a borrower
-
-Fetch the onboarding skill:
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/borrower-onboard.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md
-```
-
-Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
-
-Wallet proof requires the borrower to sign an EIP-712 challenge off-device. Before wallet-proof signing:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-The token request then grants real spending scopes. Before requesting the OAuth access / borrower token:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-## Step 7: Operate — human-direct flow
-
-The borrower acts directly (the default operate path):
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/human-direct-flow.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/human-direct-flow.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
-```
-
-## Step 8: Operate — spend, policy, payment
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/spend-and-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/spend-and-pay.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md
-```
-
-Before executing any payment (especially the first or any high-risk one):
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-## Step 9: Optional — x402 HTTP credit rail
-
-For HTTP 402 paywalls (distinct from MCP orchestration):
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/x402-credit-pay.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md
-```
-
-When `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, STOP and follow the borrower grant consent page flow:
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/authorize-agent.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md
-```
-
-Staging consent page: `https://staging.sohopay.xyz/agent/authorize` (hash payload). Production: `https://sohopay.xyz/agent/authorize`.
-
-## Step 10: Idempotency reference
-
-Before any mutating financial call:
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/idempotency.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/idempotency.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md
-```
-
-## Step 11: Report to the operator
-
-Close by summarizing to the operator, in plain language:
-
-- **Sticky skills** — installed (path) **or skipped** (default). Do not imply sticky install ran if it was skipped.
-- **MCP registered** — the MCP config file location and the server URL (hosted or local).
-- **Account status** — borrower status and the current spending limit / authority granted.
-- **Repayment obligation** — repayment is due **weekly, on Sunday**, and is settled by the operator.
-- **Any failures** — if any step failed, show the exact URL/command and error; do not paper over it.
-
-## Staying current
-
-Only if sticky skills were installed (or the operator asks to install/update them). Requires Node.js / npm:
-
-```bash
-npx skills update -g -y -a claude-code sohopay-integrate   # same -a as Step 3 when sticky was used
-```
-
-Browse all skills (network works without sticky install):
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/index.json 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/index.json 2>/dev/null \
-  || curl -fsSL {SKILLS_HOST}/.well-known/agent-skills/index.json \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
-```
-
-## Rules
-
-### Security rules
-
-- NEVER store, log, or display borrower private keys, JWTs, OTP codes, or full EIP-712 signatures beyond immediate use.
-- NEVER include real API keys or service tokens in skill files or chat transcripts.
-- NEVER bypass wallet-proof or KYC gates — re-request scopes after gates complete.
-- ALWAYS obtain explicit operator consent before wallet-proof signing, OAuth token requests, or high-risk payment execution (see the STOP points above).
-- ALWAYS use `Idempotency-Key` (UUID v4) on mutating financial MCP and x402 routes.
-
-### Best practices
-
-- ALWAYS resolve live authorization via `POST /api/v1/auth/authorization-context` before privileged tools — scopes are not baked into JWTs.
-- ALWAYS use `borrowerId` (UUID) as canonical identity — never wallet address in session/policy APIs.
-- ALWAYS prefer `--output json` or structured API responses when parsing results.
-- ALWAYS verify x402 `/verify` before `/settle`; treat `txHash` as async — poll for confirmation.
-
----
-
-Current location: `{SKILLS_BASE}/setup.md`
-
-For the full skill directory, fetch `{SKILLS_HOST}/.well-known/agent-skills/index.json` (GitHub fallback: `https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json`).

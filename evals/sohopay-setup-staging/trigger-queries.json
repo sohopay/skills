@@ -1,0 +1,10 @@
+[
+  {"query": "Point this harness at staging.mcp.sohopay.xyz for full-stack E2E.", "should_trigger": true},
+  {"query": "Run SohoPay setup against staging.api, not production.", "should_trigger": true},
+  {"query": "internal staging sohopay bootstrap please", "should_trigger": true},
+  {"query": "do not mix prod tokens — I want staging MCP", "should_trigger": true},
+  {"query": "Set up production mcp.sohopay.xyz for customers.", "should_trigger": false},
+  {"query": "Pay a 402 merchant with X-PAYMENT.", "should_trigger": false},
+  {"query": "Send USDC from my wallet.", "should_trigger": false},
+  {"query": "Write a fibonacci function.", "should_trigger": false}
+]

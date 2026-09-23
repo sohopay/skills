@@ -1,0 +1,10 @@
+[
+  {"query": "prepare_x402_payment returned AGENT_AUTHORIZATION_REQUIRED", "should_trigger": true},
+  {"query": "open the authorize_agent consent page for the borrower grant", "should_trigger": true},
+  {"query": "submit AgentAuthorizationGrant after wallet sign paste", "should_trigger": true},
+  {"query": "retry prepare with the same idempotency key after authorize_agent", "should_trigger": true},
+  {"query": "wallet-proof EIP-712 onboarding challenge_id", "should_trigger": false},
+  {"query": "Ed25519 sign VOUCHER_ISSUED locally", "should_trigger": false},
+  {"query": "claude mcp add sohopay", "should_trigger": false},
+  {"query": "Stripe checkout session", "should_trigger": false}
+]

@@ -1,115 +1,55 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay x402 Credit Settlement
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** pays HTTP 402 resource servers using SohoPay credit. **Primary path:** merchant-as-settler via `prepare_x402_payment` — Protocol V2 returns `VOUCHER_ISSUED` (agent Ed25519-signs); V1 returns `COMPLETED` (custodial `intentSig`). The **merchant** calls SohoPay facilitator verify + settle. **Before running it:** the payer is onboarded (wallet proof + spend/signing scopes); for V2 the terminal exists (`register_borrower`) and an agent workload key is registered. You need a merchant resource URL (`{MERCHANT_BASE_URL}`). On a fresh borrower/terminal, follow § Cold start **before** iterating `prepare_x402_payment`.
+Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if this file (or sticky `sohopay-x402`) is already loaded.
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+**Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
-Distinct from MCP orchestration: x402 is the HTTP paywall rail. MCP creates the spend intent, evaluates policy, and either issues an unsigned voucher (V2) or a custodial signature (V1).
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-**Default for any merchant URL that returns HTTP 402.** Use this skill — not MCP `execute_payment`, and not `create_agent_session` on the human-direct path.
-
-Protocol V2 tooling: [sohopay-mcp-server#94](https://github.com/sohopay/sohopay-mcp-server/issues/94) (`register_agent_workload_key` + `VOUCHER_ISSUED`); backend/staging flags: [sohopay-backend#1144](https://github.com/sohopay/sohopay-backend/issues/1144).
-
-## Fast pay path (mandatory on payRequest)
-
-An operator message that says **pay**, **pay here**, or supplies a merchant 402 URL is a **payRequest**. That utterance **is** consent for this payment end-to-end. Complete it in **one short turn** (seconds). Do not invent extra STOPs or re-ask for tool approval.
+A **payRequest** (“pay” / merchant 402 URL) is consent for token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete the **warm** path in one short turn.
 
 ```text
-FAST PATH — payRequest to an HTTP 402 URL:
-
-PARALLEL (start of turn):
-  A. GET merchant URL → parse challenge (full network once)
-  B. whoami → borrower_id ??= principal_id
-  C. Read LOCAL sticky only: this file § Protocol V2 sign recipe
-     (do NOT network-fetch SKILLS_BASE / WebSearch / WebFetch if local sticky exists)
-  D. Resolve workload key at the fixed path below; reuse only if
-     secret.borrower_id == this borrower AND jkt will match at sign time
-
-THEN (no operator prompts):
-  1. If scopes ⊆ {borrower:token} OR no known operational_agent_id →
-     follow § Cold start (register_borrower first), then resume here
-  2. If scopes ⊆ {borrower:token} only (warm path) → request_borrower_token
-     (spend:intent:create, policy:evaluate, signing:request[, payment:read])
-     — NO STOP; payRequest already authorized this
-  3. If prepare later returns X402_AGENT_KEY_NOT_REGISTERED:
-     register_borrower if this host has no terminal, then keygen +
-     register_agent_workload_key (PoP over that terminal_id), retry SAME idempotency_key
-  4. prepare_x402_payment (map challenge; one idempotency_key for this order)
-  5. VOUCHER_ISSUED → sign per response.signing (local key) → PAYMENT-SIGNATURE → retry URL
-     COMPLETED → header_name/header_value (or payment_intent+sig)
-  6. 200 → done | 202 → poll get_settlement_status ~2s; replay SAME header once CONFIRMED
-
-Latency: **warm** (onboarded) pay should finish in one short turn. Cold start takes multiple MCP calls and one wallet-sign STOP — see § Cold start. L2 confirm poll ~2s; expect CONFIRMED ~5s (P95 under 30s).
+PARALLEL: GET merchant URL | whoami (borrower_id ??= principal_id) | resolve workload key
+1. Cold (only borrower:token or no operational_agent_id) → § Cold start
+2. Warm: request_borrower_token if scopes ⊆ {borrower:token} — NO STOP
+3. X402_AGENT_KEY_NOT_REGISTERED → register_borrower if needed, keygen + register_agent_workload_key, retry SAME idempotency_key
+4. prepare_x402_payment
+5. VOUCHER_ISSUED → open references/prepare-and-voucher.md and follow Sign steps (do not search). Key file: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
+   COMPLETED → header_name/header_value
+6. 200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 ```
 
-### Cold start (first payment on a fresh borrower/terminal)
+### Cold start
 
-The fast path above is the **warm** path: this host already has a terminal, a workload key for **this** borrower, and an ACTIVE grant. **"One short turn"** applies only then.
-
-If `whoami` shows only `borrower:token` **or** there is no known `operational_agent_id` for this host, do **not** iterate `prepare_x402_payment` to discover prerequisites. Run this sequence once up front. A payRequest still authorizes token refresh and first-time merchant — no extra operator prompts except the wallet-sign STOP.
-
-```text
-COLD START — first payment on a fresh borrower/terminal:
-
-  1. whoami → borrower_id ??= principal_id; note scopes
-  2. register_borrower (borrower_id; optional terminal_id)
-       → store operational_agent_id + resolved terminal_id
-       (creates this host's terminal — required before register_agent_workload_key;
-        skipping this step causes TERMINAL_NOT_OWNED)
-  3. request_borrower_token
-       (spend:intent:create, policy:evaluate, signing:request, payment:read,
-        credit:facility:accept)
-       — NO STOP on payRequest
-  4. Workload key at the fixed path:
-       reuse only if secret.borrower_id == this borrower_id AND you will match jkt
-       when signing. If missing or secret.borrower_id differs → keygen + persist
-       + register_agent_workload_key (PoP over the resolved terminal_id from step 2)
-  5. prepare_x402_payment (pass operational_agent_id when the borrower has 2+ terminals)
-  6. AGENT_AUTHORIZATION_REQUIRED → authorize_agent challenge → STOP wallet sign
-       (consent page completes the grant; do not wait for paste; do not re-GET merchant)
-       then retry prepare with the SAME order / SAME idempotency_key
-  7. VOUCHER_ISSUED / COMPLETED → same as fast path
-```
-
-Do a single state check (`whoami` + `register_borrower`) rather than four serial prepare failures. Cold start is expected to take multiple MCP calls and **one** genuine wallet-signature STOP (`authorize_agent`). See `{SKILLS_BASE}/borrower-onboard.md` for register / wallet-proof / token and `{SKILLS_BASE}/authorize-agent.md` for the grant.
-
-### Anti-patterns (do not do these mid-pay)
-
-- Network-fetch skills when a local sticky copy exists
-- V1 multi-step `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction` when `prepare_x402_payment` works
-- **Warm path:** extra `get_borrower_status` / `authorize_agent` / session tools mid-pay. **Cold / first-time:** do one `whoami` + `register_borrower` up front (and `authorize_agent` when prepare returns `AGENT_AUTHORIZATION_REQUIRED` or no ACTIVE grant is known)
-- WebSearch / GitHub code search / `pip install` to rediscover signing
-- Grepping all AgentStores or other chats for keys — use the fixed path below
-- Asking for first-time merchant / token / voucher-sign consent after a payRequest
-- Serial `tools/list` rediscovery when schemas are already known this session
-- Guessing `terminal_id` or registering a workload key before `register_borrower` has created this host's terminal
+`whoami` → `register_borrower` (store `operational_agent_id`) → token (no STOP on payRequest) → workload key → prepare. One wallet-sign STOP: `AGENT_AUTHORIZATION_REQUIRED` → **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`), then retry **same** order / **same** key. Do not re-GET the merchant. Details: `{SKILLS_BASE}/borrower-onboard.md` and [references/prepare-and-voucher.md](#hosted-reference-prepare-and-voucher).
 
 ### STOP only if
 
 | Gate | When |
 |------|------|
-| Wallet proof | Onboarding — borrower has not completed EIP-712 wallet proof |
-| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (consent page completes the grant; poll prepare — do not wait for paste; do not re-GET the merchant) |
-| Other policy deny | `POLICY_DECISION_DENIED` **without** `RISK_FIRST_TIME_MERCHANT` (or no payRequest) — surface and wait |
+| Wallet proof | Onboarding incomplete |
+| `authorize_agent` | `AGENT_AUTHORIZATION_REQUIRED` |
+| Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
 
-### Recoverable prepare errors
+| Error | Action |
+|-------|--------|
+| `X402_AGENT_KEY_NOT_REGISTERED` | Terminal + key, retry same key — no custodial invent |
+| `CUSTODIAL_SIGNING_DISABLED` | V2 voucher path only |
+| `RISK_FIRST_TIME_MERCHANT` on payRequest | Accept; retry same order/key |
+| `X402_INTENT_EXPIRED` | Retry same order/key — do not mint a new merchant `orderRef` |
 
-| Error | Agent action |
-|-------|--------------|
-| `X402_AGENT_KEY_NOT_REGISTERED` | First ensure the terminal exists for **this** borrower via `register_borrower` (returns `operational_agent_id` + `terminal_id`). Then keygen + `register_agent_workload_key` signing PoP over that resolved `terminal_id`. Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. Do **not** guess `terminal_id`. |
-| `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
-| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page; page POSTs complete). Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** wait for a JSON paste. Do **not** re-GET the merchant. |
-| `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
-| `X402_INTENT_EXPIRED` | Do **not** re-GET the merchant. Retry `prepare_x402_payment` on the **same** order / **same** `idempotency_key` (backend remints an expired unsettled deadline). Only map a new `orderRef` if the merchant already issued a new challenge. |
-
-## Choose environment (API)
+Sign recipe + challenge map: [references/prepare-and-voucher.md](#hosted-reference-prepare-and-voucher). V1 `X-PAYMENT`: [references/v1-fallback.md](#hosted-reference-v1-fallback). Borrower-direct `/api/v2/x402`: [references/borrower-direct.md](#hosted-reference-borrower-direct). First-time merchant keys: **sohopay-spend**.
 
 | Environment | `{API_BASE}` |
 |-------------|--------------|
@@ -117,6 +57,44 @@ Do a single state check (`whoami` + `register_borrower`) rather than four serial
 | Staging | `https://staging.api.sohopay.xyz` |
 
 ---
+
+## Hosted references (load only when the skill says to)
+
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-borrower-direct"></a>
+
+### Hosted reference: borrower-direct.md
+
+## Secondary: borrower-direct settle (`/api/v2/x402`)
+
+Use when the **agent/borrower** settles against SohoPay directly (no merchant facilitator unlock). Canonical mount: **`{API_BASE}/api/v2/x402/`**.
+
+| Method | Path | Auth | Idempotency |
+|--------|------|------|-------------|
+| POST | `/check-eligibility` | Public | — |
+| POST | `/check-nonce` | Public | — |
+| POST | `/verify` | Public | — |
+| POST | `/settle` | JWT + 2FA + `x402:settle:create` | Required, 72h |
+| GET | `/settle/status/:jobId` | JWT | — |
+| GET | `/health` | Public | — |
+
+Always **verify before settle**. Settle returns **202** with `{ txHash, jobId, settlementId, status }` — poll until terminal.
+
+Unlinked wallets on verify may return HTTP 200 with `isValid: false` (`BORROWER_WALLET_UNKNOWN`, `BORROWER_WALLET_NOT_VERIFIED`).
+
+Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to user; do not retry blindly.
+
+### Legacy mount (do not use for new integrations)
+
+`{API_BASE}/api/v1/x402/v2/*` is **deprecated** (same handlers; RFC 8594 deprecation headers). **Sunset: 2027-02-10.** Successor: `/api/v2/x402`.
+
+---
+
+
+<a id="hosted-reference-prepare-and-voucher"></a>
+
+### Hosted reference: prepare-and-voucher.md
 
 ## Primary: prepare_x402_payment (merchant-as-settler)
 
@@ -310,6 +288,11 @@ API key must be bound to the same merchant UUID as the resource server. Unbound 
 
 ---
 
+
+<a id="hosted-reference-v1-fallback"></a>
+
+### Hosted reference: v1-fallback.md
+
 ## V1 fallback: multi-step sign_transaction → X-PAYMENT (when V2 is off)
 
 Use when `prepare_x402_payment` is unavailable, or when V2 is off and you follow the custodial path explicitly. Unlock header: **`X-PAYMENT`**.
@@ -372,50 +355,3 @@ On V2 staging, `sign_transaction` may return `CUSTODIAL_SIGNING_DISABLED` — sw
 
 ---
 
-## Secondary: borrower-direct settle (`/api/v2/x402`)
-
-Use when the **agent/borrower** settles against SohoPay directly (no merchant facilitator unlock). Canonical mount: **`{API_BASE}/api/v2/x402/`**.
-
-| Method | Path | Auth | Idempotency |
-|--------|------|------|-------------|
-| POST | `/check-eligibility` | Public | — |
-| POST | `/check-nonce` | Public | — |
-| POST | `/verify` | Public | — |
-| POST | `/settle` | JWT + 2FA + `x402:settle:create` | Required, 72h |
-| GET | `/settle/status/:jobId` | JWT | — |
-| GET | `/health` | Public | — |
-
-Always **verify before settle**. Settle returns **202** with `{ txHash, jobId, settlementId, status }` — poll until terminal.
-
-Unlinked wallets on verify may return HTTP 200 with `isValid: false` (`BORROWER_WALLET_UNKNOWN`, `BORROWER_WALLET_NOT_VERIFIED`).
-
-Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to user; do not retry blindly.
-
-### Legacy mount (do not use for new integrations)
-
-`{API_BASE}/api/v1/x402/v2/*` is **deprecated** (same handlers; RFC 8594 deprecation headers). **Sunset: 2027-02-10.** Successor: `/api/v2/x402`.
-
----
-
-## Integration checklist
-
-- [ ] Cold start: `register_borrower` (terminal) before the first V2 workload key; store `operational_agent_id`
-- [ ] Workload key registered once per terminal before V2 prepare (`register_agent_workload_key`; agent holds private key at the fixed path; reuse only when `borrower_id` **and** `jkt` match)
-- [ ] Prefer `prepare_x402_payment` for HTTP 402s; branch on `VOUCHER_ISSUED` vs `COMPLETED`
-- [ ] `VOUCHER_ISSUED`: sign per `signing`, fill `envelope.payload.signature`, retry with `header_name` (`PAYMENT-SIGNATURE`)
-- [ ] `X402_AGENT_KEY_NOT_REGISTERED`: `register_borrower` if needed, then register key, retry **same** idempotency key — no custodial invent
-- [ ] `AGENT_AUTHORIZATION_REQUIRED`: consent page completes the grant; poll prepare; do not wait for paste; do not re-GET the merchant
-- [ ] `X402_INTENT_EXPIRED`: retry same order / same key — do not mint a new merchant `orderRef`
-- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn; cold start uses § Cold start. If a skill is needed, fetch CDN (`{SKILLS_BASE}` after publish), not GitHub raw.
-- [ ] V1 fallback: challenge mapped; `policy_decision_id` on sign; `intentSig` from `get_signing_status`; envelope from `payment_intent` echo
-- [ ] On **202**, retry **same** payment header — never a new spend intent
-- [ ] Idempotency on MCP writes and on facilitator/borrower settle
-- [ ] Poll confirmation; handle `CONFIRMED` / `FAILED` / `TIMED_OUT` / `DISPUTED`
-- [ ] Operator informed about available-credit lag
-
-## Next steps
-
-- Spend / signing detail: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
-- Workload key onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
-- MCP setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`

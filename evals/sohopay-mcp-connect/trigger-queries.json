@@ -1,0 +1,16 @@
+[
+  {"query": "Add SohoPay MCP to Cursor mcp.json with OAuth.", "should_trigger": true},
+  {"query": "claude mcp add sohopay http mcp.sohopay.xyz keeps failing", "should_trigger": true},
+  {"query": "tools/list returns 401 WWW-Authenticate Bearer — fix MCP login", "should_trigger": true},
+  {"query": "register hosted MCP without a Node local server", "should_trigger": true},
+  {"query": "codex mcp login sohopay oauth consent page", "should_trigger": true},
+  {"query": "ChatGPT developer mode connector for SohoPay", "should_trigger": true},
+  {"query": "headless CI token for sohopay MCP", "should_trigger": true},
+  {"query": "clone sohopay-mcp-server and run locally", "should_trigger": true},
+  {"query": "create_spend_intent then sign_transaction", "should_trigger": false},
+  {"query": "this URL returned HTTP 402, pay it", "should_trigger": false},
+  {"query": "onboard a borrower wallet proof", "should_trigger": false},
+  {"query": "Send USDC from my hardware wallet.", "should_trigger": false},
+  {"query": "Configure postgres connection pooling.", "should_trigger": false},
+  {"query": "Update Excel budget formulas.", "should_trigger": false}
+]

@@ -1,33 +1,85 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Borrower Onboarding
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** registers a borrower and completes wallet proof so scope-gated tokens can be issued. **Before running it:** the MCP server is connected (`mcp-connect.md`).
+Execute the numbered workflow. Do not plan. **Before:** MCP connected (`{SKILLS_BASE}/mcp-connect.md`).
 
-MCP tool descriptions summarize call-time rules for each onboarding tool; **this skill is authoritative** for ordering, STOP gates, and dropped-scope handling.
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
-Canonical identity: **borrowerId = User.id (UUID)**. Wallet is a verified credential, not the primary identifier.
+0. `whoami` — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. Field caveats: [references/whoami.md](#hosted-reference-whoami)
+1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
+2. Wallet proof — `request_signature_challenge` → borrower signs off-device → `submit_signature`
 
-Pass `idempotency_key` (UUID v4) on write tools when the harness cannot set HTTP headers — see `{SKILLS_BASE}/idempotency.md`.
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-## Workflow
+3. `get_borrower_status`
+4. `request_borrower_token` with `requested_scopes[]`
 
-0. **`whoami`** — if already authenticated, read identity / scopes from JWT claims; skip *user* register when the borrower already exists. Still call `register_borrower` when this host has no `operational_agent_id` / terminal. Read the caveats below before trusting the fields.
-1. **Register** — `register_borrower` / `POST /api/v1/borrowers/register` — creates **this host's terminal** and returns `operational_agent_id` + `terminal_id`. Pass that `operational_agent_id` on `authorize_agent` and `prepare_x402_payment` (required when the borrower has 2+ terminals).
-2. **Wallet proof** — challenge → sign off-device → submit
-3. **Status** — `get_borrower_status` / `GET /api/v1/borrowers/:id/status`
-4. **Token** — `request_borrower_token` / `POST /api/v1/borrowers/token` with `requested_scopes[]`
-5. **Protocol V2 workload key** (before any V2 x402 prepare) — **requires step 1**: the terminal must already exist. Then agent Ed25519 keygen → `register_agent_workload_key` (PoP over the resolved `terminal_id`). Skipping step 1 here causes `TERMINAL_NOT_OWNED`. First-payment sequence: `{SKILLS_BASE}/x402-credit-pay.md` § Cold start.
-6. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-All MCP gateway paths require `x-soho-service-token` (set by the MCP server). Borrower-scoped routes also need `x-soho-borrower-id`.
+On a 402 payRequest after first-time merchant consent, do **not** STOP for token refresh — `{SKILLS_BASE}/x402-credit-pay.md`.
+
+5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`
+6. `POST /api/v1/auth/authorization-context` before privileged tools
+
+Dropped scopes are not fatal. Scope table: [references/scopes.md](#hosted-reference-scopes). Grant: `{SKILLS_BASE}/authorize-agent.md`. Operate: `{SKILLS_BASE}/human-direct-flow.md`.
+
+---
+
+## Hosted references (load only when the skill says to)
+
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-scopes"></a>
+
+### Hosted reference: scopes.md
+
+## Authorization context
+
+`POST /api/v1/auth/authorization-context`
+
+Returns live `{ permissions, scopes, roles, borrower_status, frozen, suspended, active, ... }`.
+
+JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` returns token claims only (not a live authz re-check).
+
+## Scope gates (summary)
+
+| Scope | Wallet proof | KYC approved |
+|-------|:------------:|:------------:|
+| session:* | — | — |
+| spend:intent:create | ✅ | ✅ |
+| payment:execute | ✅ | ✅ (+ 2FA-equiv) |
+| signing:request | ✅ | — (+ 2FA-equiv) |
+| credit:approve | — | ✅ (+ 2FA-equiv) |
+| repayment:execute | ✅ | NOT KYC-gated |
+
+## MCP tools (via sohopay-mcp-server)
+
+| Tool | Purpose |
+|------|---------|
+| `whoami` | JWT identity snapshot (start here when already connected) |
+| `register_borrower` | Register HUMAN/AGENT/BUSINESS |
+| `request_signature_challenge` | Start wallet proof |
+| `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
+| `get_borrower_status` | Onboarding status |
+| `request_borrower_token` | Scope-gated token |
+| `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
+
+
+<a id="hosted-reference-whoami"></a>
+
+### Hosted reference: whoami.md
 
 ## whoami — what it actually returns
 
@@ -133,6 +185,11 @@ The token grants real spending scopes.
 
 Ungated scopes are **dropped, not fatal**. Re-request after wallet proof or KYC completes.
 
+
+<a id="hosted-reference-workload-key"></a>
+
+### Hosted reference: workload-key.md
+
 ## Protocol V2 agent workload key
 
 Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). Without a registered key, prepare returns `X402_AGENT_KEY_NOT_REGISTERED`. Tool ships with MCP catalog **v5** ([sohopay-mcp-server#94](https://github.com/sohopay/sohopay-mcp-server/issues/94)); backend alignment [sohopay-backend#1144](https://github.com/sohopay/sohopay-backend/issues/1144).
@@ -174,40 +231,3 @@ Register once per terminal before the first V2 prepare. On later pays, reuse the
 
 Registering the key does **not** authorize spending. If `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant) before retrying prepare.
 
-## Authorization context
-
-`POST /api/v1/auth/authorization-context`
-
-Returns live `{ permissions, scopes, roles, borrower_status, frozen, suspended, active, ... }`.
-
-JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` returns token claims only (not a live authz re-check).
-
-## Scope gates (summary)
-
-| Scope | Wallet proof | KYC approved |
-|-------|:------------:|:------------:|
-| session:* | — | — |
-| spend:intent:create | ✅ | ✅ |
-| payment:execute | ✅ | ✅ (+ 2FA-equiv) |
-| signing:request | ✅ | — (+ 2FA-equiv) |
-| credit:approve | — | ✅ (+ 2FA-equiv) |
-| repayment:execute | ✅ | NOT KYC-gated |
-
-## MCP tools (via sohopay-mcp-server)
-
-| Tool | Purpose |
-|------|---------|
-| `whoami` | JWT identity snapshot (start here when already connected) |
-| `register_borrower` | Register HUMAN/AGENT/BUSINESS |
-| `request_signature_challenge` | Start wallet proof |
-| `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
-| `get_borrower_status` | Onboarding status |
-| `request_borrower_token` | Scope-gated token |
-| `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
-
-## Next steps
-
-- Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md`
-- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
-- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
