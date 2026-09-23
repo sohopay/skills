@@ -7,7 +7,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** pays HTTP 402 resource servers using SohoPay credit. **Primary path:** merchant-as-settler via `prepare_x402_payment` — Protocol V2 returns `VOUCHER_ISSUED` (agent Ed25519-signs); V1 returns `COMPLETED` (custodial `intentSig`). The **merchant** calls SohoPay facilitator verify + settle. **Before running it:** the payer is onboarded (wallet proof + spend/signing scopes); for V2 also register an agent workload key. You need a merchant resource URL (`{MERCHANT_BASE_URL}`).
+**What this skill does:** pays HTTP 402 resource servers using SohoPay credit. **Primary path:** merchant-as-settler via `prepare_x402_payment` — Protocol V2 returns `VOUCHER_ISSUED` (agent Ed25519-signs); V1 returns `COMPLETED` (custodial `intentSig`). The **merchant** calls SohoPay facilitator verify + settle. **Before running it:** the payer is onboarded (wallet proof + spend/signing scopes); for V2 the terminal exists (`register_borrower`) and an agent workload key is registered. You need a merchant resource URL (`{MERCHANT_BASE_URL}`). On a fresh borrower/terminal, follow § Cold start **before** iterating `prepare_x402_payment`.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
@@ -29,31 +29,66 @@ PARALLEL (start of turn):
   B. whoami → borrower_id ??= principal_id
   C. Read LOCAL sticky only: this file § Protocol V2 sign recipe
      (do NOT network-fetch SKILLS_BASE / WebSearch / WebFetch if local sticky exists)
-  D. Resolve workload key at the fixed path below; skip register if present
+  D. Resolve workload key at the fixed path below; reuse only if
+     secret.borrower_id == this borrower AND jkt will match at sign time
 
 THEN (no operator prompts):
-  1. If scopes ⊆ {borrower:token} → request_borrower_token
+  1. If scopes ⊆ {borrower:token} OR no known operational_agent_id →
+     follow § Cold start (register_borrower first), then resume here
+  2. If scopes ⊆ {borrower:token} only (warm path) → request_borrower_token
      (spend:intent:create, policy:evaluate, signing:request[, payment:read])
      — NO STOP; payRequest already authorized this
-  2. If prepare later returns X402_AGENT_KEY_NOT_REGISTERED only:
-     keygen + register_agent_workload_key once, retry SAME idempotency_key
-  3. prepare_x402_payment (map challenge; one idempotency_key for this order)
-  4. VOUCHER_ISSUED → sign per response.signing (local key) → PAYMENT-SIGNATURE → retry URL
+  3. If prepare later returns X402_AGENT_KEY_NOT_REGISTERED:
+     register_borrower if this host has no terminal, then keygen +
+     register_agent_workload_key (PoP over that terminal_id), retry SAME idempotency_key
+  4. prepare_x402_payment (map challenge; one idempotency_key for this order)
+  5. VOUCHER_ISSUED → sign per response.signing (local key) → PAYMENT-SIGNATURE → retry URL
      COMPLETED → header_name/header_value (or payment_intent+sig)
-  5. 200 → done | 202 → poll get_settlement_status ~2s; replay SAME header once CONFIRMED
+  6. 200 → done | 202 → poll get_settlement_status ~2s; replay SAME header once CONFIRMED
 
-Latency: onboarded pay should finish in one short turn. L2 confirm poll ~2s; expect CONFIRMED ~5s (P95 under 30s).
+Latency: **warm** (onboarded) pay should finish in one short turn. Cold start takes multiple MCP calls and one wallet-sign STOP — see § Cold start. L2 confirm poll ~2s; expect CONFIRMED ~5s (P95 under 30s).
 ```
+
+### Cold start (first payment on a fresh borrower/terminal)
+
+The fast path above is the **warm** path: this host already has a terminal, a workload key for **this** borrower, and an ACTIVE grant. **"One short turn"** applies only then.
+
+If `whoami` shows only `borrower:token` **or** there is no known `operational_agent_id` for this host, do **not** iterate `prepare_x402_payment` to discover prerequisites. Run this sequence once up front. A payRequest still authorizes token refresh and first-time merchant — no extra operator prompts except the wallet-sign STOP.
+
+```text
+COLD START — first payment on a fresh borrower/terminal:
+
+  1. whoami → borrower_id ??= principal_id; note scopes
+  2. register_borrower (borrower_id; optional terminal_id)
+       → store operational_agent_id + resolved terminal_id
+       (creates this host's terminal — required before register_agent_workload_key;
+        skipping this step causes TERMINAL_NOT_OWNED)
+  3. request_borrower_token
+       (spend:intent:create, policy:evaluate, signing:request, payment:read,
+        credit:facility:accept)
+       — NO STOP on payRequest
+  4. Workload key at the fixed path:
+       reuse only if secret.borrower_id == this borrower_id AND you will match jkt
+       when signing. If missing or secret.borrower_id differs → keygen + persist
+       + register_agent_workload_key (PoP over the resolved terminal_id from step 2)
+  5. prepare_x402_payment (pass operational_agent_id when the borrower has 2+ terminals)
+  6. AGENT_AUTHORIZATION_REQUIRED → authorize_agent (challenge → STOP wallet sign → submit)
+       then retry prepare with the SAME order / SAME idempotency_key
+  7. VOUCHER_ISSUED / COMPLETED → same as fast path
+```
+
+Do a single state check (`whoami` + `register_borrower`) rather than four serial prepare failures. Cold start is expected to take multiple MCP calls and **one** genuine wallet-signature STOP (`authorize_agent`). See `{SKILLS_BASE}/borrower-onboard.md` for register / wallet-proof / token and `{SKILLS_BASE}/authorize-agent.md` for the grant.
 
 ### Anti-patterns (do not do these mid-pay)
 
 - Network-fetch skills when a local sticky copy exists
 - V1 multi-step `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction` when `prepare_x402_payment` works
-- `get_borrower_status`, `authorize_agent`, or session tools unless prepare/onboarding explicitly requires them
+- **Warm path:** extra `get_borrower_status` / `authorize_agent` / session tools mid-pay. **Cold / first-time:** do one `whoami` + `register_borrower` up front (and `authorize_agent` when prepare returns `AGENT_AUTHORIZATION_REQUIRED` or no ACTIVE grant is known)
 - WebSearch / GitHub code search / `pip install` to rediscover signing
 - Grepping all AgentStores or other chats for keys — use the fixed path below
 - Asking for first-time merchant / token / voucher-sign consent after a payRequest
 - Serial `tools/list` rediscovery when schemas are already known this session
+- Guessing `terminal_id` or registering a workload key before `register_borrower` has created this host's terminal
 
 ### STOP only if
 
@@ -67,7 +102,7 @@ Latency: onboarded pay should finish in one short turn. L2 confirm poll ~2s; exp
 
 | Error | Agent action |
 |-------|--------------|
-| `X402_AGENT_KEY_NOT_REGISTERED` | Agent keygen + `register_agent_workload_key`, then retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. |
+| `X402_AGENT_KEY_NOT_REGISTERED` | First ensure the terminal exists for **this** borrower via `register_borrower` (returns `operational_agent_id` + `terminal_id`). Then keygen + `register_agent_workload_key` signing PoP over that resolved `terminal_id`. Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. Do **not** guess `terminal_id`. |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
 | `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page → submit), then retry prepare with the **same** order / **same** `idempotency_key`. |
 | `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
@@ -99,8 +134,9 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 ```text
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge (X-SOHO-PAYMENT-REQUIRED / body.challenge)
+  → cold: MCP register_borrower → operational_agent_id + terminal_id
   → MCP: request_borrower_token if whoami scopes are only borrower:token
-  → MCP: register_agent_workload_key (once; if not yet registered)
+  → MCP: register_agent_workload_key (once; if not yet registered for THIS borrower)
   → MCP: prepare_x402_payment (map challenge; no session_id)
   → branch on status:
        VOUCHER_ISSUED → agent signs → PAYMENT-SIGNATURE → retry
@@ -165,7 +201,7 @@ Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `
 
 ### Protocol V2 sign recipe (copy this — do not rediscover)
 
-**Workload key path (fixed):** look here first, match `jkt` / `agentKeyJkt`:
+**Workload key path (fixed):** look here first. Reuse only when **both** `borrower_id` (this borrower) **and** `jkt` / `agentKeyJkt` match. If the file is missing or `borrower_id` belongs to a different borrower, generate a fresh Ed25519 keypair for the current borrower — do not register another borrower's key.
 
 ```text
 <Cursor AgentStores>/<this-or-known-store>/files/sohopay-agent-workload/secret.json
@@ -361,11 +397,12 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 
 ## Integration checklist
 
-- [ ] Workload key registered once per terminal before V2 prepare (`register_agent_workload_key`; agent holds private key at the fixed path)
+- [ ] Cold start: `register_borrower` (terminal) before the first V2 workload key; store `operational_agent_id`
+- [ ] Workload key registered once per terminal before V2 prepare (`register_agent_workload_key`; agent holds private key at the fixed path; reuse only when `borrower_id` **and** `jkt` match)
 - [ ] Prefer `prepare_x402_payment` for HTTP 402s; branch on `VOUCHER_ISSUED` vs `COMPLETED`
 - [ ] `VOUCHER_ISSUED`: sign per `signing`, fill `envelope.payload.signature`, retry with `header_name` (`PAYMENT-SIGNATURE`)
-- [ ] `X402_AGENT_KEY_NOT_REGISTERED`: register key, retry **same** idempotency key — no custodial invent
-- [ ] payRequest: no STOP for token / sign / first-time / settle — complete fast path in one turn
+- [ ] `X402_AGENT_KEY_NOT_REGISTERED`: `register_borrower` if needed, then register key, retry **same** idempotency key — no custodial invent
+- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn; cold start uses § Cold start
 - [ ] V1 fallback: challenge mapped; `policy_decision_id` on sign; `intentSig` from `get_signing_status`; envelope from `payment_intent` echo
 - [ ] On **202**, retry **same** payment header — never a new spend intent
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle
