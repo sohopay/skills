@@ -19,12 +19,12 @@ Pass `idempotency_key` (UUID v4) on write tools when the harness cannot set HTTP
 
 ## Workflow
 
-0. **`whoami`** — if already authenticated, read identity / scopes from JWT claims; skip register when the borrower already exists. Read the caveats below before trusting the fields.
-1. **Register** — `register_borrower` / `POST /api/v1/borrowers/register`
+0. **`whoami`** — if already authenticated, read identity / scopes from JWT claims; skip *user* register when the borrower already exists. Still call `register_borrower` when this host has no `operational_agent_id` / terminal. Read the caveats below before trusting the fields.
+1. **Register** — `register_borrower` / `POST /api/v1/borrowers/register` — creates **this host's terminal** and returns `operational_agent_id` + `terminal_id`. Pass that `operational_agent_id` on `authorize_agent` and `prepare_x402_payment` (required when the borrower has 2+ terminals).
 2. **Wallet proof** — challenge → sign off-device → submit
 3. **Status** — `get_borrower_status` / `GET /api/v1/borrowers/:id/status`
 4. **Token** — `request_borrower_token` / `POST /api/v1/borrowers/token` with `requested_scopes[]`
-5. **Protocol V2 workload key** (before any V2 x402 prepare) — agent Ed25519 keygen → `register_agent_workload_key`
+5. **Protocol V2 workload key** (before any V2 x402 prepare) — **requires step 1**: the terminal must already exist. Then agent Ed25519 keygen → `register_agent_workload_key` (PoP over the resolved `terminal_id`). Skipping step 1 here causes `TERMINAL_NOT_OWNED`. First-payment sequence: `{SKILLS_BASE}/x402-credit-pay.md` § Cold start.
 6. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
 
 All MCP gateway paths require `x-soho-service-token` (set by the MCP server). Borrower-scoped routes also need `x-soho-borrower-id`.
@@ -68,7 +68,9 @@ This substitution holds for the human-direct flow (the default), where the calle
 **MCP `borrower_type`:** `HUMAN` | `AGENT` | `BUSINESS`  
 **Backend also accepts** `INDIVIDUAL` (alias for human); prefer the MCP values when calling tools.
 
-Typical MCP fields (execute-time): `borrower_type`, `display_name`, `wallet_address`, `requested_scopes[]`; `callback_url` required for `AGENT`; business fields for `BUSINESS`.
+Typical MCP fields (execute-time): `borrower_id`, optional `terminal_id`; omit `terminal_id` to use `SOHO_TERMINAL_ID` or the host default. Returns `operational_agent_id`, `terminal_id`, `agent_id` (bytes32 — do not pass that as `operational_agent_id`), `spend_ready`, `available_credit`.
+
+`register_borrower` is also the **terminal bind** for an already-onboarded borrower on a new MCP host. Call it before `register_agent_workload_key`. Do not invent `terminal_id` — use the value the tool returns (or the host default you omitted).
 
 ## Wallet proof (EIP-712)
 
@@ -143,7 +145,9 @@ Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). 
 ~/.agents/sohopay-agent-workload/secret.json
 ```
 
-or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `{ private_key_base64url, public_jwk, jkt, terminal_id, borrower_id }`. Match `jkt` to `voucher.agentKeyJkt` when signing. Voucher recipe: `{SKILLS_BASE}/x402-credit-pay.md` § Protocol V2 sign recipe.
+or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `{ private_key_base64url, public_jwk, jkt, terminal_id, borrower_id }`. Reuse only when **both** `borrower_id` (this borrower) **and** `jkt` / `voucher.agentKeyJkt` match. If the file is missing or `borrower_id` belongs to a different borrower, generate a fresh Ed25519 keypair for the current borrower — do not register another borrower's key. Voucher recipe: `{SKILLS_BASE}/x402-credit-pay.md` § Protocol V2 sign recipe.
+
+**Prerequisite:** step 1 (`register_borrower`) must have created this host's terminal. Sign PoP over the **resolved** `terminal_id` from that call (or `SOHO_TERMINAL_ID` / host default). Registering a key against an unregistered or guessed terminal returns `TERMINAL_NOT_OWNED`.
 
 ### Steps (once per terminal)
 
@@ -157,7 +161,7 @@ or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `
 | Field | Detail |
 |-------|--------|
 | `borrower_id` | Canonical borrower UUID (`whoami.borrower_id ?? whoami.principal_id`) |
-| `terminal_id` | Optional; omit to use `SOHO_TERMINAL_ID` or the host default |
+| `terminal_id` | Must match the terminal from `register_borrower`. Omit to use `SOHO_TERMINAL_ID` or the host default — then sign PoP over that same resolved value |
 | `public_jwk` | `{ kty: "OKP", crv: "Ed25519", x }` only — no `d` |
 | `jkt` | RFC 7638 thumbprint; gateway recomputes and must match |
 | `nonce` | Single-use PoP nonce (agent-generated) |
@@ -166,7 +170,7 @@ or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `
 | Scope | `borrower:token` |
 | Idempotent | Yes — pass `idempotency_key` when the harness cannot set headers |
 
-Register once per terminal before the first V2 prepare. On later pays, reuse the same key. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
+Register once per terminal before the first V2 prepare. On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
 
 Registering the key does **not** authorize spending. If `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant) before retrying prepare.
 
@@ -204,4 +208,6 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 ## Next steps
 
 - Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md`
+- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
+- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md`
 - Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
