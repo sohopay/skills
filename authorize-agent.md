@@ -13,7 +13,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
-MCP tool: `authorize_agent` (composite challenge → submit). Prefer the local sticky copy of this file under `sohopay-integrate/docs/` when present.
+MCP tool: `authorize_agent` (challenge; submit-with-signature is fallback only). Prefer the local sticky copy of this file under `sohopay-integrate/docs/` when present.
 
 ## When to run
 
@@ -39,7 +39,7 @@ Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the 
 - JSON fields: `challenge_id` (UUID), `typed_data` (exact challenge `typed_data`), optional `expires_at` (ISO string from the challenge response).
 - `typed_data.primaryType` must be `AgentAuthorizationGrant`.
 - Empty / missing hash → page shows **Invalid authorization link** (expected without a challenge).
-- After wallet sign → page shows **Grant signed** and a copyable JSON result (below). The browser does **not** call SohoPay APIs; the agent still submits via MCP.
+- After wallet sign → the page POSTs `{ challenge_id, wallet_address, signature }` to the first-party complete route and shows **Grant active**. The agent does **not** wait for a chat paste.
 
 Build the link (Node):
 
@@ -52,7 +52,19 @@ const hash = Buffer.from(JSON.stringify({
 const url = `https://staging.sohopay.xyz/agent/authorize#${hash}`; // or sohopay.xyz in prod
 ```
 
-Use **standard base64url** (no padding). The page reads the **hash only**. After the borrower signs, they copy:
+Use **standard base64url** (no padding). The page reads the **hash only**. After you open the URL, **poll** until the grant is ACTIVE (or until `expires_at`). Do **not** ask the operator to paste.
+
+### Poll (preferred resume)
+
+Every ~2s until `expires_at` (or ~2 minutes if `expires_at` is missing):
+
+- Retry `prepare_x402_payment` with the **same** order and the **same** payment `idempotency_key`.
+
+Do **not** remint a challenge to poll. Stop when prepare is no longer `AGENT_AUTHORIZATION_REQUIRED` (typically `VOUCHER_ISSUED`) or when the challenge expires.
+
+### Paste (fallback only)
+
+If the page cannot submit (old deploy, network error, or the operator still sees a copy-JSON box), ask **once** for:
 
 ```json
 {
@@ -62,7 +74,7 @@ Use **standard base64url** (no padding). The page reads the **hash only**. After
 }
 ```
 
-Paste that result into the agent chat. The agent then calls `authorize_agent` with `challenge_id` + `wallet_address` + `signature`.
+Then call `authorize_agent` with `challenge_id` + `wallet_address` + `signature` (new idempotency key). Do not ask for paste on the preferred path.
 
 ## STOP — operator consent
 
@@ -72,10 +84,10 @@ Show the operator:
 
 1. Why the stop happened (`AGENT_AUTHORIZATION_REQUIRED`).
 2. The proposed limits (USDC, validity window, merchant scope).
-3. The consent URL (staging or production) for them to open and sign.
-4. That they must paste the signed result back when the page shows **Grant signed**.
+3. The consent URL (staging or production) for them to open and sign in their wallet.
+4. That the page activates the grant after they sign — they can return to the agent; it continues automatically.
 
-Wait for the paste. Do not poll, do not invent a signature, and do not continue the payment until submit succeeds.
+After opening the URL, poll as above. Do not invent a signature. Do not continue the payment until prepare succeeds or the grant is ACTIVE.
 
 ## Workflow
 
@@ -89,20 +101,20 @@ Wait for the paste. Do not poll, do not invent a signature, and do not continue 
      — fresh idempotency_key (UUID v4)
   → { challenge_id, typed_data, expires_at, authorization_version }
 
-2. STOP — open consent URL; wait for operator paste
-     { challenge_id, wallet_address, signature }
+2. STOP — open consent URL; borrower signs in-wallet
+     Page POSTs the signature (Grant active). Agent polls.
 
-3. authorize_agent (submit phase)
-     — same operational_agent_id + borrower_id
-     — challenge_id + wallet_address + signature from the paste
-     — NEW idempotency_key (never reuse the challenge-phase key)
+3. Poll every ~2s until expires_at
+     — retry prepare_x402_payment with the SAME order / SAME payment idempotency_key
+     — do NOT remint a challenge
+     — paste + authorize_agent submit is fallback only (NEW idempotency_key)
 
-4. Retry the blocked prepare_x402_payment with the SAME order and SAME payment idempotency_key
+4. Continue the blocked prepare (VOUCHER_ISSUED → agent voucher sign)
 ```
 
 ### Idempotency
 
-Challenge and submit are **separate writes**. Reusing one `idempotency_key` across both phases returns `409 IDEMPOTENCY_KEY_CONFLICT`. Always mint a fresh key for submit. See `{SKILLS_BASE}/idempotency.md`.
+Challenge and the optional paste-submit are **separate writes**. Reusing one `idempotency_key` across both phases returns `409 IDEMPOTENCY_KEY_CONFLICT`. Always mint a fresh key for submit. The **payment** `idempotency_key` used for prepare must stay the same across polls. See `{SKILLS_BASE}/idempotency.md`.
 
 ### Terms (USDC base units, 6 decimals)
 
@@ -120,9 +132,9 @@ Pick limits that cover the pending payment (and a sane daily headroom). Example 
 
 Challenge and submit require `credit:facility:accept` (projected on the MCP tool). If the current borrower token lacks it, call `request_borrower_token` with that scope (plus any existing spend scopes needed to resume pay) **before** the challenge phase. On a payRequest, token refresh does not need a separate STOP once the operator already authorized the payment — but **this grant STOP still applies**.
 
-## After submit
+## After the grant is ACTIVE
 
-- Grant status becomes ACTIVE for that `operational_agent_id` + workload key `jkt`.
+- Grant status becomes ACTIVE for that `operational_agent_id` + workload key `jkt` (the consent page writes it; paste-submit is only the fallback).
 - Resume the blocked payment: `prepare_x402_payment` with the **same** order tuple and the **same** payment `idempotency_key` used before the STOP.
 - Continue `{SKILLS_BASE}/x402-credit-pay.md` (VOUCHER_ISSUED → agent signs → PAYMENT-SIGNATURE).
 
@@ -132,13 +144,15 @@ Challenge and submit require `credit:facility:accept` (projected on the MCP tool
 |-----------|--------|
 | Consent page says challenge expired / `expiresAt` passed | Mint a **new** challenge (new idempotency key); do not reuse the old `challenge_id` |
 | Operator rejects / closes without signing | STOP; do not pay |
-| Submit fails (`WALLET_PROOF_SIGNER_MISMATCH`, typed-data mismatch, etc.) | Surface the error; mint a new challenge if the old one was consumed or expired |
+| Page submit / fallback submit fails (`WALLET_PROOF_SIGNER_MISMATCH`, typed-data mismatch, etc.) | Surface the error; mint a new challenge if the old one was consumed or expired |
 
 ## Anti-patterns
 
+- Asking the operator to paste JSON when the consent page can activate the grant
 - Pasting the full typed_data blob into chat as the only UX when the consent page is available
 - Calling `sign_transaction` / inventing an `intentSig` to skip the grant
-- Reusing the challenge-phase `idempotency_key` on submit
+- Reminting a challenge while polling a live consent URL
+- Reusing the challenge-phase `idempotency_key` on fallback submit
 - Minting a **new** payment `idempotency_key` for the same 402 order after the grant succeeds (resume the original key)
 - Submitting a signature the borrower did not produce
 
