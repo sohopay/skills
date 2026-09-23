@@ -207,7 +207,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 
 ## Next steps
 
-- Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md`
-- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
-- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
+- Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md`
+- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`

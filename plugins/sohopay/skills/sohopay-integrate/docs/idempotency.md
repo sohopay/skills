@@ -80,5 +80,5 @@ Request body hash: RFC 8785 canonical JSON + SHA-256 on backend.
 
 ## Next steps
 
-- Setup: `curl -fsSL {SKILLS_BASE}/setup.md`
-- Spend / pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
+- Setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
+- Spend / pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`

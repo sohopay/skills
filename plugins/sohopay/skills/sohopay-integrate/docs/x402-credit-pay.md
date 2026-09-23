@@ -72,7 +72,8 @@ COLD START — first payment on a fresh borrower/terminal:
        when signing. If missing or secret.borrower_id differs → keygen + persist
        + register_agent_workload_key (PoP over the resolved terminal_id from step 2)
   5. prepare_x402_payment (pass operational_agent_id when the borrower has 2+ terminals)
-  6. AGENT_AUTHORIZATION_REQUIRED → authorize_agent (challenge → STOP wallet sign → submit)
+  6. AGENT_AUTHORIZATION_REQUIRED → authorize_agent challenge → STOP wallet sign
+       (consent page completes the grant; do not wait for paste; do not re-GET merchant)
        then retry prepare with the SAME order / SAME idempotency_key
   7. VOUCHER_ISSUED / COMPLETED → same as fast path
 ```
@@ -95,7 +96,7 @@ Do a single state check (`whoami` + `register_borrower`) rather than four serial
 | Gate | When |
 |------|------|
 | Wallet proof | Onboarding — borrower has not completed EIP-712 wallet proof |
-| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant), then retry prepare |
+| `authorize_agent` | Prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (consent page completes the grant; poll prepare — do not wait for paste; do not re-GET the merchant) |
 | Other policy deny | `POLICY_DECISION_DENIED` **without** `RISK_FIRST_TIME_MERCHANT` (or no payRequest) — surface and wait |
 
 ### Recoverable prepare errors
@@ -104,8 +105,9 @@ Do a single state check (`whoami` + `register_borrower`) rather than four serial
 |-------|--------------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | First ensure the terminal exists for **this** borrower via `register_borrower` (returns `operational_agent_id` + `terminal_id`). Then keygen + `register_agent_workload_key` signing PoP over that resolved `terminal_id`. Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. Do **not** guess `terminal_id`. |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
-| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page → submit), then retry prepare with the **same** order / **same** `idempotency_key`. |
+| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page; page POSTs complete). Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** wait for a JSON paste. Do **not** re-GET the merchant. |
 | `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
+| `X402_INTENT_EXPIRED` | Do **not** re-GET the merchant. Retry `prepare_x402_payment` on the **same** order / **same** `idempotency_key` (backend remints an expired unsettled deadline). Only map a new `orderRef` if the merchant already issued a new challenge. |
 
 ## Choose environment (API)
 
@@ -402,7 +404,9 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 - [ ] Prefer `prepare_x402_payment` for HTTP 402s; branch on `VOUCHER_ISSUED` vs `COMPLETED`
 - [ ] `VOUCHER_ISSUED`: sign per `signing`, fill `envelope.payload.signature`, retry with `header_name` (`PAYMENT-SIGNATURE`)
 - [ ] `X402_AGENT_KEY_NOT_REGISTERED`: `register_borrower` if needed, then register key, retry **same** idempotency key — no custodial invent
-- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn; cold start uses § Cold start
+- [ ] `AGENT_AUTHORIZATION_REQUIRED`: consent page completes the grant; poll prepare; do not wait for paste; do not re-GET the merchant
+- [ ] `X402_INTENT_EXPIRED`: retry same order / same key — do not mint a new merchant `orderRef`
+- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn; cold start uses § Cold start. If a skill is needed, fetch CDN (`{SKILLS_BASE}` after publish), not GitHub raw.
 - [ ] V1 fallback: challenge mapped; `policy_decision_id` on sign; `intentSig` from `get_signing_status`; envelope from `payment_intent` echo
 - [ ] On **202**, retry **same** payment header — never a new spend intent
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle
@@ -411,7 +415,7 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 
 ## Next steps
 
-- Spend / signing detail: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
-- Workload key onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
-- MCP setup: `curl -fsSL {SKILLS_BASE}/setup.md`
+- Spend / signing detail: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
+- Workload key onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
+- MCP setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`

@@ -74,6 +74,6 @@ get_outstanding_balance → create_repayment or execute_repayment → payer subm
 
 ## Related skills
 
-- Onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Spend/policy: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
-- x402 settlement: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
+- Onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Spend/policy: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
+- x402 settlement: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`

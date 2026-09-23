@@ -267,5 +267,5 @@ Backend trusts `x-soho-*` headers **only** when the service token is valid.
 
 ## Next steps
 
-- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md`
-- Back to setup: `curl -fsSL {SKILLS_BASE}/setup.md`
+- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
+- Back to setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`

@@ -50,8 +50,8 @@ Because `index.json` is authoritative, adding a skill requires editing it **and*
 
 - **No localhost / loopback**: `localhost`, `127.0.0.1`, `0.0.0.0` (use `{MERCHANT_BASE_URL}` etc.).
 - **No secret-like patterns**: `sk-…` keys, `AKIA…` AWS IDs, PEM private-key headers, `x-soho-service-token:` values.
-- **All Markdown links must be absolute** unless they point at `github.com/sohopay` or use `{SKILLS_BASE}`.
-- **No hardcoded `agents.sohopay.xyz`** outside the SKILLS_BASE HTML comment header — use `{SKILLS_BASE}`.
+- **All Markdown links must be absolute** unless they point at `github.com/sohopay` or use `{SKILLS_BASE}` / `{SKILLS_HOST}`.
+- **No hardcoded `agents.sohopay.xyz`** outside the SKILLS_BASE HTML comment header — use `{SKILLS_BASE}` (skill files) or `{SKILLS_HOST}` (CDN origin / well-known index). Publish rewrites `SKILLS_BASE` to the CDN and `{SKILLS_HOST}` to the origin.
 - **curl must use `-f`** (prefer `curl -fsSL`); never `curl -sL`.
 - **`index.json` ⇄ file pairing**: every `url` must be the `/skills/v1/<name>.md` form, and every `<name>.md` must exist.
 - **`setup.md` safety scaffolding**: global failure rule, ≥3 STOP gates, "Report to the operator".
