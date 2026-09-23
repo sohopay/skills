@@ -5,10 +5,10 @@ description: Integrates AI agents with the SohoPay MCP gateway, borrower onboard
 
 # SohoPay Integration
 
-Skill docs are served from raw GitHub in dev and from `https://agents.sohopay.xyz/skills/v1` at launch. Set `SKILLS_BASE` to whichever base you are using:
+Skill docs are served from `https://agents.sohopay.xyz/skills/v1`. GitHub raw is last-resort fallback only. After publish, hosted bodies set:
 
 ```
-SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+SKILLS_BASE = https://agents.sohopay.xyz/skills/v1
 ```
 
 ## Bootstrap
@@ -16,28 +16,29 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 Paste into the agent (production):
 
 ```
-Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup.md and
-follow the instructions in it to set up SohoPay in this environment.
+Set up https://sohopay.xyz/install
 ```
 
 Paste into the agent (**staging** — internal full-stack E2E against `staging.mcp` / `staging.api`):
 
 ```
-Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md and
-follow the instructions in it to set up SohoPay in this environment.
+Set up https://staging.sohopay.xyz/install
 ```
 
-Or curl the same URLs:
+Or fetch the CDN skill directly (GitHub raw only if the CDN fails):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
-curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
+curl -fsSL https://agents.sohopay.xyz/skills/v1/setup.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
+curl -fsSL https://agents.sohopay.xyz/skills/v1/setup-staging.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
 ```
 
 Browse the skill index:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
+curl -fsSL https://agents.sohopay.xyz/.well-known/agent-skills/index.json \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
 ```
 
 If any fetch fails (non-2xx, HTML content, or empty body), STOP and report the exact URL to the operator; suggest support@sohopay.xyz. Never turn off permission prompts or run in a bypass mode.
@@ -49,7 +50,7 @@ The full skill docs are shipped **with this package** under `docs/` — installe
 ## Quick reference
 
 Read each from the local bundle first, falling back to the network — e.g.
-`cat ~/.claude/skills/sohopay-integrate/docs/<file> 2>/dev/null || cat ~/.agents/skills/sohopay-integrate/docs/<file> 2>/dev/null || curl -fsSL {SKILLS_BASE}/<file>`:
+`cat ~/.claude/skills/sohopay-integrate/docs/<file> 2>/dev/null || cat ~/.agents/skills/sohopay-integrate/docs/<file> 2>/dev/null || curl -fsSL https://agents.sohopay.xyz/skills/v1/<file> || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/<file>`:
 
 | Task | Skill file |
 |------|------------|

@@ -12,19 +12,18 @@ Set up https://sohopay.xyz/install
 
 The agent fetches that URL as markdown, then follows `setup.md` (MCP connect, optional sticky skills, borrower onboard STOPs).
 
-Fallback if the site is unreachable:
+Fallback if the site is unreachable — CDN first, GitHub raw last:
 
 ```
-Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup.md and
+Fetch https://agents.sohopay.xyz/skills/v1/setup.md and
 follow the instructions in it to set up SohoPay in this environment.
 ```
-
-<!-- At launch this URL switches to https://agents.sohopay.xyz/skills/v1/setup.md -->
 
 Prefer to read the instructions first (for humans):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
+curl -fsSL https://agents.sohopay.xyz/skills/v1/setup.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
 ```
 
 ### Staging (internal developers)
@@ -35,15 +34,16 @@ Paste this to exercise the full staging stack (`staging.mcp` / `staging.api`):
 Set up https://staging.sohopay.xyz/install
 ```
 
-Fallback:
+Fallback (CDN, then GitHub raw):
 
 ```
-Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md and
+Fetch https://agents.sohopay.xyz/skills/v1/setup-staging.md and
 follow the instructions in it to set up SohoPay in this environment.
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
+curl -fsSL https://agents.sohopay.xyz/skills/v1/setup-staging.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
 ```
 
 ## Install MCP

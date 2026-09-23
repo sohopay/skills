@@ -22,7 +22,7 @@ Pass `idempotency_key` (UUID v4) on every write tool when the harness cannot set
 The borrower acts directly. Full end-to-end path:
 
 ```bash
-curl -fsSL {SKILLS_BASE}/human-direct-flow.md
+curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
 ```
 
 ## Flow
@@ -183,5 +183,5 @@ Blocked for sanctioned/OFAC, fraud-held, inactive accounts. Frozen/suspended bor
 
 ## Next steps
 
-- x402 HTTP rail (merchant-as-settler): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md`
+- x402 HTTP rail (merchant-as-settler): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`

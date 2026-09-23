@@ -101,5 +101,5 @@ Creating a delegated session grants an agent spending authority on the borrower'
 
 ## Next steps
 
-- Spend and pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
-- Setup index: `curl -fsSL {SKILLS_BASE}/setup.md`
+- Spend and pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
+- Setup index: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
