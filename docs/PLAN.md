@@ -8,7 +8,7 @@
 |-------|------------|---------|
 | GitHub org + repo | `sohopay/skills` | Canonical public skills repository |
 | Open registry install | `npx skills add sohopay/skills -g` | Same org/repo as GitHub |
-| Public skill host | `sohopay` subdomain, no hyphen | `https://agents.sohopay.xyz/skills/setup.md` |
+| Public skill host | `sohopay` subdomain, no hyphen | `https://agents.sohopay.xyz/skills/v1/setup.md` |
 | Registry skill ID | `sohopay-*` kebab-case | `sohopay-integrate` (avoids generic collisions) |
 | Hosted skill filenames | generic workflow names | `setup.md`, `mcp-connect.md`, `borrower-onboard.md` |
 | User-facing brand | `SohoPay` | docs and landing copy |
@@ -25,7 +25,7 @@ SohoPay uses a three-layer agent integration model:
 flowchart LR
   subgraph discovery [Discovery]
     Index["/.well-known/agent-skills/index.json"]
-    Setup["/skills/setup.md"]
+    Setup["/skills/v1/setup.md"]
   end
   subgraph install [Sticky install]
     Registry["npx skills add sohopay/skills -g"]
@@ -45,7 +45,7 @@ flowchart LR
 
 1. **Curl bootstrap (primary):**
    ```bash
-   curl -sL https://agents.sohopay.xyz/skills/setup.md
+   curl -fsSL https://agents.sohopay.xyz/skills/v1/setup.md
    ```
 
 2. **Open skills registry (secondary, after validation):**
@@ -77,7 +77,7 @@ flowchart TB
     S3["S3 bucket"]
     CF["CloudFront"]
     WellKnown["/.well-known/agent-skills/index.json"]
-    SkillMd["/skills/*.md"]
+    SkillMd["/skills/v1/*.md"]
   end
   SkillsRepo -->|CI sync| S3
   S3 --> CF
@@ -105,6 +105,7 @@ flowchart TB
 │   └── sohopay-integrate/SKILL.md   # open-registry package
 ├── scripts/validate-skills.mjs
 ├── scripts/generate-llms-full.mjs
+├── infra/                           # AgentsSkillsStack (S3 + CloudFront)
 └── docs/                            # PLAN, endpoints, registry
 ```
 
@@ -120,20 +121,21 @@ flowchart TB
 
 **Landing one-liner:**
 
-> Run `curl -sL https://agents.sohopay.xyz/skills/setup.md` and follow the setup instructions to connect your agent to SohoPay.
+> Run `curl -fsSL https://agents.sohopay.xyz/skills/v1/setup.md` and follow the setup instructions to connect your agent to SohoPay.
 
 ## Hosting
 
 - S3 + CloudFront + Route53 for `agents.sohopay.xyz` (`us-east-1`)
-- CI on `sohopay/skills` `main`: `aws s3 sync` + invalidate `index.json` and `setup.md`
-- CDK stack: `AgentsSkillsStack` in `sohopay-backend/infrastructure`
+- CI on `sohopay/skills` `main`: `aws s3 sync` to `/skills/v1/` + invalidate `/skills/v1/*` and `/.well-known/agent-skills/*`
+- CDK stack: `AgentsSkillsStack` in [`skills/infra`](../infra) (not backend/site infra)
+- Operator bootstrap: [`infra/MANUAL-BOOTSTRAP.md`](../infra/MANUAL-BOOTSTRAP.md)
 
 ## Repo changes
 
 | Repo | Change |
 |------|--------|
-| **`sohopay/skills`** | Canonical hosted content + registry package |
-| **`sohopay-backend`** | Mirror `.cursor/skills/sohopay-integrate`; `docs/agent-skills.md`; CDK stack |
+| **`sohopay/skills`** | Canonical hosted content + registry package + `AgentsSkillsStack` in `infra/` |
+| **`sohopay-backend`** | Mirror `.cursor/skills/sohopay-integrate`; `docs/agent-skills.md` |
 | **`soho-mcp-server`** | Agent integration section (see `docs/mcp-server-readme-snippet.md`) |
 
 ## MVP vs Phase 2

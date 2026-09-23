@@ -2,3 +2,5 @@ node_modules/
 .DS_Store
 *.log
 verify-bootstrap.log
+infra/cdk.out/
+infra/dist/
