@@ -17,4 +17,4 @@ Register harnesses against the MCP **resource** URL (staging includes the `/mcp`
 
 **Staging agent prompt:** `Set up https://staging.sohopay.xyz/install` (fallback: `Fetch https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md and follow the instructions in it to set up SohoPay in this environment.`)
 
-**Note:** Older docs may reference `sohopay.com`; production infrastructure currently uses the `sohopay.xyz` hosted zone. Index/`url` entries use `agents.sohopay.xyz`; day-to-day bootstrap currently uses raw GitHub (same as README).
+**Note:** Older docs may reference `sohopay.com`; production infrastructure uses the `sohopay.xyz` hosted zone. Index/`url` entries use `https://agents.sohopay.xyz/skills/v1/`. First-time CDN bootstrap: [../infra/MANUAL-BOOTSTRAP.md](../infra/MANUAL-BOOTSTRAP.md). Until DNS answers, `/install` falls back to raw GitHub.

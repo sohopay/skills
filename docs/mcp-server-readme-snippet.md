@@ -5,7 +5,7 @@ SohoPay publishes agent skills for Cursor, Claude Code, and Codex.
 **Bootstrap:**
 
 ```bash
-curl -sL https://agents.sohopay.xyz/skills/setup.md
+curl -fsSL https://agents.sohopay.xyz/skills/v1/setup.md
 ```
 
 **Sticky install:**
