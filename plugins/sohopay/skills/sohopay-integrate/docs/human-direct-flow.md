@@ -27,7 +27,7 @@ whoami (optional if already authenticated)
   → request_signature_challenge + submit_signature (wallet proof)
   → request_borrower_token   # spend/policy/signing + credit:facility:accept — whoami often shows only borrower:token until then
   → register_agent_workload_key   # Protocol V2: agent Ed25519 keygen + PoP (once per terminal); MCP never holds the private key
-  → authorize_agent            # onboarding grant STOP — consent page; grant must be ACTIVE before any pay
+  → authorize_agent            # same turn: open consent page; no chat prompt; grant must be ACTIVE before any pay
   → HTTP 402: prepare_x402_payment  →  see {SKILLS_BASE}/x402-credit-pay.md
        · VOUCHER_ISSUED (V2): agent signs voucher → PAYMENT-SIGNATURE → retry merchant
        · COMPLETED (V1): header_name/header_value or payment_intent+signature → retry
@@ -51,11 +51,11 @@ If `whoami` scopes are only `borrower:token`, that is base/expired token state �
 
 `request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Re-request it immediately before `prepare_x402_payment` / spend when scopes are only `borrower:token`. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
-**Wallet proof** (onboarding) is consent-critical — STOP and wait before asking the borrower to sign:
+**Wallet proof:** if `get_borrower_status.wallet_proof_verified` is already true, skip it. Otherwise request the challenge and collect the off-device EIP-712 signature in this same turn. Never fabricate a signature, and do not ask a yes/no chat question before the challenge.
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+**Borrower token:** call `request_borrower_token` with no chat prompt (onboarding and payRequest). Then continue to the workload key and `authorize_agent` in that same turn. Open the grant consent URL immediately. Do not ask before the token or before the URL.
 
-On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, voucher signing, merchant retry, or first-time merchant — complete merchant-as-settler silently. Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`. If the grant is already ACTIVE, do **not** re-run `authorize_agent`. STOP for `authorize_agent` only as **recovery** when prepare returns `AGENT_AUTHORIZATION_REQUIRED` (onboard was skipped) — follow `{SKILLS_BASE}/authorize-agent.md` (open the consent page; wait for Grant active; then retry prepare with the same payment idempotency key).
+On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, voucher signing, merchant retry, or first-time merchant — complete merchant-as-settler silently. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`. If the grant is already ACTIVE, do **not** re-run `authorize_agent`. Open `authorize_agent` only as **recovery** when prepare returns `AGENT_AUTHORIZATION_REQUIRED` (onboard was skipped) — follow `{SKILLS_BASE}/authorize-agent.md` (open the consent page in the same turn; wait for Grant active; then retry prepare with the same payment idempotency key). Do not ask a chat question first.
 
 After the x402 settle submits: a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 

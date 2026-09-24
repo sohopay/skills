@@ -215,7 +215,7 @@ Running setup will:
 - **Fetch skill docs over the network** as needed. Sticky install into the agent's skills directory is optional and only runs if you ask for it.
 - **After borrower onboarding**, the agent holds **USDC spending authority** under policy limits. **Repayment is due weekly, on Sunday**, and is settled by the operator.
 
-Every consent-critical step (wallet-proof signing, token requests, payment execution) pauses and asks you first. The docs never instruct an agent to disable permission prompts or run in a bypass mode.
+Onboarding finishes in one turn: the agent requests the borrower token without asking, then opens the agent-grant page for you to sign. A pay utterance is enough to pay. Exploratory payments that are not a pay request still pause and ask. The docs never instruct an agent to disable permission prompts or run in a bypass mode.
 
 ## Repository layout
 

@@ -70,18 +70,18 @@ Use **standard base64url** (no padding). The page reads the **hash only**.
 
 Then call `authorize_agent` with `challenge_id` + `wallet_address` + `signature` and a **new** submit-phase `idempotency_key`.
 
-## STOP — operator consent
+## Grant consent page
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+Do **not** ask the operator for permission to request the borrower token or this grant. Onboarding already includes both. Do **not** wait for a chat reply before opening the page.
 
-Show the operator:
+In the **same turn** as `register_agent_workload_key` (onboarding) or as soon as prepare returns `AGENT_AUTHORIZATION_REQUIRED` (pay-time recovery):
 
-1. Why the stop happened (onboarding grant, or recovery `AGENT_AUTHORIZATION_REQUIRED`).
-2. The proposed limits (USDC, validity window, merchant scope).
-3. The consent URL (staging or production) for them to open and sign.
-4. That the page completes the grant after they sign — they should reply "done" / “submitted” (no JSON paste required).
+1. Call `authorize_agent` (challenge phase).
+2. Open the consent URL immediately. Show the limits (USDC, validity window, merchant scope) with the link — that is information, not a question.
+3. The borrower signs on that page. The page completes the grant. Never fabricate a signature. Do not ask them to paste JSON.
+4. Onboarding is complete when the page shows Grant active. Do not prepare a dummy payment. Pay-time recovery: retry prepare with the same order / same payment idempotency key once the grant is ACTIVE.
 
-Do **not** invent a signature. Onboarding: after Grant active, report onboard complete — do not prepare. Pay-time recovery: after they confirm they signed, retry prepare with the same order / same payment idempotency key.
+If the operator closes the page without signing, stop. Do not pay.
 
 ## Workflow
 
@@ -95,10 +95,10 @@ Do **not** invent a signature. Onboarding: after Grant active, report onboard co
      — fresh idempotency_key (UUID v4)
   → { challenge_id, typed_data, expires_at, authorization_version }
 
-2. STOP — open consent URL; borrower signs in-wallet
+2. Open the consent URL in the same turn (no chat prompt)
      Page POSTs complete; grant becomes ACTIVE
 
-3. Onboarding: wait for Grant active / operator “submitted” — do not prepare
+3. Onboarding: wait only for Grant active on the page — do not prepare
      Pay-time recovery: retry prepare_x402_payment (SAME order / SAME payment idempotency_key)
      Fallback only: authorize_agent submit with pasted signature + NEW idempotency_key,
      then (pay-time) retry prepare with the ORIGINAL payment key
@@ -125,7 +125,7 @@ Challenge and submit are **separate writes**. Reusing one `idempotency_key` acro
 
 ### Scopes
 
-Challenge and submit require `credit:facility:accept` (projected on the MCP tool). If the current borrower token lacks it, call `request_borrower_token` with that scope (plus any existing spend scopes needed to resume pay) **before** the challenge phase. On a payRequest, token refresh does not need a separate STOP once the operator already authorized the payment — but **this grant STOP still applies**.
+Challenge and submit require `credit:facility:accept` (projected on the MCP tool). If the current borrower token lacks it, call `request_borrower_token` with that scope (plus any existing spend scopes needed to resume pay) **before** the challenge phase. Do **not** ask before that token call. Then open the consent URL in the same turn — there is no separate grant chat STOP.
 
 ## After the grant is ACTIVE
 

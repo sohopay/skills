@@ -141,8 +141,21 @@ if (!/Report the exact failed URL/.test(setup)) {
   fail('setup.md missing the global failure rule');
 }
 const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
-if (stopCount < 3) {
-  fail(`setup.md must contain at least 3 STOP points (found ${stopCount})`);
+if (stopCount < 1) {
+  fail(`setup.md must STOP before a non-payRequest payment (found ${stopCount})`);
+}
+if (/Before requesting the OAuth access \/ borrower token/.test(setup)) {
+  fail('setup.md must not ask for consent before request_borrower_token');
+}
+if (!/do \*\*not\*\* wait for a chat reply, before `request_borrower_token`/.test(setup)) {
+  fail('setup.md must run request_borrower_token without a chat prompt');
+}
+const staging = readFileSync(join(ROOT, 'setup-staging.md'), 'utf8');
+if (/Before requesting the OAuth access \/ borrower token/.test(staging)) {
+  fail('setup-staging.md must not ask for consent before request_borrower_token');
+}
+if (!/do \*\*not\*\* wait for a chat reply, before `request_borrower_token`/.test(staging)) {
+  fail('setup-staging.md must run request_borrower_token without a chat prompt');
 }
 if (!/Report to the operator/.test(setup)) {
   fail('setup.md missing the final "Report to the operator" step');

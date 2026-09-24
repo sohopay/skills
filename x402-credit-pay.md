@@ -65,12 +65,12 @@ RECOVERY — onboard was skipped (missing terminal, key, or ACTIVE grant):
   3. request_borrower_token
        (spend:intent:create, policy:evaluate, signing:request, payment:read,
         credit:facility:accept)
-       — NO STOP on payRequest
+       — no chat prompt
   4. Workload key at the fixed path:
        reuse only if secret.borrower_id == this borrower_id AND you will match jkt
        when signing. If missing or secret.borrower_id differs → keygen + persist
        + register_agent_workload_key (PoP over the resolved terminal_id from step 2)
-  5. authorize_agent challenge → STOP wallet sign (consent page; do not wait for paste)
+  5. authorize_agent challenge → open consent URL in this same turn (no chat prompt; do not wait for paste)
        — do this NOW; do not wait for another prepare 403
   6. After Grant active: retry prepare with the SAME order / SAME idempotency_key
   7. VOUCHER_ISSUED / COMPLETED → same as fast path
@@ -93,8 +93,8 @@ See `{SKILLS_BASE}/borrower-onboard.md` and `{SKILLS_BASE}/authorize-agent.md`.
 
 | Gate | When |
 |------|------|
-| Wallet proof | Onboarding — borrower has not completed EIP-712 wallet proof |
-| `authorize_agent` | Recovery only — prepare returns `AGENT_AUTHORIZATION_REQUIRED` (onboard was skipped). Follow `{SKILLS_BASE}/authorize-agent.md` (consent page; poll prepare — do not wait for paste; do not re-GET the merchant) |
+| Wallet proof | Only if not already verified — collect the off-device signature in this turn. Do not ask a chat question first |
+| `authorize_agent` | Recovery only — prepare returns `AGENT_AUTHORIZATION_REQUIRED` (onboard was skipped). Open the consent page in this turn (`{SKILLS_BASE}/authorize-agent.md`); do not ask first; poll prepare — do not wait for paste; do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` **without** `RISK_FIRST_TIME_MERCHANT` (or no payRequest) — surface and wait |
 
 ### Recoverable prepare errors
@@ -103,7 +103,7 @@ See `{SKILLS_BASE}/borrower-onboard.md` and `{SKILLS_BASE}/authorize-agent.md`.
 |-------|--------------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | First ensure the terminal exists for **this** borrower via `register_borrower` (returns `operational_agent_id` + `terminal_id`). Then keygen + `register_agent_workload_key` signing PoP over that resolved `terminal_id`. Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** invent custodial signing. Do **not** guess `terminal_id`. |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 path only — use prepare + agent voucher sign. Do **not** call `sign_transaction` for this 402. |
-| `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page; page POSTs complete). Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** wait for a JSON paste. Do **not** re-GET the merchant. |
+| `AGENT_AUTHORIZATION_REQUIRED` | Open the consent page in this turn — follow `{SKILLS_BASE}/authorize-agent.md` (challenge → consent page; page POSTs complete). Do **not** ask a chat question first. Retry prepare with the **same** order / **same** `idempotency_key`. Do **not** wait for a JSON paste. Do **not** re-GET the merchant. |
 | `RISK_FIRST_TIME_MERCHANT` on a **payRequest** | Treat payRequest as accept for this merchant; retry the **same** order with the **same** `idempotency_key` (403 is not cached). Do **not** ask again. |
 | `X402_INTENT_EXPIRED` | Do **not** re-GET the merchant. Retry `prepare_x402_payment` on the **same** order / **same** `idempotency_key` (backend remints an expired unsettled deadline). Only map a new `orderRef` if the merchant already issued a new challenge. |
 
@@ -248,7 +248,7 @@ A **payRequest** authorizes token refresh, prepare, agent voucher signing, merch
 - If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately — no STOP.
 - Later pays to the **same** merchant: same silent fast path.
 
-Wallet-proof (onboarding) still has its own STOP in `{SKILLS_BASE}/borrower-onboard.md`. Onboarding/setup STOP before `request_borrower_token` does **not** apply once the operator has asked to pay an x402 resource.
+`request_borrower_token` never needs a chat prompt — not during onboarding and not on a payRequest. If wallet proof is already verified, skip it; otherwise collect the off-device signature in the same turn (`{SKILLS_BASE}/borrower-onboard.md`).
 
 ### First-time merchant at signing vs settle
 
