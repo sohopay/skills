@@ -151,7 +151,19 @@ cat ~/.claude/skills/sohopay-integrate/docs/borrower-onboard.md 2>/dev/null \
   || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md
 ```
 
-Complete register → wallet proof → token request. Handle `dropped_scopes` (not fatal — re-request after gates complete).
+Complete the full spend-ready path **now** — do not wait for the first payment:
+
+`register_borrower` (store `operational_agent_id` + `terminal_id`) → wallet proof → `request_borrower_token` (`spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**) → workload key (`register_agent_workload_key`) → **`authorize_agent`**. Handle `dropped_scopes` (not fatal — re-request after gates complete).
+
+Fetch the grant skill and run it immediately after the workload key (do not wait for a 402):
+
+```bash
+cat ~/.claude/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
+  || cat ~/.agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
+  || cat ~/.config/agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
+  || curl -fsSL {SKILLS_BASE}/authorize-agent.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md
+```
 
 Wallet proof requires the borrower to sign an EIP-712 challenge off-device. Before wallet-proof signing:
 
@@ -160,6 +172,8 @@ Wallet proof requires the borrower to sign an EIP-712 challenge off-device. Befo
 The token request then grants real spending scopes. Before requesting the OAuth access / borrower token:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+The agent grant also requires an off-device wallet sign. After the workload key, open the consent URL from `authorize-agent.md`. Onboarding is incomplete until the grant is ACTIVE.
 
 ## Step 7: Operate — human-direct flow
 
@@ -199,17 +213,7 @@ cat ~/.claude/skills/sohopay-integrate/docs/x402-credit-pay.md 2>/dev/null \
   || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md
 ```
 
-When `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, STOP and follow the borrower grant consent page flow:
-
-```bash
-cat ~/.claude/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || cat ~/.agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || cat ~/.config/agents/skills/sohopay-integrate/docs/authorize-agent.md 2>/dev/null \
-  || curl -fsSL {SKILLS_BASE}/authorize-agent.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md
-```
-
-Staging consent page: `https://staging.sohopay.xyz/agent/authorize` (hash payload). Production: `https://sohopay.xyz/agent/authorize`.
+The agent grant belongs in **Step 6**, not here. If a later pay still returns `AGENT_AUTHORIZATION_REQUIRED`, that is recovery (onboard was skipped) — follow `{SKILLS_BASE}/authorize-agent.md`.
 
 ## Step 10: Idempotency reference
 
@@ -229,7 +233,7 @@ Close by summarizing to the operator, in plain language:
 
 - **Sticky skills** — installed (path) **or skipped** (default). Do not imply sticky install ran if it was skipped.
 - **MCP registered** — the MCP config file location and the server URL (hosted or local).
-- **Account status** — borrower status and the current spending limit / authority granted.
+- **Account status** — borrower status, current spending limit, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is).
 - **Repayment obligation** — repayment is due **weekly, on Sunday**, and is settled by the operator.
 - **Any failures** — if any step failed, show the exact URL/command and error; do not paper over it.
 

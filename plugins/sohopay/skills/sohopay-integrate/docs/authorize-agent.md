@@ -9,7 +9,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **What this skill does:** obtains an ACTIVE off-chain `AgentAuthorizationGrant` so Protocol V2 `prepare_x402_payment` can issue vouchers. The **borrower** signs EIP-712 typed data with their linked EOA. The agent never holds the borrower private key and never invents a signature.
 
-**Before running it:** MCP is connected; the borrower is onboarded (wallet proof); an agent workload key is registered (`register_agent_workload_key`). Usually you arrive here because `prepare_x402_payment` returned `AGENT_AUTHORIZATION_REQUIRED`.
+**Before running it:** MCP is connected; wallet proof is done; an agent workload key is registered (`register_agent_workload_key`). **Primary trigger is onboarding** — run this immediately after the workload key, as part of `{SKILLS_BASE}/borrower-onboard.md`. Do not wait for a payRequest. `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is **recovery** only (onboard was skipped).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
@@ -19,8 +19,8 @@ MCP tool: `authorize_agent` (composite challenge → submit). Prefer the local s
 
 | Trigger | Action |
 |---------|--------|
-| `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` | STOP — follow this skill, then retry prepare with the **same** order / **same** payment `idempotency_key` |
-| First Protocol V2 spend on a terminal with no ACTIVE grant | Same STOP before or after the first prepare denial |
+| Onboarding after `register_agent_workload_key` | **Default.** Follow this skill now. Wait for Grant active / operator “submitted”. Do **not** call `prepare_x402_payment` with no order. |
+| `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` | Recovery (onboard was skipped). STOP — follow this skill, then retry prepare with the **same** order / **same** payment `idempotency_key` |
 
 Do **not** invent custodial `sign_transaction` to bypass this grant.
 
@@ -54,7 +54,9 @@ const url = `https://staging.sohopay.xyz/agent/authorize#${hash}`; // or sohopay
 
 Use **standard base64url** (no padding). The page reads the **hash only**.
 
-**Preferred completion:** poll `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key` until it returns `VOUCHER_ISSUED` (or a non-grant error). Do not re-GET the merchant. Do not mint a new payment idempotency key.
+**Onboarding completion:** wait for the page to show Grant active (or the operator says submitted). Do **not** invent a dummy `prepare_x402_payment` just to poll.
+
+**Pay-time recovery only:** if a payment is already in flight, poll `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key` until it returns `VOUCHER_ISSUED` (or a non-grant error). Do not re-GET the merchant. Do not mint a new payment idempotency key.
 
 **Fallback only** if the page cannot complete (shows an error, or the operator has no in-page success): they may copy:
 
@@ -74,12 +76,12 @@ Then call `authorize_agent` with `challenge_id` + `wallet_address` + `signature`
 
 Show the operator:
 
-1. Why the stop happened (`AGENT_AUTHORIZATION_REQUIRED`).
+1. Why the stop happened (onboarding grant, or recovery `AGENT_AUTHORIZATION_REQUIRED`).
 2. The proposed limits (USDC, validity window, merchant scope).
 3. The consent URL (staging or production) for them to open and sign.
-4. That the page completes the grant after they sign — they should reply "done" (no JSON paste required).
+4. That the page completes the grant after they sign — they should reply "done" / “submitted” (no JSON paste required).
 
-Do **not** invent a signature. After they confirm they signed (or after a short poll window), retry prepare with the same order / same payment idempotency key.
+Do **not** invent a signature. Onboarding: after Grant active, report onboard complete — do not prepare. Pay-time recovery: after they confirm they signed, retry prepare with the same order / same payment idempotency key.
 
 ## Workflow
 
@@ -96,11 +98,12 @@ Do **not** invent a signature. After they confirm they signed (or after a short 
 2. STOP — open consent URL; borrower signs in-wallet
      Page POSTs complete; grant becomes ACTIVE
 
-3. Preferred: retry prepare_x402_payment (SAME order / SAME payment idempotency_key)
+3. Onboarding: wait for Grant active / operator “submitted” — do not prepare
+     Pay-time recovery: retry prepare_x402_payment (SAME order / SAME payment idempotency_key)
      Fallback only: authorize_agent submit with pasted signature + NEW idempotency_key,
-     then retry prepare with the ORIGINAL payment key
+     then (pay-time) retry prepare with the ORIGINAL payment key
 
-4. VOUCHER_ISSUED → sign locally → PAYMENT-SIGNATURE
+4. Pay-time only: VOUCHER_ISSUED → sign locally → PAYMENT-SIGNATURE
      Do not re-GET the merchant (orderRef must stay the first challenge)
 ```
 
@@ -118,7 +121,7 @@ Challenge and submit are **separate writes**. Reusing one `idempotency_key` acro
 | `valid_until` | Unix seconds end of grant validity (required) |
 | `allowed_merchant_ids` | Optional UUID or bytes32 list; omit / empty = any merchant |
 
-Pick limits that cover the pending payment (and a sane daily headroom). Example for a $0.01 premium resource: `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days ahead.
+**Onboarding defaults** (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, **omit `allowed_merchant_ids`**. On pay-time recovery, pick limits that cover the pending payment (and a sane daily headroom).
 
 ### Scopes
 
@@ -126,8 +129,8 @@ Challenge and submit require `credit:facility:accept` (projected on the MCP tool
 
 ## After the grant is ACTIVE
 
-- Resume the blocked payment: `prepare_x402_payment` with the **same** order tuple and the **same** payment `idempotency_key` used before the STOP.
-- Continue `{SKILLS_BASE}/x402-credit-pay.md` (VOUCHER_ISSUED → agent signs → PAYMENT-SIGNATURE).
+- **Onboarding:** report onboard complete. Later payRequests use the warm path in `{SKILLS_BASE}/x402-credit-pay.md`.
+- **Pay-time recovery:** resume the blocked payment with the **same** order tuple and the **same** payment `idempotency_key` used before the STOP, then continue `{SKILLS_BASE}/x402-credit-pay.md` (VOUCHER_ISSUED → agent signs → PAYMENT-SIGNATURE).
 
 ## Expiry and retries
 
