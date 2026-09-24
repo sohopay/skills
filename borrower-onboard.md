@@ -7,7 +7,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** registers a borrower and completes wallet proof so scope-gated tokens can be issued. **Before running it:** the MCP server is connected (`mcp-connect.md`).
+**What this skill does:** makes this host spend-ready — register (terminal), wallet proof, scoped token, Protocol V2 workload key, and an ACTIVE agent grant. **Before running it:** the MCP server is connected (`mcp-connect.md`). Do **not** defer the workload key or `authorize_agent` until the first payment.
 
 MCP tool descriptions summarize call-time rules for each onboarding tool; **this skill is authoritative** for ordering, STOP gates, and dropped-scope handling.
 
@@ -23,9 +23,10 @@ Pass `idempotency_key` (UUID v4) on write tools when the harness cannot set HTTP
 1. **Register** — `register_borrower` / `POST /api/v1/borrowers/register` — creates **this host's terminal** and returns `operational_agent_id` + `terminal_id`. Pass that `operational_agent_id` on `authorize_agent` and `prepare_x402_payment` (required when the borrower has 2+ terminals).
 2. **Wallet proof** — challenge → sign off-device → submit
 3. **Status** — `get_borrower_status` / `GET /api/v1/borrowers/:id/status`
-4. **Token** — `request_borrower_token` / `POST /api/v1/borrowers/token` with `requested_scopes[]`
-5. **Protocol V2 workload key** (before any V2 x402 prepare) — **requires step 1**: the terminal must already exist. Then agent Ed25519 keygen → `register_agent_workload_key` (PoP over the resolved `terminal_id`). Skipping step 1 here causes `TERMINAL_NOT_OWNED`. First-payment sequence: `{SKILLS_BASE}/x402-credit-pay.md` § Cold start.
-6. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
+4. **Token** — `request_borrower_token` / `POST /api/v1/borrowers/token` with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**
+5. **Protocol V2 workload key** — **requires step 1**: the terminal must already exist. Agent Ed25519 keygen (if this borrower has no matching secret) → `register_agent_workload_key` (PoP over the resolved `terminal_id`). Skipping step 1 here causes `TERMINAL_NOT_OWNED`. Run this **during onboarding**, not on first pay.
+6. **Agent grant** — `authorize_agent` challenge immediately after the workload key. Open the consent URL. Existing grant STOP. Onboarding is incomplete until the grant is ACTIVE. Do **not** wait for `prepare_x402_payment`. Defaults and consent page: `{SKILLS_BASE}/authorize-agent.md`.
+7. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
 
 All MCP gateway paths require `x-soho-service-token` (set by the MCP server). Borrower-scoped routes also need `x-soho-borrower-id`.
 
@@ -116,6 +117,8 @@ Consequences an agent must plan for:
 
 The token grants real spending scopes.
 
+Onboarding token request must include `credit:facility:accept` so the agent grant (step 6) can run in the same session.
+
 **Onboarding / first grant (setup):** before the first scoped token outside a payRequest:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
@@ -170,9 +173,15 @@ or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `
 | Scope | `borrower:token` |
 | Idempotent | Yes — pass `idempotency_key` when the harness cannot set headers |
 
-Register once per terminal before the first V2 prepare. On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
+Register once per terminal during onboarding (step 5). On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
 
-Registering the key does **not** authorize spending. If `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant) before retrying prepare.
+Registering the key does **not** authorize spending. **Immediately** follow `{SKILLS_BASE}/authorize-agent.md` (step 6) — do not wait for a payRequest or a `prepare_x402_payment` 403.
+
+## Agent grant (required during onboarding)
+
+After the workload key is registered, call `authorize_agent` (challenge phase) with onboarding defaults: `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, **omit `allowed_merchant_ids`**. Open the consent URL. Existing grant STOP.
+
+Onboarding is **incomplete** until the grant is ACTIVE (consent page shows Grant active / operator says submitted). Do **not** invent a dummy `prepare_x402_payment` just to poll. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only — `{SKILLS_BASE}/authorize-agent.md`.
 
 ## Authorization context
 
@@ -202,12 +211,13 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `request_signature_challenge` | Start wallet proof |
 | `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
 | `get_borrower_status` | Onboarding status |
-| `request_borrower_token` | Scope-gated token |
+| `request_borrower_token` | Scope-gated token (onboard: include `credit:facility:accept`) |
 | `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
+| `authorize_agent` | Borrower EIP-712 grant — required during onboarding after the workload key |
 
 ## Next steps
 
 - Human-direct (default operate path): `curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md`
-- First x402 payment (cold start): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
-- Agent grant (`AGENT_AUTHORIZATION_REQUIRED`): `curl -fsSL {SKILLS_BASE}/authorize-agent.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md`
+- Warm x402 pay (after grant is ACTIVE): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Agent grant (run during this skill, step 6): `curl -fsSL {SKILLS_BASE}/authorize-agent.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/authorize-agent.md`
 - Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
