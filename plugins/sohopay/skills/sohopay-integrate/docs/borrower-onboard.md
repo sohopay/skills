@@ -25,7 +25,7 @@ Pass `idempotency_key` (UUID v4) on write tools when the harness cannot set HTTP
 3. **Status** — `get_borrower_status` / `GET /api/v1/borrowers/:id/status`
 4. **Token** — `request_borrower_token` / `POST /api/v1/borrowers/token` with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**
 5. **Protocol V2 workload key** — **requires step 1**: the terminal must already exist. Agent Ed25519 keygen (if this borrower has no matching secret) → `register_agent_workload_key` (PoP over the resolved `terminal_id`). Skipping step 1 here causes `TERMINAL_NOT_OWNED`. Run this **during onboarding**, not on first pay.
-6. **Agent grant** — `authorize_agent` challenge immediately after the workload key. Open the consent URL. Existing grant STOP. Onboarding is incomplete until the grant is ACTIVE. Do **not** wait for `prepare_x402_payment`. Defaults and consent page: `{SKILLS_BASE}/authorize-agent.md`.
+6. **Agent grant** — `authorize_agent` challenge immediately after the workload key, in the same turn. Open the consent URL. Do not ask a chat question first. If a grant is already ACTIVE, do not create another. Onboarding is incomplete until the grant is ACTIVE. Do **not** wait for `prepare_x402_payment`. Defaults and consent page: `{SKILLS_BASE}/authorize-agent.md`.
 7. **Authz** — `POST /api/v1/auth/authorization-context` before privileged tools
 
 All MCP gateway paths require `x-soho-service-token` (set by the MCP server). Borrower-scoped routes also need `x-soho-borrower-id`.
@@ -86,9 +86,7 @@ Flow:
 2. Borrower signs EIP-712 **off-device** (wallet/app — never in MCP)
 3. Submit with **`{ borrower_id, challenge_id, signature, wallet_address }`** → `{ verified, wallet_address }`
 
-Before requesting the signature:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+If `get_borrower_status.wallet_proof_verified` is already true, skip this step. Otherwise request the challenge and collect the off-device signature in the **same turn** as the rest of onboarding. Do not ask a yes/no chat question before the challenge. Never fabricate a signature.
 
 ## Request borrower token
 
@@ -113,17 +111,13 @@ Consequences an agent must plan for:
 - **Re-request the token immediately before each spend**, not once at session start. A flow that pauses for operator consent, waits on settlement, or resumes minutes later will likely need a fresh token before signing or paying.
 - Re-requesting is routine and does not repeat wallet proof or KYC.
 
-### Consent
+### No chat prompt
 
-The token grants real spending scopes.
+The token grants spending scopes. That is not a reason to pause.
 
-Onboarding token request must include `credit:facility:accept` so the agent grant (step 6) can run in the same session.
+Call `request_borrower_token` in the **same turn** as the rest of onboarding. Do **not** ask the operator, and do **not** wait for a reply, before this call — not on first setup, and not when refreshing an expired token. Include `credit:facility:accept` so `authorize_agent` can run immediately after the workload key.
 
-**Onboarding / first grant (setup):** before the first scoped token outside a payRequest:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-**HTTP 402 payRequest** (“pay” / merchant URL): call `request_borrower_token` **without** a STOP when refreshing scopes — the pay utterance already authorized the payment. Do **not** honour the onboarding STOP “each time” on pay.
+**HTTP 402 payRequest** (“pay” / merchant URL): same rule. If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately and continue the payment. There is no onboarding STOP to honour.
 
 ### Dropped scope reason codes
 
@@ -179,7 +173,7 @@ Registering the key does **not** authorize spending. **Immediately** follow `{SK
 
 ## Agent grant (required during onboarding)
 
-After the workload key is registered, call `authorize_agent` (challenge phase) with onboarding defaults: `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, **omit `allowed_merchant_ids`**. Open the consent URL. Existing grant STOP.
+After the workload key is registered, call `authorize_agent` (challenge phase) in the same turn with onboarding defaults: `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, **omit `allowed_merchant_ids`**. Open the consent URL immediately. Do not ask a chat question first. If a grant is already ACTIVE, do not create another.
 
 Onboarding is **incomplete** until the grant is ACTIVE (consent page shows Grant active / operator says submitted). Do **not** invent a dummy `prepare_x402_payment` just to poll. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only — `{SKILLS_BASE}/authorize-agent.md`.
 
