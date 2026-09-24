@@ -16,7 +16,7 @@ Activate **one** row. Do not load the others. Do not plan.
 | Staging / `https://staging.sohopay.xyz/install` | `sohopay-setup-staging` |
 | Connect MCP | `sohopay-mcp-connect` |
 | Staging MCP | `sohopay-mcp-connect-staging` |
-| Onboard / wallet proof / workload key | `sohopay-onboard` |
+| Onboard / wallet proof / workload key / agent grant | `sohopay-onboard` |
 | Operate (human-direct) | `sohopay-human-direct` |
 | HTTP 402 / pay / VOUCHER_ISSUED | `sohopay-x402` |
 | `AGENT_AUTHORIZATION_REQUIRED` | `sohopay-authorize-agent` |

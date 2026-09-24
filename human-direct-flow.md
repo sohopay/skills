@@ -19,15 +19,16 @@ Execute the next checklist item only. Do not plan. **Before:** MCP connected (`{
 
 Load a sibling **only when that step is next**:
 
-- [ ] Identity / register / wallet proof / token / workload key — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`)
+- [ ] Identity / register / wallet proof / token / workload key / agent grant — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
-- [ ] `AGENT_AUTHORIZATION_REQUIRED` — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
+- [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
 - [ ] Non-x402 spend / first-time merchant detail — **sohopay-spend** (`{SKILLS_BASE}/spend-and-pay.md`)
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-whoami → register_borrower → wallet proof (STOP) → token → register_agent_workload_key
+whoami → register_borrower → wallet proof if needed → request_borrower_token (no chat prompt)
+  → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
   → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
 ```
 
-**payRequest** = consent for the x402 fast path. Still STOP for wallet-proof and `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.
+Call `request_borrower_token` with no chat prompt (onboarding and payRequest). If scopes are only `borrower:token` on a later pay, that is expiry — refresh and stay on the warm path. **payRequest** = consent for the x402 fast path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.

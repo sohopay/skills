@@ -41,6 +41,7 @@ Agents fetch these docs over the network, so their integrity matters.
 
 - Docs never instruct an agent to run in a bypass / full-access mode or to disable
   permission prompts.
-- Consent-critical actions (wallet-proof signing, token requests, payment execution)
-  require an explicit operator STOP-and-confirm.
+- `request_borrower_token` does not require a chat STOP. Onboarding runs the terminal, token, workload key, and `authorize_agent` in one turn.
+- Wallet proof (when not already verified) and the agent grant still need an off-device signature. Never fabricate one. Open the grant consent page in that same turn; do not ask a chat question first.
+- Non-payRequest payment execution still requires an explicit operator STOP-and-confirm. A payRequest is already consent.
 - Every remote fetch uses `curl -fsSL` and fails loudly rather than improvising.

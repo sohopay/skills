@@ -31,7 +31,7 @@
     {
       "name": "borrower-onboard",
       "title": "SohoPay Borrower Onboarding",
-      "description": "Register a borrower, complete EIP-712 wallet proof, request tokens, and register the Protocol V2 workload key. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, or the operator asks to onboard — not for delegated sessions or payments.",
+      "description": "Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, and an ACTIVE agent grant. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, or the operator asks to onboard — not for a warm 402 pay or delegated sessions.",
       "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
@@ -49,13 +49,13 @@
     {
       "name": "x402-credit-pay",
       "title": "SohoPay x402 Credit Settlement",
-      "description": "Pay HTTP 402 merchants with prepare_x402_payment, VOUCHER_ISSUED, and merchant-as-settler PAYMENT-SIGNATURE. Use when a URL returns 402, X-PAYMENT, facilitator settle, cold start, or borrower-direct /api/v2/x402 — never execute_payment or create_agent_session on human-direct.",
+      "description": "Pay HTTP 402 merchants with prepare_x402_payment, VOUCHER_ISSUED, and merchant-as-settler PAYMENT-SIGNATURE. Use when a URL returns 402, X-PAYMENT, facilitator settle, or borrower-direct /api/v2/x402 — never execute_payment or create_agent_session on human-direct.",
       "url": "https://agents.sohopay.xyz/skills/v1/x402-credit-pay.md"
     },
     {
       "name": "authorize-agent",
       "title": "SohoPay Authorize Agent (Borrower Grant)",
-      "description": "Obtain an ACTIVE AgentAuthorizationGrant via authorize_agent (consent page + borrower EIP-712). Use when prepare_x402_payment returns AGENT_AUTHORIZATION_REQUIRED — not for wallet-proof onboarding or voucher Ed25519 signing.",
+      "description": "Obtain an ACTIVE AgentAuthorizationGrant via authorize_agent (consent page + borrower EIP-712). Use when onboarding just registered the workload key, or prepare_x402_payment returns AGENT_AUTHORIZATION_REQUIRED — not for wallet-proof or voucher Ed25519 signing.",
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
     },
     {

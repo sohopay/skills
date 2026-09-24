@@ -26,5 +26,6 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `request_signature_challenge` | Start wallet proof |
 | `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
 | `get_borrower_status` | Onboarding status |
-| `request_borrower_token` | Scope-gated token |
+| `request_borrower_token` | Scope-gated token (onboard: include `credit:facility:accept`) |
 | `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
+| `authorize_agent` | Borrower EIP-712 grant — required during onboarding after the workload key |

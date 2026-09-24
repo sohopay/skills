@@ -22,3 +22,5 @@ metadata:
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Execute **sohopay-setup** (`{SKILL:sohopay-setup}`) with the staging row pinned. Connect via **sohopay-mcp-connect-staging** (`{SKILL:sohopay-mcp-connect-staging}`) or the staging row in **sohopay-mcp-connect**.
+
+Onboarding finishes in one turn on these staging hosts. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`.

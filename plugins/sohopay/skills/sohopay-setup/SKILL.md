@@ -27,21 +27,14 @@ Verify identity first: [references/prereqs.md](references/prereqs.md).
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](references/sticky-install.md)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP: `https://mcp.sohopay.xyz`
 - [ ] Step 5: smoke — hosted health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke` unless you cloned the server
+- [ ] Step 6: spend-ready onboard in **one turn** — **sohopay-onboard** (`{SKILL:sohopay-onboard}`), then **sohopay-authorize-agent** (`{SKILL:sohopay-authorize-agent}`) immediately after the workload key. Do not wait for the first payment
 - [ ] Report — [references/report.md](references/report.md)
-- [ ] Then operate via **sohopay-human-direct** (`{SKILL:sohopay-human-direct}`). Load onboard / spend / x402 / authorize-agent only when that checklist reaches them
+- [ ] Then operate via **sohopay-human-direct** (`{SKILL:sohopay-human-direct}`). Load spend / x402 only when that checklist reaches them
 
 Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.
 
-Consent gates still apply after setup:
+Onboarding chain (same turn): `register_borrower` (store `operational_agent_id` + `terminal_id`) → wallet proof if not already verified → `request_borrower_token` (`spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, `credit:facility:accept`) → `register_agent_workload_key` → `authorize_agent`. Run that chain in **one turn**. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`. Open the grant consent page in that same turn. Onboarding is incomplete until the grant is ACTIVE. Never fabricate a signature.
+
+A payRequest (“pay” / merchant 402 URL) is consent for that payment — **sohopay-x402**. Before a **non-payRequest** payment:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-Wallet-proof signing (onboarding).
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-First spending-scope token grant (not a 402 payRequest refresh).
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-`AGENT_AUTHORIZATION_REQUIRED` / wallet-proof / non-`RISK_FIRST_TIME_MERCHANT` policy deny. A payRequest is consent for the x402 fast path — **sohopay-x402**.

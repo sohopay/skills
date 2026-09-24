@@ -35,6 +35,6 @@ or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `
 | Scope | `borrower:token` |
 | Idempotent | Yes — pass `idempotency_key` when the harness cannot set headers |
 
-Register once per terminal before the first V2 prepare. On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILL:sohopay-x402}`.
+Register once per terminal during onboarding (step 5). On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILL:sohopay-x402}`.
 
-Registering the key does **not** authorize spending. If `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, follow `{SKILL:sohopay-authorize-agent}` (consent page + borrower EIP-712 grant) before retrying prepare.
+Registering the key does **not** authorize spending. Immediately follow `{SKILL:sohopay-authorize-agent}` — do not wait for a payRequest or a `prepare_x402_payment` 403. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only.

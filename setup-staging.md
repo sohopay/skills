@@ -24,3 +24,5 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Execute **sohopay-setup** (`{SKILLS_BASE}/setup.md`) with the staging row pinned. Connect via **sohopay-mcp-connect-staging** (`{SKILLS_BASE}/mcp-connect-staging.md`) or the staging row in **sohopay-mcp-connect**.
+
+Onboarding finishes in one turn on these staging hosts. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`.

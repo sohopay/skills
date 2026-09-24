@@ -37,24 +37,17 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP: `https://mcp.sohopay.xyz`
 - [ ] Step 5: smoke — hosted health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke` unless you cloned the server
+- [ ] Step 6: spend-ready onboard in **one turn** — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`) immediately after the workload key. Do not wait for the first payment
 - [ ] Report — [references/report.md](#hosted-reference-report)
-- [ ] Then operate via **sohopay-human-direct** (`{SKILLS_BASE}/human-direct-flow.md`). Load onboard / spend / x402 / authorize-agent only when that checklist reaches them
+- [ ] Then operate via **sohopay-human-direct** (`{SKILLS_BASE}/human-direct-flow.md`). Load spend / x402 only when that checklist reaches them
 
 Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.
 
-Consent gates still apply after setup:
+Onboarding chain (same turn): `register_borrower` (store `operational_agent_id` + `terminal_id`) → wallet proof if not already verified → `request_borrower_token` (`spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, `credit:facility:accept`) → `register_agent_workload_key` → `authorize_agent`. Run that chain in **one turn**. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`. Open the grant consent page in that same turn. Onboarding is incomplete until the grant is ACTIVE. Never fabricate a signature.
+
+A payRequest (“pay” / merchant 402 URL) is consent for that payment — **sohopay-x402**. Before a **non-payRequest** payment:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-Wallet-proof signing (onboarding).
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-First spending-scope token grant (not a 402 payRequest refresh).
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-`AGENT_AUTHORIZATION_REQUIRED` / wallet-proof / non-`RISK_FIRST_TIME_MERCHANT` policy deny. A payRequest is consent for the x402 fast path — **sohopay-x402**.
 
 ---
 
@@ -122,7 +115,7 @@ One short summary. No architecture recap.
 
 - Sticky skills: installed path, or **skipped**
 - MCP: server id + URL
-- Borrower status if you onboarded
+- Borrower status if you onboarded, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is)
 - Failures: exact URL and error
 - Repayment is due weekly, on Sunday, settled by the operator
 
@@ -189,6 +182,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Execute **sohopay-setup** (`{SKILLS_BASE}/setup.md`) with the staging row pinned. Connect via **sohopay-mcp-connect-staging** (`{SKILLS_BASE}/mcp-connect-staging.md`) or the staging row in **sohopay-mcp-connect**.
+
+Onboarding finishes in one turn on these staging hosts. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`.
 
 
 ---
@@ -479,7 +474,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-Execute the numbered workflow. Do not plan. **Before:** MCP connected (`{SKILLS_BASE}/mcp-connect.md`).
+Execute the numbered workflow in **one turn**. Do not plan. Do not defer the workload key or `authorize_agent` until the first payment. **Before:** MCP connected (`{SKILLS_BASE}/mcp-connect.md`).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -487,21 +482,14 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 0. `whoami` — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. Field caveats: [references/whoami.md](#hosted-reference-whoami)
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
-2. Wallet proof — `request_signature_challenge` → borrower signs off-device → `submit_signature`
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
+2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
-4. `request_borrower_token` with `requested_scopes[]`
+4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. Same rule on a 402 payRequest when scopes are only `borrower:token` — that refresh belongs to `{SKILLS_BASE}/x402-credit-pay.md`, not a second onboard
+5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
+6. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
+7. `POST /api/v1/auth/authorization-context` before privileged tools
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-On a 402 payRequest after first-time merchant consent, do **not** STOP for token refresh — `{SKILLS_BASE}/x402-credit-pay.md`.
-
-5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`
-6. `POST /api/v1/auth/authorization-context` before privileged tools
-
-Dropped scopes are not fatal. Scope table: [references/scopes.md](#hosted-reference-scopes). Grant: `{SKILLS_BASE}/authorize-agent.md`. Operate: `{SKILLS_BASE}/human-direct-flow.md`.
+Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
 ---
 
@@ -541,8 +529,9 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `request_signature_challenge` | Start wallet proof |
 | `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
 | `get_borrower_status` | Onboarding status |
-| `request_borrower_token` | Scope-gated token |
+| `request_borrower_token` | Scope-gated token (onboard: include `credit:facility:accept`) |
 | `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
+| `authorize_agent` | Borrower EIP-712 grant — required during onboarding after the workload key |
 
 
 <a id="hosted-reference-whoami"></a>
@@ -695,9 +684,9 @@ or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `
 | Scope | `borrower:token` |
 | Idempotent | Yes — pass `idempotency_key` when the harness cannot set headers |
 
-Register once per terminal before the first V2 prepare. On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
+Register once per terminal during onboarding (step 5). On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
 
-Registering the key does **not** authorize spending. If `prepare_x402_payment` returns `AGENT_AUTHORIZATION_REQUIRED`, follow `{SKILLS_BASE}/authorize-agent.md` (consent page + borrower EIP-712 grant) before retrying prepare.
+Registering the key does **not** authorize spending. Immediately follow `{SKILLS_BASE}/authorize-agent.md` — do not wait for a payRequest or a `prepare_x402_payment` 403. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only.
 
 
 
@@ -726,18 +715,19 @@ Execute the next checklist item only. Do not plan. **Before:** MCP connected (`{
 
 Load a sibling **only when that step is next**:
 
-- [ ] Identity / register / wallet proof / token / workload key — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`)
+- [ ] Identity / register / wallet proof / token / workload key / agent grant — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
-- [ ] `AGENT_AUTHORIZATION_REQUIRED` — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
+- [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
 - [ ] Non-x402 spend / first-time merchant detail — **sohopay-spend** (`{SKILLS_BASE}/spend-and-pay.md`)
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-whoami → register_borrower → wallet proof (STOP) → token → register_agent_workload_key
+whoami → register_borrower → wallet proof if needed → request_borrower_token (no chat prompt)
+  → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
   → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
 ```
 
-**payRequest** = consent for the x402 fast path. Still STOP for wallet-proof and `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.
+Call `request_borrower_token` with no chat prompt (onboarding and payRequest). If scopes are only `borrower:token` on a later pay, that is expiry — refresh and stay on the warm path. **payRequest** = consent for the x402 fast path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.
 
 
 ---
@@ -943,37 +933,47 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
+**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare.
+
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-A **payRequest** (“pay” / merchant 402 URL) is consent for token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete the **warm** path in one short turn.
+A **payRequest** (“pay” / merchant 402 URL) is consent for token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete the **warm** path in one short turn. `whoami` showing only `borrower:token` is token expiry — refresh and stay on the warm path. Do not re-run register, keygen, or `authorize_agent` for expiry.
 
 ```text
 PARALLEL: GET merchant URL | whoami (borrower_id ??= principal_id) | resolve workload key
-1. Cold (only borrower:token or no operational_agent_id) → § Cold start
-2. Warm: request_borrower_token if scopes ⊆ {borrower:token} — NO STOP
-3. X402_AGENT_KEY_NOT_REGISTERED → register_borrower if needed, keygen + register_agent_workload_key, retry SAME idempotency_key
-4. prepare_x402_payment
-5. VOUCHER_ISSUED → open references/prepare-and-voucher.md and follow Sign steps (do not search). Key file: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
+1. Warm: request_borrower_token if scopes ⊆ {borrower:token} — NO STOP (expiry, not re-onboard)
+2. prepare_x402_payment
+3. X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME idempotency_key
+4. VOUCHER_ISSUED → open references/prepare-and-voucher.md and follow Sign steps (do not search). Key file: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
    COMPLETED → header_name/header_value
-6. 200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
+5. 200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 ```
 
-### Cold start
+### Recovery if onboard was skipped
 
-`whoami` → `register_borrower` (store `operational_agent_id`) → token (no STOP on payRequest) → workload key → prepare. One wallet-sign STOP: `AGENT_AUTHORIZATION_REQUIRED` → **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`), then retry **same** order / **same** key. Do not re-GET the merchant. Details: `{SKILLS_BASE}/borrower-onboard.md` and [references/prepare-and-voucher.md](#hosted-reference-prepare-and-voucher).
+Do not discover prerequisites by serial 403s. Finish **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`) once, then retry the **same** order / **same** key.
+
+```text
+whoami → register_borrower (store operational_agent_id)
+  → request_borrower_token (include credit:facility:accept) — no chat prompt
+  → keygen + register_agent_workload_key
+  → authorize_agent: open consent URL in this turn — sohopay-authorize-agent
+  → after Grant active: prepare SAME order / SAME idempotency_key
+```
 
 ### STOP only if
 
 | Gate | When |
 |------|------|
-| Wallet proof | Onboarding incomplete |
-| `authorize_agent` | `AGENT_AUTHORIZATION_REQUIRED` |
+| Wallet proof | Only if not already verified — off-device signature in this turn. Do not ask a chat question first |
+| `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn. Do not ask first. Do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
 
 | Error | Action |
 |-------|--------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | Terminal + key, retry same key — no custodial invent |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 voucher path only |
+| `AGENT_AUTHORIZATION_REQUIRED` | Open consent page this turn — `{SKILLS_BASE}/authorize-agent.md` |
 | `RISK_FIRST_TIME_MERCHANT` on payRequest | Accept; retry same order/key |
 | `X402_INTENT_EXPIRED` | Retry same order/key — do not mint a new merchant `orderRef` |
 
@@ -1302,24 +1302,27 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-Execute this grant, then retry prepare. Do not plan. Do not fall back to `sign_transaction`.
+Execute this grant in the same turn. Do not plan. Do not fall back to `sign_transaction`. Do not ask a chat question before the consent URL.
 
-**Before:** MCP connected; wallet proof done; workload key registered. Usual trigger: `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED`.
+**Before:** MCP connected; wallet proof done; workload key registered. **Primary trigger:** onboarding, immediately after `register_agent_workload_key` (`{SKILLS_BASE}/borrower-onboard.md`). `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is recovery only (onboard was skipped).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Consent URL + hash payload: [references/consent-page.md](#hosted-reference-consent-page). Staging `https://staging.sohopay.xyz/agent/authorize`. Production `https://sohopay.xyz/agent/authorize`.
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. On pay-time recovery, cover the pending payment.
+
+Need `credit:facility:accept` on the borrower token. If it is missing, call `request_borrower_token` with that scope before the challenge. Do **not** ask before that token call.
 
 ```text
 1. authorize_agent challenge (operational_agent_id, terms, fresh idempotency_key)
-2. Open consent URL (hash payload). Page POSTs complete — do not wait for JSON paste
-3. Retry prepare_x402_payment SAME order / SAME payment idempotency_key
+2. Open consent URL now (hash payload). Page POSTs complete — do not wait for a JSON paste
+3. Onboarding: wait only for Grant active on the page — do not call prepare with no order
+   Pay-time recovery: retry prepare_x402_payment SAME order / SAME payment idempotency_key
 4. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
 ```
 
-Challenge and submit are separate writes — new idempotency_key for submit fallback only. Need `credit:facility:accept` on the borrower token. Continue `{SKILLS_BASE}/x402-credit-pay.md`.
+Challenge and submit are separate writes — new idempotency_key for submit fallback only. Continue `{SKILLS_BASE}/x402-credit-pay.md` only after a pay-time recovery.
 
 ---
 

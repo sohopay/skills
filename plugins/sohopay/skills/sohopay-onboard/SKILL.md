@@ -1,7 +1,7 @@
 ---
 name: sohopay-onboard
 description: >
-  Register a borrower, complete EIP-712 wallet proof, request tokens, and register the Protocol V2 workload key. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, or the operator asks to onboard — not for delegated sessions or payments.
+  Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, and an ACTIVE agent grant. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, or the operator asks to onboard — not for a warm 402 pay or delegated sessions.
 license: Apache-2.0
 metadata:
   hosted_name: borrower-onboard
@@ -9,7 +9,7 @@ metadata:
   version: "1.0"
 ---
 
-Execute the numbered workflow. Do not plan. **Before:** MCP connected (`{SKILL:sohopay-mcp-connect}`).
+Execute the numbered workflow in **one turn**. Do not plan. Do not defer the workload key or `authorize_agent` until the first payment. **Before:** MCP connected (`{SKILL:sohopay-mcp-connect}`).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -17,18 +17,11 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 0. `whoami` — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. Field caveats: [references/whoami.md](references/whoami.md)
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
-2. Wallet proof — `request_signature_challenge` → borrower signs off-device → `submit_signature`
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
+2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
-4. `request_borrower_token` with `requested_scopes[]`
+4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. Same rule on a 402 payRequest when scopes are only `borrower:token` — that refresh belongs to `{SKILL:sohopay-x402}`, not a second onboard
+5. Protocol V2 workload key — [references/workload-key.md](references/workload-key.md) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
+6. Agent grant — `{SKILL:sohopay-authorize-agent}` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
+7. `POST /api/v1/auth/authorization-context` before privileged tools
 
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-On a 402 payRequest after first-time merchant consent, do **not** STOP for token refresh — `{SKILL:sohopay-x402}`.
-
-5. Protocol V2 workload key — [references/workload-key.md](references/workload-key.md) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`
-6. `POST /api/v1/auth/authorization-context` before privileged tools
-
-Dropped scopes are not fatal. Scope table: [references/scopes.md](references/scopes.md). Grant: `{SKILL:sohopay-authorize-agent}`. Operate: `{SKILL:sohopay-human-direct}`.
+Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](references/scopes.md). Operate: `{SKILL:sohopay-human-direct}`. Warm pay after the grant is ACTIVE: `{SKILL:sohopay-x402}`.
