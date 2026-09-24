@@ -25,12 +25,13 @@ Harnesses may also expose an extra `mcp_auth` tool for connection auth. It is a 
 whoami (optional if already authenticated)
   → register_borrower
   → request_signature_challenge + submit_signature (wallet proof)
-  → request_borrower_token   # spend/policy/signing scopes — whoami often shows only borrower:token until then
+  → request_borrower_token   # spend/policy/signing + credit:facility:accept — whoami often shows only borrower:token until then
   → register_agent_workload_key   # Protocol V2: agent Ed25519 keygen + PoP (once per terminal); MCP never holds the private key
+  → authorize_agent            # onboarding grant STOP — consent page; grant must be ACTIVE before any pay
   → HTTP 402: prepare_x402_payment  →  see {SKILLS_BASE}/x402-credit-pay.md
        · VOUCHER_ISSUED (V2): agent signs voucher → PAYMENT-SIGNATURE → retry merchant
        · COMPLETED (V1): header_name/header_value or payment_intent+signature → retry
-       · X402_AGENT_KEY_NOT_REGISTERED: register key, retry SAME idempotency_key
+       · X402_AGENT_KEY_NOT_REGISTERED / AGENT_AUTHORIZATION_REQUIRED: onboard was skipped — recover, then retry SAME idempotency_key
   → get_settlement_status (poll by settlement_id until terminal)
 
 V1 / when V2 is off (multi-step fallback — non-x402 spend, or prepare unavailable):
@@ -54,7 +55,7 @@ If `whoami` scopes are only `borrower:token`, that is base/expired token state �
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
 
-On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, voucher signing, merchant retry, or first-time merchant — complete merchant-as-settler silently. Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`. Still STOP for `authorize_agent` when prepare returns `AGENT_AUTHORIZATION_REQUIRED` — follow `{SKILLS_BASE}/authorize-agent.md` (open the consent page; wait for the borrower-signed paste; submit; then retry prepare with the same payment idempotency key).
+On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, voucher signing, merchant retry, or first-time merchant — complete merchant-as-settler silently. Onboarding/setup STOP before `request_borrower_token` does not apply once the operator asked to pay a 402 resource. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`. If the grant is already ACTIVE, do **not** re-run `authorize_agent`. STOP for `authorize_agent` only as **recovery** when prepare returns `AGENT_AUTHORIZATION_REQUIRED` (onboard was skipped) — follow `{SKILLS_BASE}/authorize-agent.md` (open the consent page; wait for Grant active; then retry prepare with the same payment idempotency key).
 
 After the x402 settle submits: a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 
