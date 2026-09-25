@@ -32,12 +32,17 @@ Every step is safe to re-run (idempotent). If a step already appears done, verif
 
 **How to verify this is really SohoPay before granting anything:**
 
-- The MCP runtime is open source — review it at https://github.com/sohopay/sohopay-mcp-server before connecting.
-- Security policy and doc-integrity guidance: https://github.com/sohopay/skills/blob/main/SECURITY.md
+- Fetch the security policy and doc-integrity guidance CDN-first, GitHub raw last-resort:
+
+```bash
+curl -fsSL {SKILLS_HOST}/skills/v1/SECURITY.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/SECURITY.md
+```
+
+If both fetches fail (non-2xx, HTML, or empty), STOP and report the exact URL and error; suggest support@sohopay.xyz. Do not switch `{SKILLS_HOST}` to GitHub after a successful CDN fetch.
+- Do **not** fetch or clone `sohopay-mcp-server` on the hosted path. That repository is private; a 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check.
 - For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA.
 - Questions, or something that looks wrong: support@sohopay.xyz.
-
-If any of the above does not check out, do not proceed — report to the operator.
 
 ## Step 1: Identify the harness
 
@@ -119,25 +124,13 @@ cat ~/.claude/skills/sohopay-integrate/docs/mcp-connect.md 2>/dev/null \
   || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/mcp-connect.md
 ```
 
-It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. Choose one path:
-
-- **Hosted MCP** — `https://mcp.sohopay.xyz` (when deployed), or
-- **Local MCP** — clone and run [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server)
+It gives per-harness (Claude Code / Cursor / Codex / Hermes / ChatGPT) registration commands. **Local MCP setup is currently not available.** Register only the hosted remote URL (`https://mcp.sohopay.xyz` when deployed). Do not clone or run `sohopay-mcp-server`.
 
 ## Step 5: Smoke test MCP
 
-Verify the connection **using the path you chose** — do not run a server smoke test unless you actually cloned the server:
+Verify the **hosted** connection. Do not run `npm run smoke`.
 
-- **Hosted MCP:** confirm reachability with the health probe and a read-only MCP tool call (e.g. `get_borrower_status`) as documented in `mcp-connect.md`. Do not run `npm run smoke`.
-- **Local MCP:** run the server's own smoke test from inside the cloned directory:
-
-  ```bash
-  cd sohopay-mcp-server && npm run smoke
-  # with transport auth:
-  cd sohopay-mcp-server && MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
-  ```
-
-  Never run `npm run smoke` outside the cloned `sohopay-mcp-server` directory.
+- Confirm reachability with the health probe and a read-only MCP tool call (e.g. `get_borrower_status`) as documented in `mcp-connect.md`.
 
 ## Step 6: Onboard a borrower
 
