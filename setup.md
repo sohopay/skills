@@ -32,7 +32,14 @@ Every step is safe to re-run (idempotent). If a step already appears done, verif
 
 **How to verify this is really SohoPay before granting anything:**
 
-- Fetch the security policy and doc-integrity guidance from `https://raw.githubusercontent.com/sohopay/skills/main/SECURITY.md`. If that fetch is non-2xx, HTML, or empty, STOP and report the exact URL and error; suggest support@sohopay.xyz.
+- Fetch the security policy and doc-integrity guidance CDN-first, GitHub raw last-resort:
+
+```bash
+curl -fsSL {SKILLS_HOST}/skills/v1/SECURITY.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/SECURITY.md
+```
+
+If both fetches fail (non-2xx, HTML, or empty), STOP and report the exact URL and error; suggest support@sohopay.xyz. Do not switch `{SKILLS_HOST}` to GitHub after a successful CDN fetch.
 - Do **not** fetch or clone `sohopay-mcp-server` on the hosted path. That repository is private; a 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check.
 - For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA.
 - Questions, or something that looks wrong: support@sohopay.xyz.
