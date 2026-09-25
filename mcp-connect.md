@@ -11,7 +11,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-Execute the hosted path unless the operator asked for a local server. Do not plan.
+Execute the hosted path. Do not plan. Local MCP setup is currently not available.
 
 **Before running it:** environment detection in **sohopay-setup**.
 
@@ -26,8 +26,8 @@ Do not mix production and staging hosts. Staging stub: `{SKILLS_BASE}/mcp-connec
 
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
-- **Hosted (default, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
-- **Local (developers, needs Node):** [references/local-server.md](#hosted-reference-local-server)
+- **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
+- **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](#hosted-reference-local-server)
 
 Smoke: `curl -fsSL {MCP_ORIGIN}/health` then a read-only MCP tool (`whoami` or `get_borrower_status`). Unauthenticated `tools/list` must be `401` + `WWW-Authenticate: Bearer`.
 
@@ -187,55 +187,7 @@ curl -fsSL {MCP_ORIGIN}/.well-known/oauth-protected-resource
 
 ### Hosted reference: local-server.md
 
-## Option B: Local sohopay-mcp-server (requires Node.js)
+## Option B: Local sohopay-mcp-server (currently unavailable)
 
-This path is for **developers** running the MCP server locally. End users on hosted MCP (Option A) do not need Node.js.
-
-```bash
-git clone https://github.com/sohopay/sohopay-mcp-server.git
-cd sohopay-mcp-server
-npm ci
-cp .env.example .env
-```
-
-Minimum `.env` values (use your chosen `{API_BASE}`):
-
-```env
-SOHO_BACKEND_BASE_URL={API_BASE}
-SOHO_MCP_SERVICE_TOKEN=<from-secrets-manager>
-AUTH_PROVIDER=soho_backend
-AUTH_ISSUER={API_BASE}
-AUTH_RESOURCE=soho-mcp
-AUTH_AUDIENCE=soho-mcp
-AUTH_JWKS_URL={API_BASE}/api/v1/auth/.well-known/jwks.json
-AUTH_VALIDATION_MODE=jwt
-AUTH_INTROSPECTION_ENABLED=true
-AUTH_INTROSPECTION_URL={API_BASE}/api/v1/auth/introspect
-RBAC_PROVIDER=soho_backend
-AUTHZ_CACHE_TTL_SECONDS=30
-```
-
-Never commit `.env` or paste service tokens into chat.
-
-Start the dev server:
-
-```bash
-npm run dev
-```
-
-Register the local server with your harness exactly as in Option A, but use the local URL and port printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `{MCP_URL}`.
-
-### Verify (local)
-
-Run the server's own smoke test **from inside the cloned directory**:
-
-```bash
-cd sohopay-mcp-server && npm run smoke
-# with transport auth:
-cd sohopay-mcp-server && MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
-```
-
-Verifies: health, MCP `initialize`, `tools/list`. Never run `npm run smoke` outside the cloned `sohopay-mcp-server` directory.
-
----
+**Local MCP setup is currently not available.** Do not clone, install, or run `sohopay-mcp-server`. A 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check. Register only the hosted remote URL `{MCP_URL}`.
 

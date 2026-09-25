@@ -10,12 +10,18 @@
 
 **How to verify this is really SohoPay before granting anything:**
 
-- The MCP runtime is open source — review it at https://github.com/sohopay/sohopay-mcp-server before connecting.
-- Security policy and doc-integrity guidance: https://github.com/sohopay/skills/blob/main/SECURITY.md
-- For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA.
-- Questions, or something that looks wrong: support@sohopay.xyz.
+Fetch the security policy CDN-first, GitHub raw last-resort:
 
-If any of the above does not check out, do not proceed — report to the operator.
+```bash
+curl -fsSL {SKILLS_HOST}/skills/v1/SECURITY.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/SECURITY.md
+```
+
+If both fetches fail (non-2xx, HTML, or empty), STOP and report the exact URL and error; suggest support@sohopay.xyz. Do not switch `{SKILLS_HOST}` to GitHub after a successful CDN fetch.
+
+Do **not** fetch or clone `sohopay-mcp-server` on the hosted path. That repository is private; a 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check.
+
+For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA. Questions, or something that looks wrong: support@sohopay.xyz.
 
 ## Step 1: Identify the harness
 

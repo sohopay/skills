@@ -36,7 +36,7 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](#hosted-reference-prereqs)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP: `https://mcp.sohopay.xyz`
-- [ ] Step 5: smoke — hosted health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke` unless you cloned the server
+- [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: spend-ready onboard in **one turn** — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`) immediately after the workload key. Do not wait for the first payment
 - [ ] Report — [references/report.md](#hosted-reference-report)
 - [ ] Then operate via **sohopay-human-direct** (`{SKILLS_BASE}/human-direct-flow.md`). Load spend / x402 only when that checklist reaches them
@@ -71,12 +71,18 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 
 **How to verify this is really SohoPay before granting anything:**
 
-- The MCP runtime is open source — review it at https://github.com/sohopay/sohopay-mcp-server before connecting.
-- Security policy and doc-integrity guidance: https://github.com/sohopay/skills/blob/main/SECURITY.md
-- For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA.
-- Questions, or something that looks wrong: support@sohopay.xyz.
+Fetch the security policy CDN-first, GitHub raw last-resort:
 
-If any of the above does not check out, do not proceed — report to the operator.
+```bash
+curl -fsSL {SKILLS_HOST}/skills/v1/SECURITY.md \
+  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/SECURITY.md
+```
+
+If both fetches fail (non-2xx, HTML, or empty), STOP and report the exact URL and error; suggest support@sohopay.xyz. Do not switch `{SKILLS_HOST}` to GitHub after a successful CDN fetch.
+
+Do **not** fetch or clone `sohopay-mcp-server` on the hosted path. That repository is private; a 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check.
+
+For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA. Questions, or something that looks wrong: support@sohopay.xyz.
 
 ## Step 1: Identify the harness
 
@@ -203,7 +209,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-Execute the hosted path unless the operator asked for a local server. Do not plan.
+Execute the hosted path. Do not plan. Local MCP setup is currently not available.
 
 **Before running it:** environment detection in **sohopay-setup**.
 
@@ -218,8 +224,8 @@ Do not mix production and staging hosts. Staging stub: `{SKILLS_BASE}/mcp-connec
 
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
-- **Hosted (default, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
-- **Local (developers, needs Node):** [references/local-server.md](#hosted-reference-local-server)
+- **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
+- **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](#hosted-reference-local-server)
 
 Smoke: `curl -fsSL {MCP_ORIGIN}/health` then a read-only MCP tool (`whoami` or `get_borrower_status`). Unauthenticated `tools/list` must be `401` + `WWW-Authenticate: Bearer`.
 
@@ -379,57 +385,9 @@ curl -fsSL {MCP_ORIGIN}/.well-known/oauth-protected-resource
 
 ### Hosted reference: local-server.md
 
-## Option B: Local sohopay-mcp-server (requires Node.js)
+## Option B: Local sohopay-mcp-server (currently unavailable)
 
-This path is for **developers** running the MCP server locally. End users on hosted MCP (Option A) do not need Node.js.
-
-```bash
-git clone https://github.com/sohopay/sohopay-mcp-server.git
-cd sohopay-mcp-server
-npm ci
-cp .env.example .env
-```
-
-Minimum `.env` values (use your chosen `{API_BASE}`):
-
-```env
-SOHO_BACKEND_BASE_URL={API_BASE}
-SOHO_MCP_SERVICE_TOKEN=<from-secrets-manager>
-AUTH_PROVIDER=soho_backend
-AUTH_ISSUER={API_BASE}
-AUTH_RESOURCE=soho-mcp
-AUTH_AUDIENCE=soho-mcp
-AUTH_JWKS_URL={API_BASE}/api/v1/auth/.well-known/jwks.json
-AUTH_VALIDATION_MODE=jwt
-AUTH_INTROSPECTION_ENABLED=true
-AUTH_INTROSPECTION_URL={API_BASE}/api/v1/auth/introspect
-RBAC_PROVIDER=soho_backend
-AUTHZ_CACHE_TTL_SECONDS=30
-```
-
-Never commit `.env` or paste service tokens into chat.
-
-Start the dev server:
-
-```bash
-npm run dev
-```
-
-Register the local server with your harness exactly as in Option A, but use the local URL and port printed by `npm run dev` (see the `sohopay-mcp-server` README) in place of `{MCP_URL}`.
-
-### Verify (local)
-
-Run the server's own smoke test **from inside the cloned directory**:
-
-```bash
-cd sohopay-mcp-server && npm run smoke
-# with transport auth:
-cd sohopay-mcp-server && MCP_AUTH_TOKEN=<oauth-access-token> npm run smoke
-```
-
-Verifies: health, MCP `initialize`, `tools/list`. Never run `npm run smoke` outside the cloned `sohopay-mcp-server` directory.
-
----
+**Local MCP setup is currently not available.** Do not clone, install, or run `sohopay-mcp-server`. A 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check. Register only the hosted remote URL `{MCP_URL}`.
 
 
 
@@ -484,7 +442,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
-4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. Same rule on a 402 payRequest when scopes are only `borrower:token` — that refresh belongs to `{SKILLS_BASE}/x402-credit-pay.md`, not a second onboard
+4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Store `token_requested_at` + `expires_in`. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
 5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
 6. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
 7. `POST /api/v1/auth/authorization-context` before privileged tools
@@ -617,19 +575,15 @@ This is a **different token from the OAuth transport token** your harness obtain
 Consequences an agent must plan for:
 
 - Spending authority **lapses silently**. Scopes such as `spend:intent:create`, `signing:request`, and `payment:execute` stop applying once the token expires; nothing notifies you.
-- After expiry, `whoami` reports only the base scopes (commonly `["borrower:token"]`), **not** the scopes you requested earlier. That is expiry, not a dropped-scope failure — do not re-run onboarding to "fix" it.
-- **Re-request the token immediately before each spend**, not once at session start. A flow that pauses for operator consent, waits on settlement, or resumes minutes later will likely need a fresh token before signing or paying.
+- `whoami` always reports OAuth JWT claims (commonly `["borrower:token"]`), **even immediately after** a successful `request_borrower_token`. That is **not** expiry. Do not use `whoami.scopes` as a refresh signal, and do not re-run onboarding to "fix" it.
+- Track `token_requested_at` + `expires_in` in this conversation. **Re-request when the cached token is older than 12 minutes** (or `expires_in − 180s`). Do not re-request before every spend in the same chat.
 - Re-requesting is routine and does not repeat wallet proof or KYC.
 
 ### Consent
 
 The token grants real spending scopes.
 
-**Onboarding / first grant (setup):** before the first scoped token outside a payRequest:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-**HTTP 402 payRequest** (“pay” / merchant URL): call `request_borrower_token` **without** a STOP when refreshing scopes — the pay utterance already authorized the payment. Do **not** honour the onboarding STOP “each time” on pay.
+Call `request_borrower_token` with no chat prompt — not on first setup, and not when the cached token is older than 12 minutes. Do **not** use `whoami.scopes` to decide. Skip `authorization-context` on the warm x402 path.
 
 ### Dropped scope reason codes
 
@@ -727,7 +681,7 @@ whoami → register_borrower → wallet proof if needed → request_borrower_tok
   → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
 ```
 
-Call `request_borrower_token` with no chat prompt (onboarding and payRequest). If scopes are only `borrower:token` on a later pay, that is expiry — refresh and stay on the warm path. **payRequest** = consent for the x402 fast path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.
+Call `request_borrower_token` with no chat prompt during onboarding. On a later pay, do not call `whoami` to decide a refresh. Re-request only when this chat has no successful token newer than 12 minutes. **payRequest** = consent for the x402 fast path. Skip `whoami` on that warm path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.
 
 
 ---
@@ -937,21 +891,24 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-A **payRequest** (“pay” / merchant 402 URL) is consent for token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete the **warm** path in one short turn. `whoami` showing only `borrower:token` is token expiry — refresh and stay on the warm path. Do not re-run register, keygen, or `authorize_agent` for expiry.
+A **payRequest** (“pay” / merchant 402 URL) is consent for a stale-token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete a **warm** pay in **three waves, under 15 seconds**. Do not chat between waves. Skip `whoami`. `whoami.scopes` of `["borrower:token"]` is the OAuth JWT, not expiry.
+
+Session cache: `borrower_id`, `operational_agent_id`, `token_requested_at` + `expires_in`, and the payment `idempotency_key` already used for this `orderRef`. Same `orderRef` → same payment key.
 
 ```text
-PARALLEL: GET merchant URL | whoami (borrower_id ??= principal_id) | resolve workload key
-1. Warm: request_borrower_token if scopes ⊆ {borrower:token} — NO STOP (expiry, not re-onboard)
-2. prepare_x402_payment
-3. X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME idempotency_key
-4. VOUCHER_ISSUED → open references/prepare-and-voucher.md and follow Sign steps (do not search). Key file: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
-   COMPLETED → header_name/header_value
-5. 200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
+Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | reuse cached borrower_id + operational_agent_id
+Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
+  X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
+  RISK_FIRST_TIME_MERCHANT → retry SAME key
+Wave 3: VOUCHER_ISSUED → open references/prepare-and-voucher.md Sign steps. Key: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
+  COMPLETED → header_name/header_value
+  200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
+SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent
 ```
 
 ### Recovery if onboard was skipped
 
-Do not discover prerequisites by serial 403s. Finish **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`) once, then retry the **same** order / **same** key.
+Do not discover prerequisites by serial 403s. `whoami.scopes` of `["borrower:token"]` is not a reason to re-onboard. Finish **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`) once, then retry the **same** order / **same** key.
 
 ```text
 whoami → register_borrower (store operational_agent_id)
@@ -1043,7 +1000,7 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge (X-SOHO-PAYMENT-REQUIRED / body.challenge)
   → cold: MCP register_borrower → operational_agent_id + terminal_id
-  → MCP: request_borrower_token if whoami scopes are only borrower:token
+  → MCP: request_borrower_token only if this chat has no successful token newer than 12 minutes (do not use whoami.scopes)
   → MCP: register_agent_workload_key (once; if not yet registered for THIS borrower)
   → MCP: prepare_x402_payment (map challenge; no session_id)
   → branch on status:
@@ -1154,8 +1111,8 @@ When prepare returns `COMPLETED`, retry the merchant with `header_name` / `heade
 A **payRequest** authorizes token refresh, prepare, agent voucher signing, merchant retry, and **first-time merchant** for that merchant in this turn.
 
 - Do **not** STOP for `request_borrower_token`, voucher signing, payment-header retry, settle, or a separate first-time prompt.
-- If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately — no STOP.
-- Later pays to the **same** merchant: same silent fast path.
+- Call `request_borrower_token` only when this chat has no successful token newer than 12 minutes — no STOP. Do **not** use `whoami.scopes` as a refresh signal.
+- Later pays to the **same** merchant: same silent fast path. Reuse the cached token and, if the merchant repeats the same `orderRef`, the same payment `idempotency_key`.
 
 Wallet-proof (onboarding) still has its own STOP in `{SKILLS_BASE}/borrower-onboard.md`. Onboarding/setup STOP before `request_borrower_token` does **not** apply once the operator has asked to pay an x402 resource.
 
@@ -1228,7 +1185,7 @@ Use when `prepare_x402_payment` is unavailable, or when V2 is off and you follow
 ```text
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge
-  → MCP: request_borrower_token if whoami scopes are only borrower:token
+  → MCP: request_borrower_token only if this chat has no successful token newer than 12 minutes
   → MCP: create_spend_intent (map challenge.payment fields; no session_id)
   → MCP: evaluate_spend_policy → keep decision_id
   → MCP: sign_transaction (policy_decision_id; payload: {} object) → keep the payment_intent echo

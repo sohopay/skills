@@ -17,21 +17,24 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-A **payRequest** (“pay” / merchant 402 URL) is consent for token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete the **warm** path in one short turn. `whoami` showing only `borrower:token` is token expiry — refresh and stay on the warm path. Do not re-run register, keygen, or `authorize_agent` for expiry.
+A **payRequest** (“pay” / merchant 402 URL) is consent for a stale-token refresh, prepare, voucher sign, merchant retry, and first-time merchant. Complete a **warm** pay in **three waves, under 15 seconds**. Do not chat between waves. Skip `whoami`. `whoami.scopes` of `["borrower:token"]` is the OAuth JWT, not expiry.
+
+Session cache: `borrower_id`, `operational_agent_id`, `token_requested_at` + `expires_in`, and the payment `idempotency_key` already used for this `orderRef`. Same `orderRef` → same payment key.
 
 ```text
-PARALLEL: GET merchant URL | whoami (borrower_id ??= principal_id) | resolve workload key
-1. Warm: request_borrower_token if scopes ⊆ {borrower:token} — NO STOP (expiry, not re-onboard)
-2. prepare_x402_payment
-3. X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME idempotency_key
-4. VOUCHER_ISSUED → open references/prepare-and-voucher.md and follow Sign steps (do not search). Key file: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
-   COMPLETED → header_name/header_value
-5. 200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
+Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | reuse cached borrower_id + operational_agent_id
+Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
+  X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
+  RISK_FIRST_TIME_MERCHANT → retry SAME key
+Wave 3: VOUCHER_ISSUED → open references/prepare-and-voucher.md Sign steps. Key: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
+  COMPLETED → header_name/header_value
+  200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
+SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent
 ```
 
 ### Recovery if onboard was skipped
 
-Do not discover prerequisites by serial 403s. Finish **sohopay-onboard** (`{SKILL:sohopay-onboard}`) once, then retry the **same** order / **same** key.
+Do not discover prerequisites by serial 403s. `whoami.scopes` of `["borrower:token"]` is not a reason to re-onboard. Finish **sohopay-onboard** (`{SKILL:sohopay-onboard}`) once, then retry the **same** order / **same** key.
 
 ```text
 whoami → register_borrower (store operational_agent_id)

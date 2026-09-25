@@ -1,7 +1,7 @@
 ---
 name: sohopay-mcp-connect
 description: >
-  Register hosted or local SohoPay MCP and complete OAuth. Use when connecting MCP, OAuth, or tools/list after setup — not for onboarding or payments.
+  Register hosted SohoPay MCP and complete OAuth. Use when connecting MCP, OAuth, or tools/list after setup — not for onboarding or payments.
 license: Apache-2.0
 metadata:
   hosted_name: mcp-connect
@@ -9,7 +9,7 @@ metadata:
   version: "1.0"
 ---
 
-Execute the hosted path unless the operator asked for a local server. Do not plan.
+Execute the hosted path. Do not plan. Local MCP setup is currently not available.
 
 **Before running it:** environment detection in **sohopay-setup**.
 
@@ -24,8 +24,8 @@ Do not mix production and staging hosts. Staging stub: `{SKILL:sohopay-mcp-conne
 
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILL:sohopay-idempotency}`.
 
-- **Hosted (default, no Node):** per-harness OAuth — [references/harnesses.md](references/harnesses.md)
-- **Local (developers, needs Node):** [references/local-server.md](references/local-server.md)
+- **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](references/harnesses.md)
+- **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](references/local-server.md)
 
 Smoke: `curl -fsSL {MCP_ORIGIN}/health` then a read-only MCP tool (`whoami` or `get_borrower_status`). Unauthenticated `tools/list` must be `401` + `WWW-Authenticate: Bearer`.
 

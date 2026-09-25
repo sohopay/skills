@@ -21,7 +21,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
-4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. Same rule on a 402 payRequest when scopes are only `borrower:token` — that refresh belongs to `{SKILLS_BASE}/x402-credit-pay.md`, not a second onboard
+4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Store `token_requested_at` + `expires_in`. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
 5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
 6. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
 7. `POST /api/v1/auth/authorization-context` before privileged tools
@@ -154,19 +154,15 @@ This is a **different token from the OAuth transport token** your harness obtain
 Consequences an agent must plan for:
 
 - Spending authority **lapses silently**. Scopes such as `spend:intent:create`, `signing:request`, and `payment:execute` stop applying once the token expires; nothing notifies you.
-- After expiry, `whoami` reports only the base scopes (commonly `["borrower:token"]`), **not** the scopes you requested earlier. That is expiry, not a dropped-scope failure — do not re-run onboarding to "fix" it.
-- **Re-request the token immediately before each spend**, not once at session start. A flow that pauses for operator consent, waits on settlement, or resumes minutes later will likely need a fresh token before signing or paying.
+- `whoami` always reports OAuth JWT claims (commonly `["borrower:token"]`), **even immediately after** a successful `request_borrower_token`. That is **not** expiry. Do not use `whoami.scopes` as a refresh signal, and do not re-run onboarding to "fix" it.
+- Track `token_requested_at` + `expires_in` in this conversation. **Re-request when the cached token is older than 12 minutes** (or `expires_in − 180s`). Do not re-request before every spend in the same chat.
 - Re-requesting is routine and does not repeat wallet proof or KYC.
 
 ### Consent
 
 The token grants real spending scopes.
 
-**Onboarding / first grant (setup):** before the first scoped token outside a payRequest:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-**HTTP 402 payRequest** (“pay” / merchant URL): call `request_borrower_token` **without** a STOP when refreshing scopes — the pay utterance already authorized the payment. Do **not** honour the onboarding STOP “each time” on pay.
+Call `request_borrower_token` with no chat prompt — not on first setup, and not when the cached token is older than 12 minutes. Do **not** use `whoami.scopes` to decide. Skip `authorization-context` on the warm x402 path.
 
 ### Dropped scope reason codes
 

@@ -91,6 +91,7 @@ jobs:
                 cp "$skill_file" "$SKILLS_DIR/$skill_file"
               done
           cp llms-full.txt "$SKILLS_DIR/llms-full.txt"
+          cp SECURITY.md "$SKILLS_DIR/SECURITY.md"
 
           # Git source pins SKILLS_BASE to GitHub raw (CI). Hosted objects must
           # keep agents on the CDN; GitHub is last-resort fallback only.

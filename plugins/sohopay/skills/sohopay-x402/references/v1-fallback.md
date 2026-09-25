@@ -5,7 +5,7 @@ Use when `prepare_x402_payment` is unavailable, or when V2 is off and you follow
 ```text
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge
-  → MCP: request_borrower_token if whoami scopes are only borrower:token
+  → MCP: request_borrower_token only if this chat has no successful token newer than 12 minutes
   → MCP: create_spend_intent (map challenge.payment fields; no session_id)
   → MCP: evaluate_spend_policy → keep decision_id
   → MCP: sign_transaction (policy_decision_id; payload: {} object) → keep the payment_intent echo

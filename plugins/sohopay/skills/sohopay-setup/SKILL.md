@@ -26,7 +26,7 @@ Verify identity first: [references/prereqs.md](references/prereqs.md).
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](references/prereqs.md)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](references/sticky-install.md)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP: `https://mcp.sohopay.xyz`
-- [ ] Step 5: smoke — hosted health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke` unless you cloned the server
+- [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: spend-ready onboard in **one turn** — **sohopay-onboard** (`{SKILL:sohopay-onboard}`), then **sohopay-authorize-agent** (`{SKILL:sohopay-authorize-agent}`) immediately after the workload key. Do not wait for the first payment
 - [ ] Report — [references/report.md](references/report.md)
 - [ ] Then operate via **sohopay-human-direct** (`{SKILL:sohopay-human-direct}`). Load spend / x402 only when that checklist reaches them

@@ -17,7 +17,7 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge (X-SOHO-PAYMENT-REQUIRED / body.challenge)
   → cold: MCP register_borrower → operational_agent_id + terminal_id
-  → MCP: request_borrower_token if whoami scopes are only borrower:token
+  → MCP: request_borrower_token only if this chat has no successful token newer than 12 minutes (do not use whoami.scopes)
   → MCP: register_agent_workload_key (once; if not yet registered for THIS borrower)
   → MCP: prepare_x402_payment (map challenge; no session_id)
   → branch on status:
@@ -128,8 +128,8 @@ When prepare returns `COMPLETED`, retry the merchant with `header_name` / `heade
 A **payRequest** authorizes token refresh, prepare, agent voucher signing, merchant retry, and **first-time merchant** for that merchant in this turn.
 
 - Do **not** STOP for `request_borrower_token`, voucher signing, payment-header retry, settle, or a separate first-time prompt.
-- If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately — no STOP.
-- Later pays to the **same** merchant: same silent fast path.
+- Call `request_borrower_token` only when this chat has no successful token newer than 12 minutes — no STOP. Do **not** use `whoami.scopes` as a refresh signal.
+- Later pays to the **same** merchant: same silent fast path. Reuse the cached token and, if the merchant repeats the same `orderRef`, the same payment `idempotency_key`.
 
 Wallet-proof (onboarding) still has its own STOP in `{SKILL:sohopay-onboard}`. Onboarding/setup STOP before `request_borrower_token` does **not** apply once the operator has asked to pay an x402 resource.
 
