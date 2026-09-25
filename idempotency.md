@@ -18,6 +18,7 @@ On every MCP **write**, pass `idempotency_key` (UUID v4) in the tool args when t
 - Network retry of the same call → **reuse** the key. New operation → new key.
 - 402 merchant **202** → replay the **same** payment header. Do not mint a new spend.
 - `authorize_agent` challenge and submit are two writes → two keys.
+- `request_repayment` challenge and submit are two writes → two keys.
 
 TTL table: [references/ttl.md](#hosted-reference-ttl).
 
@@ -53,7 +54,7 @@ Note: MCP may still treat some of these as write tools and require `idempotency_
 
 ## MCP write tools that require idempotency
 
-`register_borrower`, `request_borrower_token`, `register_agent_workload_key`, `request_signature_challenge`, `submit_signature`, `create_agent_session`, `revoke_session`, `create_spend_intent`, `evaluate_spend_policy`, `prepare_x402_payment`, `execute_payment`, `sign_transaction`, `approve_credit_limit`, `create_repayment`, `execute_repayment`
+`register_borrower`, `request_borrower_token`, `register_agent_workload_key`, `request_signature_challenge`, `submit_signature`, `create_agent_session`, `revoke_session`, `create_spend_intent`, `evaluate_spend_policy`, `prepare_x402_payment`, `execute_payment`, `sign_transaction`, `approve_credit_limit`, `create_repayment`, `execute_repayment`, `request_repayment`, `authorize_agent`
 
 ## Client guidance
 

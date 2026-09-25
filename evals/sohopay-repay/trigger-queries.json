@@ -1,0 +1,10 @@
+[
+  {"query": "repay my SohoPay credit", "should_trigger": true},
+  {"query": "pay back the outstanding balance to SohoPay", "should_trigger": true},
+  {"query": "open the request_repayment consent URL so I can sign", "should_trigger": true},
+  {"query": "poll get_repayment_status until CONFIRMED", "should_trigger": true},
+  {"query": "create_repayment calldata so a third party can repay on-chain", "should_trigger": false},
+  {"query": "pay this 402 merchant URL", "should_trigger": false},
+  {"query": "authorize_agent grant consent page", "should_trigger": false},
+  {"query": "Send USDC from MetaMask.", "should_trigger": false}
+]

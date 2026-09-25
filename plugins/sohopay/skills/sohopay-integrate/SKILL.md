@@ -20,6 +20,7 @@ Activate **one** row. Do not load the others. Do not plan.
 | Operate (human-direct) | `sohopay-human-direct` |
 | HTTP 402 / pay / VOUCHER_ISSUED | `sohopay-x402` |
 | `AGENT_AUTHORIZATION_REQUIRED` | `sohopay-authorize-agent` |
+| Repay / pay back SohoPay credit | `sohopay-repay` |
 | Spend / policy / sign (not a 402) | `sohopay-spend` |
 | Idempotency key | `sohopay-idempotency` |
 | Delegated session | `sohopay-agent-session` |

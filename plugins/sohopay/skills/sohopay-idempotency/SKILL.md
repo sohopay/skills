@@ -16,5 +16,6 @@ On every MCP **write**, pass `idempotency_key` (UUID v4) in the tool args when t
 - Network retry of the same call → **reuse** the key. New operation → new key.
 - 402 merchant **202** → replay the **same** payment header. Do not mint a new spend.
 - `authorize_agent` challenge and submit are two writes → two keys.
+- `request_repayment` challenge and submit are two writes → two keys.
 
 TTL table: [references/ttl.md](references/ttl.md).

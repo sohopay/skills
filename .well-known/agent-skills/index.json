@@ -59,6 +59,12 @@
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
     },
     {
+      "name": "repay",
+      "title": "SohoPay Repay (Wallet Consent)",
+      "description": "Repay SohoPay credit via request_repayment (consent page + ReceiveWithAuthorization). Use when the operator said repay, pay back SohoPay, or outstanding balance should be cleared — not for create_repayment calldata or an HTTP 402 merchant pay.",
+      "url": "https://agents.sohopay.xyz/skills/v1/repay.md"
+    },
+    {
       "name": "idempotency",
       "title": "SohoPay Idempotency",
       "description": "Pass idempotency_key (UUID v4) on SohoPay write tools. Use when Cursor or ChatGPT cannot set Idempotency-Key, or a write is retried — not for whoami.",
