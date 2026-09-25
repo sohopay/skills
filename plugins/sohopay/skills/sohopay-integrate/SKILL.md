@@ -85,6 +85,6 @@ npx skills add sohopay/skills -g -y -a claude-code   # Claude Code; use -a curso
 
 ## Additional resources
 
-- MCP server: [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server) (private; not required for hosted setup)
+- MCP server: [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server) (private; local MCP setup is currently unavailable — use the hosted remote URL only)
 - Backend: [sohopay-backend](https://github.com/sohopay/sohopay-backend)
 - Endpoints: [docs/endpoints.md](https://github.com/sohopay/skills/blob/main/docs/endpoints.md)
