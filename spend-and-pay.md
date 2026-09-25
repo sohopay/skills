@@ -1,51 +1,43 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Spend, Policy, and Signing
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** creates spend intents, evaluates policy, and signs PaymentIntents, then hands off to x402 merchant-as-settler for payment. **Before running it:** the borrower is onboarded with spend/signing scopes.
+HTTP 402 → **sohopay-x402** (`prepare_x402_payment`). This skill is the non-x402 / V1 multi-step path and first-time merchant rules.
 
-MCP tool descriptions summarize call-time rules (XOR fields, required IDs); **this skill is authoritative** for ordering and operator STOP gates.
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+`idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`. Default operate: `{SKILLS_BASE}/human-direct-flow.md`.
 
-CRITICAL: merchant payment is **x402 merchant-as-settler**, not an MCP confirm-pay call. For HTTP 402s prefer **`prepare_x402_payment`** (Protocol V2 may return `VOUCHER_ISSUED`; V1 returns `COMPLETED`) — follow `{SKILLS_BASE}/x402-credit-pay.md`. Agents do not invent merchant payments out of band.
+**V1 / non-x402:** `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction(policy_decision_id, payload: {})` → `get_signing_status` (`signature` = `intentSig`) → x402 settle → poll `settlement_id`.
 
-Pass `idempotency_key` (UUID v4) on every write tool when the harness cannot set HTTP headers — see `{SKILLS_BASE}/idempotency.md`.
+Merchant XOR `merchant`/`merchant_id`. Amount XOR `amount`/`amount_decimal`. `sign_transaction` does **not** accept `spend_intent_id`. Signing: [references/signing.md](#hosted-reference-signing).
 
-## Default: human-direct
-
-The borrower acts directly. Full end-to-end path:
-
-```bash
-curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md
-```
-
-## Flow
-
-**HTTP 402 (preferred):** `prepare_x402_payment` → branch on status (`VOUCHER_ISSUED` / `COMPLETED`) → merchant header → poll `get_settlement_status`. Details: `{SKILLS_BASE}/x402-credit-pay.md`. Register the agent Ed25519 workload key first when V2 is on — `{SKILLS_BASE}/borrower-onboard.md` § Protocol V2 agent workload key.
-
-**Non-x402 spend / V1 multi-step (when V2 is off or prepare unavailable):**
-
-1. **Create spend intent** — `create_spend_intent` / `POST /api/v1/spend/intents`
-2. **Evaluate policy** — `evaluate_spend_policy` / `POST /api/v1/policy/evaluate`
-3. **Sign PaymentIntent** — `sign_transaction` with `policy_decision_id` (binds the evaluated intent, keeps `orderRef` byte-identical) → poll `get_signing_status` for `signature` (`intentSig`)
-4. **Settle via x402** — send the merchant-as-settler `X-PAYMENT` envelope (see `{SKILLS_BASE}/x402-credit-pay.md` § V1 fallback) → keep `settlement_id`
-5. **Poll settlement** — `get_settlement_status` with **`settlement_id`** until a **terminal** status
-
-Under Protocol V2, `sign_transaction` may return **`CUSTODIAL_SIGNING_DISABLED`**. For HTTP 402s do **not** invent a custodial signature — use `prepare_x402_payment` + agent voucher sign instead.
-
-High-risk routes require **2FA-equivalent**: verified wallet-proof + server-side borrower 2FA flag (not a JWT claim).
-
-**HTTP 402 payRequest** (“pay” / merchant URL): do **not** STOP for token, prepare, voucher sign, or first-time merchant — see `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path. That utterance is consent for the payment.
-
-**Non-x402 / exploratory high-risk** (no payRequest): before signing or paying:
+First-time merchant: [references/first-time-merchant.md](#hosted-reference-first-time-merchant). On a payRequest treat as accepted. Settle uses bytes32 `merchantId` — signing ALLOW can still DENY at settle.
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+Only when there is **no** payRequest and policy is first-time / high-risk.
+
+Settlement: [references/settlement.md](#hosted-reference-settlement). Poll `settlement_id`; credit after `CONFIRMED` (`l2_confirmations`, ~5s).
+
+---
+
+## Hosted references (load only when the skill says to)
+
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-first-time-merchant"></a>
+
+### Hosted reference: first-time-merchant.md
 
 ## First-time merchant (`RISK_FIRST_TIME_MERCHANT`)
 
@@ -81,38 +73,10 @@ After a settle-time first-time DENY (payRequest already counts as consent; other
 2. Create a **new** spend intent / prepare (new `idempotency_key` for settle-time envelope mint), evaluate, sign only if `ALLOW` + `signing_eligible`, and send a **new** payment header. The settle-time DENY row now exists under the bytes32 key, so the next settle re-eval should not flag first-time for that merchant.
 3. Merchant **202** after the header means settle-time policy **allowed** that envelope (confirmation still pending).
 
-## create_spend_intent — field rules
 
-| Rule | Detail |
-|------|--------|
-| Merchant | Supply **`merchant`** (EVM address) **XOR** **`merchant_id`** (string). Do **not** rely on cross-fill — the MCP mapper no longer copies one into the other. |
-| Amount | Supply **`amount`** (uint256 base units) **XOR** **`amount_decimal`** (USDC decimal ≤6 fractional digits). |
-| Agent-only | `memo` and `currency` may appear in the tool schema but are **not forwarded** to the backend. |
-| x402 / paywall | Prefer `order_ref` and `resource_identifier` from the merchant 402 challenge when paying a protected resource. |
+<a id="hosted-reference-settlement"></a>
 
-## Signing and intentSig
-
-Use this section for **non-x402 spend** and the **V1 multi-step** path. For HTTP 402s under Protocol V2, prefer `prepare_x402_payment` — if prepare returns `VOUCHER_ISSUED` or `sign_transaction` returns `CUSTODIAL_SIGNING_DISABLED`, do **not** use this custodial path.
-
-1. Call `sign_transaction` with `borrower_id`, `signing_purpose`, `payload_type`, `payload`, and **`policy_decision_id`** (the `decision_id` returned by `evaluate_spend_policy`).
-2. Keep `request_id` from the accepted response. The response also echoes **`payment_intent`** — `agentId`, `merchantId`, `asset`, `amount`, `feeAmount`, `orderRef`, `nonce`, `deadline`. Keep it: these are the exact wire values an `X-PAYMENT` envelope needs, and `nonce` / `deadline` are not available from any other tool.
-3. Poll `get_signing_status` until `COMPLETED`.
-4. The returned **`signature`** is the unredacted **`intentSig`** (Envelope 1 over PaymentIntent). Use it for merchant `X-PAYMENT` envelopes and for borrower-direct x402 settle. It is the only tool response field exempt from MCP redaction on this path.
-
-### sign_transaction — field rules
-
-| Rule | Detail |
-|------|--------|
-| Binding | **`policy_decision_id` is required in practice.** The gateway maps it to `decision_id` and hydrates merchant / asset / amount / `orderRef` from the bound policy decision, keeping the PaymentIntent byte-identical across sign → settle. The backend signing DTO declares `decision_id` as a required UUID. |
-| `spend_intent_id` | **Not accepted by this tool.** It is absent from the MCP signing schema and silently stripped, so passing it changes nothing. Bind through `policy_decision_id` — the decision already points at the spend intent. |
-| `payload` | Must be a **JSON object**, not a string. Pass `{}` when you have no precomputed hash — never a stringified `"{}"`. Only `payload.payload_hash` is forwarded to the backend; every other key stays local. |
-| `signing_purpose` / `payload_type` | Required by the tool schema but **not forwarded**; the gateway derives signing mode from `decision_id`. |
-
-Before requesting a signature:
-
-> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
-
-On an **HTTP 402 / merchant-as-settler** payRequest, do **not** STOP for signing / voucher sign / first-time — see § First-time merchant and `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path.
+### Hosted reference: settlement.md
 
 ## Settlement finality and available credit (tell the operator)
 
@@ -181,7 +145,32 @@ Payment itself is the x402 merchant header rail (`PAYMENT-SIGNATURE` / `X-PAYMEN
 
 Blocked for sanctioned/OFAC, fraud-held, inactive accounts. Frozen/suspended borrowers may still repay (separate flow).
 
-## Next steps
 
-- x402 HTTP rail (merchant-as-settler): `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`
+<a id="hosted-reference-signing"></a>
+
+### Hosted reference: signing.md
+
+## Signing and intentSig
+
+Use this section for **non-x402 spend** and the **V1 multi-step** path. For HTTP 402s under Protocol V2, prefer `prepare_x402_payment` — if prepare returns `VOUCHER_ISSUED` or `sign_transaction` returns `CUSTODIAL_SIGNING_DISABLED`, do **not** use this custodial path.
+
+1. Call `sign_transaction` with `borrower_id`, `signing_purpose`, `payload_type`, `payload`, and **`policy_decision_id`** (the `decision_id` returned by `evaluate_spend_policy`).
+2. Keep `request_id` from the accepted response. The response also echoes **`payment_intent`** — `agentId`, `merchantId`, `asset`, `amount`, `feeAmount`, `orderRef`, `nonce`, `deadline`. Keep it: these are the exact wire values an `X-PAYMENT` envelope needs, and `nonce` / `deadline` are not available from any other tool.
+3. Poll `get_signing_status` until `COMPLETED`.
+4. The returned **`signature`** is the unredacted **`intentSig`** (Envelope 1 over PaymentIntent). Use it for merchant `X-PAYMENT` envelopes and for borrower-direct x402 settle. It is the only tool response field exempt from MCP redaction on this path.
+
+### sign_transaction — field rules
+
+| Rule | Detail |
+|------|--------|
+| Binding | **`policy_decision_id` is required in practice.** The gateway maps it to `decision_id` and hydrates merchant / asset / amount / `orderRef` from the bound policy decision, keeping the PaymentIntent byte-identical across sign → settle. The backend signing DTO declares `decision_id` as a required UUID. |
+| `spend_intent_id` | **Not accepted by this tool.** It is absent from the MCP signing schema and silently stripped, so passing it changes nothing. Bind through `policy_decision_id` — the decision already points at the spend intent. |
+| `payload` | Must be a **JSON object**, not a string. Pass `{}` when you have no precomputed hash — never a stringified `"{}"`. Only `payload.payload_hash` is forwarded to the backend; every other key stays local. |
+| `signing_purpose` / `payload_type` | Required by the tool schema but **not forwarded**; the gateway derives signing mode from `decision_id`. |
+
+Before requesting a signature:
+
+> **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
+
+On an **HTTP 402 / merchant-as-settler** payRequest, do **not** STOP for signing / voucher sign / first-time — see § First-time merchant and `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path.
+

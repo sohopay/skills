@@ -12,7 +12,7 @@ ARTIFACT="${ROOT}/verify-bootstrap.log"
   echo
 
   echo "--- npm validate ---"
-  npm run generate:llms-full
+  npm run build
   npm run validate
 
   echo
@@ -32,6 +32,7 @@ ARTIFACT="${ROOT}/verify-bootstrap.log"
   REGISTRY_OUT="$(npx skills add . --list -y 2>&1)" || true
   echo "$REGISTRY_OUT"
   echo "$REGISTRY_OUT" | grep -q sohopay-integrate
+  echo "$REGISTRY_OUT" | grep -q sohopay-setup
 
   echo
   echo "--- hosted URL probe (optional; requires deploy) ---"

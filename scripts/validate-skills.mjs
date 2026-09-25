@@ -1,21 +1,19 @@
 #!/usr/bin/env node
 /**
- * Validates hosted skill markdown and index.json before deploy.
- * Fails on: localhost URLs, secret-like patterns, broken internal links,
- * invalid index, non-failing curl usage, permission-bypass language,
- * hardcoded hosted URLs outside the SKILLS_BASE header, chained docs missing
- * from the index, setup.md missing its safety scaffolding, and env-preset
- * stubs that do not link their canonical doc.
+ * Validates registry SKILL.md folders and generated hosted markdown.
  */
-import { readFileSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+  HOSTED_BASE,
+  HOSTED_SKILL_DIRS,
+  listRegistrySkillDirs,
+  loadHostedSkills,
+  loadSkill,
+  ROOT,
+  SKILLS_DIR,
+} from './lib/skills.mjs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
-const HOSTED_BASE = 'https://agents.sohopay.xyz';
-
-/** Env-preset stubs: keep stable URLs; body must chain to the canonical skill. */
 const ENV_PRESET_STUBS = {
   'setup-staging.md': 'setup.md',
   'mcp-connect-staging.md': 'mcp-connect.md',
@@ -31,13 +29,14 @@ const FORBIDDEN_PATTERNS = [
   /x-soho-service-token:\s*[a-zA-Z0-9._-]{8,}/i,
 ];
 
-// Language that would push an agent to escalate or bypass permission prompts.
 const BYPASS_PATTERNS = [
   /full-access mode/i,
   /dangerously-skip-permissions/i,
   /disable permission/i,
   /bypass permission/i,
 ];
+
+const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 let failed = false;
 
@@ -50,96 +49,151 @@ function pass(msg) {
   console.log(`OK: ${msg}`);
 }
 
-const indexPath = join(ROOT, '.well-known/agent-skills/index.json');
-const index = JSON.parse(readFileSync(indexPath, 'utf8'));
-
-if (!index.skills?.length) {
-  fail('index.json has no skills');
+function checkForbidden(label, content) {
+  for (const pattern of FORBIDDEN_PATTERNS) {
+    if (pattern.test(content)) fail(`${label} matches forbidden pattern ${pattern}`);
+  }
+  for (const pattern of BYPASS_PATTERNS) {
+    if (pattern.test(content)) fail(`${label} contains permission-bypass language ${pattern}`);
+  }
 }
 
-const SKILL_FILES = (index.skills ?? []).map((skill) => `${skill.name}.md`);
-
-for (const file of SKILL_FILES) {
-  const path = join(ROOT, file);
-  const content = readFileSync(path, 'utf8');
-
-  for (const pattern of FORBIDDEN_PATTERNS) {
-    if (pattern.test(content)) {
-      fail(`${file} matches forbidden pattern ${pattern}`);
-    }
-  }
-
-  // Markdown links must be absolute (http...) unless they point at our GitHub
-  // repo or use the {SKILLS_BASE} placeholder that agents substitute.
-  const localLinks = content.match(/\]\([^h][^)]*\)/g) ?? [];
-  for (const link of localLinks) {
-    if (
-      !link.includes("github.com/sohopay") &&
-      !link.includes("{SKILLS_BASE}") &&
-      !link.includes("{SKILLS_HOST}")
-    ) {
-      fail(`${file} has non-absolute markdown link: ${link}`);
-    }
-  }
-
-  // Every remote fetch must fail loudly: curl needs -f, and never plain -sL.
+function checkCurl(label, content) {
   for (const rawLine of content.split('\n')) {
     const idx = rawLine.search(/\bcurl\s+\S/);
     if (idx === -1) continue;
     const cmd = rawLine.slice(idx).trim();
-    if (/\bcurl\s+-sL\b/.test(cmd)) {
-      fail(`${file}: uses 'curl -sL' (use 'curl -fsSL'): ${cmd}`);
-    }
+    if (/\bcurl\s+-sL\b/.test(cmd)) fail(`${label}: uses 'curl -sL' (use 'curl -fsSL'): ${cmd}`);
     const flags = cmd.match(/-[A-Za-z]+/g) ?? [];
-    if (!flags.some((f) => f.includes('f'))) {
-      fail(`${file}: curl without -f flag (use 'curl -fsSL'): ${cmd}`);
+    if (!flags.some((f) => f.includes('f'))) fail(`${label}: curl without -f flag (use 'curl -fsSL'): ${cmd}`);
+  }
+}
+
+function checkHostedLinks(file, content) {
+  const localLinks = content.match(/\]\([^)]+\)/g) ?? [];
+  for (const link of localLinks) {
+    const href = link.slice(2, -1);
+    if (href.startsWith('http') || href.startsWith('{SKILLS_BASE}') || href.startsWith('#') || href.includes('github.com/sohopay')) {
+      continue;
+    }
+    fail(`${file} has non-absolute markdown link: ${link}`);
+  }
+}
+
+function checkNativeLinks(label, content) {
+  const localLinks = content.match(/\]\([^)]+\)/g) ?? [];
+  for (const link of localLinks) {
+    const href = link.slice(2, -1);
+    if (
+      href.startsWith('http') ||
+      href.startsWith('{SKILLS_BASE}') ||
+      href.startsWith('{SKILL:') ||
+      href.startsWith('#') ||
+      href.startsWith('references/') ||
+      href.includes('github.com/sohopay')
+    ) {
+      continue;
+    }
+    fail(`${label} has disallowed markdown link: ${link}`);
+  }
+}
+
+const dirs = listRegistrySkillDirs();
+if (!dirs.includes('sohopay-integrate')) fail('missing plugins/sohopay/skills/sohopay-integrate/SKILL.md');
+else pass('registry skill sohopay-integrate exists');
+
+for (const dirName of dirs) {
+  let skill;
+  try {
+    skill = loadSkill(dirName);
+  } catch (err) {
+    fail(`${dirName}: ${err.message}`);
+    continue;
+  }
+  const { data, body, raw } = skill;
+  if (data.name !== dirName) fail(`${dirName}: frontmatter name "${data.name}" must match directory`);
+  if (!NAME_RE.test(data.name ?? '')) fail(`${dirName}: invalid name (lowercase/hyphens only, no consecutive hyphens)`);
+  if ((data.name ?? '').length > 64) fail(`${dirName}: name exceeds 64 chars`);
+  const desc = data.description ?? '';
+  if (desc.length < 1 || desc.length > 1024) fail(`${dirName}: description must be 1–1024 chars (got ${desc.length})`);
+  if (!/use when/i.test(desc)) fail(`${dirName}: description must include "Use when"`);
+  const lines = body.split('\n').length;
+  if (lines > 500) fail(`${dirName}: SKILL.md body has ${lines} lines (max 500)`);
+  checkForbidden(dirName, raw);
+  checkCurl(dirName, raw);
+  checkNativeLinks(dirName, raw);
+  const withoutComments = raw.replace(/<!--[\s\S]*?-->/g, '');
+  if (/agents\.sohopay\.xyz/.test(withoutComments)) {
+    fail(`${dirName} hardcodes agents.sohopay.xyz — use {SKILL:} / {SKILLS_BASE}`);
+  }
+  if (HOSTED_SKILL_DIRS.includes(dirName) && !data.metadata?.hosted_name) {
+    fail(`${dirName} missing metadata.hosted_name`);
+  }
+  const refs = join(skill.dir, 'references');
+  if (existsSync(refs)) {
+    for (const f of readdirSync(refs).filter((n) => n.endsWith('.md'))) {
+      const refRaw = readFileSync(join(refs, f), 'utf8');
+      checkForbidden(`${dirName}/references/${f}`, refRaw);
+      checkCurl(`${dirName}/references/${f}`, refRaw);
+      checkNativeLinks(`${dirName}/references/${f}`, refRaw);
     }
   }
+  pass(`${dirName} frontmatter + content`);
+}
 
-  // No permission-escalation language.
-  for (const pattern of BYPASS_PATTERNS) {
-    if (pattern.test(content)) {
-      fail(`${file} contains permission-bypass language ${pattern}`);
-    }
+for (const expected of HOSTED_SKILL_DIRS) {
+  if (!dirs.includes(expected)) fail(`missing hosted skill dir ${expected}`);
+}
+
+const hostedSkills = loadHostedSkills();
+const indexPath = join(ROOT, '.well-known/agent-skills/index.json');
+const index = JSON.parse(readFileSync(indexPath, 'utf8'));
+if (!index.skills?.length) fail('index.json has no skills');
+
+const indexNames = new Set((index.skills ?? []).map((s) => s.name));
+const hostedNames = hostedSkills.map((s) => s.data.metadata.hosted_name);
+
+if (JSON.stringify(index.skills.map((s) => s.name)) !== JSON.stringify(hostedNames)) {
+  fail('index.json skill names/order must match generate:hosted catalog');
+}
+
+for (let i = 0; i < hostedSkills.length; i++) {
+  const s = hostedSkills[i];
+  const hosted = s.data.metadata.hosted_name;
+  const entry = index.skills[i];
+  if (entry?.description !== s.data.description) {
+    fail(`index.json description drift for ${hosted} — run npm run generate:hosted`);
   }
+  const expectedUrl = `${HOSTED_BASE}/skills/v1/${hosted}.md`;
+  if (entry?.url !== expectedUrl) fail(`index skill ${hosted} url must be ${expectedUrl}`);
+  const mdFile = join(ROOT, `${hosted}.md`);
+  try {
+    statSync(mdFile);
+    pass(`index entry ${hosted} maps to ${hosted}.md`);
+  } catch {
+    fail(`index skill ${hosted} missing file ${hosted}.md — run npm run generate:hosted`);
+  }
+}
 
-  // Hosted host must only appear inside the SKILLS_BASE header comment; docs
-  // reference other skills via {SKILLS_BASE}, not a hardcoded hostname.
+const SKILL_FILES = (index.skills ?? []).map((skill) => `${skill.name}.md`);
+for (const file of SKILL_FILES) {
+  const content = readFileSync(join(ROOT, file), 'utf8');
+  checkForbidden(file, content);
+  checkCurl(file, content);
+  checkHostedLinks(file, content);
   const withoutComments = content.replace(/<!--[\s\S]*?-->/g, '');
   if (/agents\.sohopay\.xyz/.test(withoutComments)) {
     fail(`${file} hardcodes agents.sohopay.xyz outside the SKILLS_BASE header — use {SKILLS_BASE}`);
   }
-
-  pass(`${file} content checks`);
+  pass(`${file} hosted content checks`);
 }
 
-for (const skill of index.skills ?? []) {
-  const expectedUrl = `${HOSTED_BASE}/skills/v1/${skill.name}.md`;
-  if (skill.url !== expectedUrl) {
-    fail(`index skill ${skill.name} url must be ${expectedUrl}`);
-  }
-  const mdFile = join(ROOT, `${skill.name}.md`);
-  try {
-    statSync(mdFile);
-    pass(`index entry ${skill.name} maps to ${skill.name}.md`);
-  } catch {
-    fail(`index skill ${skill.name} missing file ${skill.name}.md`);
-  }
-}
-
-const indexNames = new Set((index.skills ?? []).map((s) => s.name));
-
-// Canonical setup.md: chained docs must be indexed; full safety scaffolding required.
 const setup = readFileSync(join(ROOT, 'setup.md'), 'utf8');
 for (const match of setup.matchAll(/\{SKILLS_BASE\}\/([a-z0-9-]+)\.md/gi)) {
   const name = match[1];
-  if (!indexNames.has(name)) {
-    fail(`setup.md references ${name}.md but it is missing from index.json`);
-  }
+  if (!indexNames.has(name)) fail(`setup.md references ${name}.md but it is missing from index.json`);
 }
-if (!/Report the exact failed URL/.test(setup)) {
-  fail('setup.md missing the global failure rule');
-}
+if (!/Report the exact failed URL/.test(setup)) fail('setup.md missing the global failure rule');
 const stopCount = (setup.match(/STOP — ask the operator and wait/g) ?? []).length;
 if (stopCount < 1) {
   fail(`setup.md must STOP before a non-payRequest payment (found ${stopCount})`);
@@ -162,55 +216,42 @@ if (!/Report to the operator/.test(setup)) {
 }
 pass('setup.md safety scaffolding');
 
-// Env-preset stubs must exist and chain to their canonical skill via {SKILLS_BASE}.
 for (const [stubFile, canonical] of Object.entries(ENV_PRESET_STUBS)) {
-  const stubPath = join(ROOT, stubFile);
   let stub;
   try {
-    stub = readFileSync(stubPath, 'utf8');
+    stub = readFileSync(join(ROOT, stubFile), 'utf8');
   } catch {
     fail(`missing env-preset stub ${stubFile}`);
     continue;
   }
   const linkRe = new RegExp(`\\{SKILLS_BASE\\}/${canonical.replace(/\.md$/, '')}\\.md`);
-  if (!linkRe.test(stub)) {
-    fail(`${stubFile} must link to {SKILLS_BASE}/${canonical}`);
-  }
-  if (!/STAGING/i.test(stub)) {
-    fail(`${stubFile} must declare the STAGING environment preset`);
-  }
+  if (!linkRe.test(stub)) fail(`${stubFile} must link to {SKILLS_BASE}/${canonical}`);
+  if (!/STAGING/i.test(stub)) fail(`${stubFile} must declare the STAGING environment preset`);
   pass(`${stubFile} env-preset stub`);
 }
 
-const pluginSkill = join(ROOT, 'plugins/sohopay/skills/sohopay-integrate/SKILL.md');
-try {
-  statSync(pluginSkill);
-  pass('registry skill sohopay-integrate exists');
-} catch {
-  fail('missing plugins/sohopay/skills/sohopay-integrate/SKILL.md');
+const staleBundle = join(SKILLS_DIR, 'sohopay-integrate/docs');
+if (existsSync(staleBundle)) {
+  fail(`stale bundle dir ${staleBundle} — delete it; skills now live as sibling SKILL.md folders`);
+} else {
+  pass('no sohopay-integrate/docs mirror');
 }
 
-// Local-first bundle: the registry package must ship byte-identical copies of the
-// hosted docs so an installed agent can read them offline. Fail on drift.
-const BUNDLE = join(ROOT, 'plugins/sohopay/skills/sohopay-integrate/docs');
-function checkBundled(name, sourcePath) {
+for (const dirName of dirs) {
+  const evalPath = join(ROOT, 'evals', dirName, 'trigger-queries.json');
   try {
-    if (readFileSync(join(BUNDLE, name), 'utf8') !== readFileSync(sourcePath, 'utf8')) {
-      fail(`bundle drift: ${name} differs from source — run 'npm run sync:bundle'`);
+    const queries = JSON.parse(readFileSync(evalPath, 'utf8'));
+    if (!Array.isArray(queries) || queries.length < 4) {
+      fail(`evals/${dirName}/trigger-queries.json needs at least 4 queries`);
+    } else if (!queries.every((q) => typeof q.query === 'string' && typeof q.should_trigger === 'boolean')) {
+      fail(`evals/${dirName}/trigger-queries.json entries must have query + should_trigger`);
     } else {
-      pass(`bundle ${name} in sync`);
+      pass(`evals/${dirName}`);
     }
   } catch {
-    fail(`bundle missing ${name} — run 'npm run sync:bundle'`);
+    fail(`missing evals/${dirName}/trigger-queries.json`);
   }
 }
-for (const skill of index.skills ?? []) {
-  checkBundled(`${skill.name}.md`, join(ROOT, `${skill.name}.md`));
-}
-checkBundled('index.json', indexPath);
 
-if (failed) {
-  process.exit(1);
-}
-
+if (failed) process.exit(1);
 console.log('All skill validations passed.');

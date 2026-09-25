@@ -1,0 +1,8 @@
+[
+  {"query": "Cursor write tool failed missing idempotency_key", "should_trigger": true},
+  {"query": "409 IDEMPOTENCY_KEY_CONFLICT on evaluate_spend_policy", "should_trigger": true},
+  {"query": "what TTL for facilitator settle idempotency", "should_trigger": true},
+  {"query": "ChatGPT can't set Idempotency-Key header", "should_trigger": true},
+  {"query": "Pay HTTP 402 with X-PAYMENT wire format.", "should_trigger": false},
+  {"query": "Send USDC from my wallet.", "should_trigger": false}
+]

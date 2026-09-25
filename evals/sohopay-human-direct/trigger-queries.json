@@ -1,0 +1,9 @@
+[
+  {"query": "Borrower acts directly — run the default SohoPay operate path.", "should_trigger": true},
+  {"query": "SESSION_GATE_SKIPPED_NO_SESSION showed up, is that bad?", "should_trigger": true},
+  {"query": "MCP is connected, now spend and settle as the human.", "should_trigger": true},
+  {"query": "don't create an agent session, human-direct only", "should_trigger": true},
+  {"query": "create_agent_session so my bot can spend", "should_trigger": false},
+  {"query": "Add Stripe billing to the app.", "should_trigger": false},
+  {"query": "Send USDC from MetaMask.", "should_trigger": false}
+]

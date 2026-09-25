@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - Hosted hostname is `sohopay.xyz`, never `sohopay.com`. (verbatim from spec/CLAUDE.md)
-- `mcp-connect.md` is a hosted skill body → after editing it, regenerate `llms-full.txt` with `npm run generate:llms-full`; never hand-edit `llms-full.txt`.
+- `mcp-connect.md` is generated from `plugins/sohopay/skills/sohopay-mcp-connect/` → after editing the skill dir, run `npm run build`; never hand-edit hosted `mcp-connect.md` or `llms-full.txt`.
 - Validator blocks: `localhost`/`127.0.0.1`/`0.0.0.0`, secret-like patterns (`sk-…`, `AKIA…`, PEM headers, `x-soho-service-token:` values), and non-absolute Markdown links (except `github.com/sohopay`). Do not introduce any.
 - No test framework exists. "Verify" means: `npm run validate` (green), `npm run generate:llms-full` (regenerates cleanly), `bash -n install.sh` (syntax), and targeted `grep` assertions on the edited files.
 - There are already uncommitted edits to `mcp-connect.md` and `llms-full.txt` (prior Codex/Cursor auth-syntax fixes). Task 1 rewrites the same Option A region and **relocates** those fixes into the headless-fallback subsection; they get committed together with this task. Do not discard them.
