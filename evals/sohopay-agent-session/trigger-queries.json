@@ -1,0 +1,8 @@
+[
+  {"query": "create_agent_session with allowed_merchants empty list", "should_trigger": true},
+  {"query": "x-session-id vs Mcp-Session-Id I'm confused", "should_trigger": true},
+  {"query": "revoke delegated sohopay session", "should_trigger": true},
+  {"query": "agent spends on behalf of the borrower", "should_trigger": true},
+  {"query": "human-direct 402 pay — should I create a session?", "should_trigger": false},
+  {"query": "Send USDC from my wallet.", "should_trigger": false}
+]

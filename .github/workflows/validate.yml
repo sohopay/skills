@@ -14,5 +14,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm run generate:llms-full
+      - run: npm run build
+      - name: Generated files must be committed
+        run: |
+          git add -A -- setup.md setup-staging.md mcp-connect.md mcp-connect-staging.md \
+            borrower-onboard.md human-direct-flow.md spend-and-pay.md x402-credit-pay.md \
+            authorize-agent.md repay.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json
+          git diff --cached --exit-code -- \
+            setup.md setup-staging.md mcp-connect.md mcp-connect-staging.md \
+            borrower-onboard.md human-direct-flow.md spend-and-pay.md x402-credit-pay.md \
+            authorize-agent.md repay.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json \
+            || { echo "FAIL: generated files drifted — run npm run build and commit"; exit 1; }
       - run: npm run validate

@@ -7,62 +7,74 @@
     {
       "name": "setup",
       "title": "SohoPay Agent Setup for AI Agents",
-      "description": "Env-parameterized bootstrap: detect harness, install skills, connect MCP (prod or staging), onboard, operate, troubleshoot, and report.",
+      "description": "Detect this harness, optionally install sticky SohoPay skills, and connect hosted MCP. Use when the operator asks to set up SohoPay, bootstrap agents.sohopay, or Set up https://sohopay.xyz/install — not for staging-only E2E, spending, or HTTP 402.",
       "url": "https://agents.sohopay.xyz/skills/v1/setup.md"
     },
     {
       "name": "setup-staging",
       "title": "SohoPay Agent Setup (Staging)",
-      "description": "Staging env-preset stub: pins staging.api / staging.mcp and chains to the canonical setup skill.",
+      "description": "Pin staging.api / staging.mcp and chain to canonical setup. Use when the operator asks for staging SohoPay setup or Set up https://staging.sohopay.xyz/install — not for production.",
       "url": "https://agents.sohopay.xyz/skills/v1/setup-staging.md"
     },
     {
       "name": "mcp-connect",
       "title": "Connect to SohoPay MCP Server",
-      "description": "Per-harness registration (Claude Code, Cursor, Codex, Hermes, ChatGPT) for hosted or local MCP; read the live tools/list; idempotency_key for header-less clients.",
+      "description": "Register hosted SohoPay MCP and complete OAuth. Use when connecting MCP, OAuth, or tools/list after setup — not for onboarding or payments.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect.md"
     },
     {
       "name": "mcp-connect-staging",
       "title": "Connect to SohoPay MCP Server (Staging)",
-      "description": "Staging env-preset stub: sohopay-staging → staging.mcp.sohopay.xyz/mcp; chains to canonical mcp-connect.",
+      "description": "Register sohopay-staging at staging.mcp.sohopay.xyz/mcp. Use when connecting staging MCP — not production.",
       "url": "https://agents.sohopay.xyz/skills/v1/mcp-connect-staging.md"
     },
     {
       "name": "borrower-onboard",
       "title": "SohoPay Borrower Onboarding",
-      "description": "whoami, register, wallet proof (challenge_id submit), scope-gated tokens, dropped scopes.",
+      "description": "Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, and an ACTIVE agent grant. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, or the operator asks to onboard — not for a warm 402 pay or delegated sessions.",
       "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
       "name": "human-direct-flow",
       "title": "SohoPay Human-Direct Flow",
-      "description": "Default operate path: whoami, onboard, spend, policy, sign, x402 merchant-as-settler, poll by settlement_id.",
+      "description": "Run the default human-direct operate path (whoami through prepare_x402_payment and settlement_id polling). Use when the borrower acts directly, SESSION_GATE_SKIPPED_NO_SESSION appears, or after MCP connect to operate — not for create_agent_session.",
       "url": "https://agents.sohopay.xyz/skills/v1/human-direct-flow.md"
     },
     {
       "name": "spend-and-pay",
       "title": "SohoPay Spend, Policy, and Signing",
-      "description": "Spend intents (merchant XOR merchant_id), policy, intentSig via get_signing_status, x402 settle, poll by settlement_id.",
+      "description": "Create spend intents, evaluate policy, and sign PaymentIntents (policy_decision_id, intentSig). Use when creating spend, evaluate_spend_policy, sign_transaction, RISK_FIRST_TIME_MERCHANT, or polling settlement_id — not for assembling X-PAYMENT or VOUCHER_ISSUED.",
       "url": "https://agents.sohopay.xyz/skills/v1/spend-and-pay.md"
     },
     {
       "name": "x402-credit-pay",
       "title": "SohoPay x402 Credit Settlement",
-      "description": "Merchant-as-settler X-PAYMENT primary path; facilitator API for merchants; borrower-direct /api/v2/x402 secondary.",
+      "description": "Pay HTTP 402 merchants with prepare_x402_payment, VOUCHER_ISSUED, and merchant-as-settler PAYMENT-SIGNATURE. Use when a URL returns 402, X-PAYMENT, facilitator settle, or borrower-direct /api/v2/x402 — never execute_payment or create_agent_session on human-direct.",
       "url": "https://agents.sohopay.xyz/skills/v1/x402-credit-pay.md"
     },
     {
       "name": "authorize-agent",
       "title": "SohoPay Authorize Agent (Borrower Grant)",
-      "description": "STOP on AGENT_AUTHORIZATION_REQUIRED: challenge → consent page wallet sign → submit grant; then retry prepare with the same payment idempotency key.",
+      "description": "Obtain an ACTIVE AgentAuthorizationGrant via authorize_agent (consent page + borrower EIP-712). Use when onboarding just registered the workload key, or prepare_x402_payment returns AGENT_AUTHORIZATION_REQUIRED — not for wallet-proof or voucher Ed25519 signing.",
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
+    },
+    {
+      "name": "repay",
+      "title": "SohoPay Repay (Wallet Consent)",
+      "description": "Repay SohoPay credit via request_repayment (consent page + ReceiveWithAuthorization). Use when the operator said repay, pay back SohoPay, or outstanding balance should be cleared — not for create_repayment calldata or an HTTP 402 merchant pay.",
+      "url": "https://agents.sohopay.xyz/skills/v1/repay.md"
     },
     {
       "name": "idempotency",
       "title": "SohoPay Idempotency",
-      "description": "idempotency_key tool arg for Cursor/ChatGPT, per-route TTLs, exempt routes, (userId, key) scope.",
+      "description": "Pass idempotency_key (UUID v4) on SohoPay write tools. Use when Cursor or ChatGPT cannot set Idempotency-Key, or a write is retried — not for whoami.",
       "url": "https://agents.sohopay.xyz/skills/v1/idempotency.md"
+    },
+    {
+      "name": "agent-session",
+      "title": "SohoPay Agent Sessions (Delegated)",
+      "description": "Create a delegated SohoPay agent session. Use when the operator asks for create_agent_session — not human-direct and not an HTTP 402 pay.",
+      "url": "https://agents.sohopay.xyz/skills/v1/agent-session.md"
     }
   ],
   "fullContext": "https://agents.sohopay.xyz/skills/v1/llms-full.txt",

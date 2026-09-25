@@ -1,38 +1,53 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Repay (Wallet Consent)
 
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`. GitHub raw is last-resort fallback only.
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** the borrower repays SohoPay credit with **one EIP-712 sign** (`ReceiveWithAuthorization`). The agent mints a consent challenge, the borrower opens a SohoPay page and signs with phone or browser wallet, the page completes repayment via the relayer, and the agent polls until the balance is cleared.
+Execute this repay in the same turn. Do not plan. Do not invent a signature. Do not ask the borrower to paste `SohoSettlement.repay` calldata.
 
-**Before running it:** MCP is connected; the borrower is onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers — do **not** turn those into this flow.
+**Before:** MCP connected; borrower onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers.
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-MCP tools: `request_repayment` (composite challenge → submit) and `get_repayment_status`. Prefer the local sticky copy of this file under `sohopay-integrate/docs/` when present.
+Need `repayment:execute` and `repayment:read` on the borrower token. If they are missing, call `request_borrower_token` with those scopes before the challenge.
 
-## FAST PATH — operator said "repay"
+Consent URL + hash payload: [references/consent-page.md](#hosted-reference-consent-page). Staging `https://staging.sohopay.xyz/repay/authorize`. Production `https://sohopay.xyz/repay/authorize`. The backend returns `consent_url` already assembled — do not rebuild the hash.
 
 ```text
-whoami → request_borrower_token (repayment:execute, repayment:read)
-request_repayment (amount or full outstanding)
-STOP — open consent_url (do not paste typed data)
-poll get_repayment_status ~2s until CONFIRMED or expires_at
-get_outstanding_balance
+1. whoami (borrower_id ??= principal_id) → request_borrower_token (repayment:execute, repayment:read)
+2. request_repayment challenge (optional amount; omit = full outstanding; fresh idempotency_key)
+3. STOP — open consent_url now. Page POSTs complete — do not wait for a JSON paste
+4. poll get_repayment_status ~2s until CONFIRMED, FAILED, or expires_at
+5. get_outstanding_balance — quote should be 0 after CONFIRMED
 ```
 
-## When to run
+Show the operator the amount, the consent URL, and that they sign in wallet (phone QR or browser). Challenge and submit are separate writes — new idempotency_key for paste fallback only (`{SKILLS_BASE}/idempotency.md`).
 
-| Trigger | Action |
-|---------|--------|
-| Operator said "repay" / "repay my credit" / "pay back SohoPay" | **Default.** Follow this skill now. |
-| Outstanding balance is non-zero and the operator wants to clear it | Same path. Omit `amount` to repay the full outstanding. |
+| Status | Meaning |
+|--------|---------|
+| `PENDING` | Challenge minted; waiting for wallet sign |
+| `SUBMITTED` | Signature accepted; relayer broadcast in flight |
+| `CONFIRMED` | V2 `RepaymentReceived` reconciled — not merely prepared |
+| `FAILED` | Submit or on-chain repayment failed |
+| `EXPIRED` | Challenge TTL elapsed (~1h) — mint a new challenge, do not reuse `challenge_id` |
 
-Do **not** ask the borrower to copy `SohoSettlement.repay` calldata from chat as the primary path.
+---
+
+## Hosted references (load only when the skill says to)
+
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-consent-page"></a>
+
+### Hosted reference: consent-page.md
 
 ## Consent page (preferred borrower UX)
 
@@ -50,7 +65,7 @@ Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the 
 - Empty / missing hash → page shows **Invalid repayment link**.
 - After wallet sign → the page POSTs `{ challenge_id, wallet_address, signature }` to `POST /api/v1/auth/repayments/complete`. The relayer submits `repayWithAuthorization`. **Do not wait for the operator to paste JSON.**
 
-The backend returns `consent_url` already assembled. **Do not re-assemble base64url.** Open the returned URL.
+The challenge response includes `consent_url`. **Open that URL.** Do not re-assemble base64url.
 
 **Fallback only** if the page cannot complete (shows an error, or the operator has no in-page success): they may copy:
 
@@ -64,74 +79,3 @@ The backend returns `consent_url` already assembled. **Do not re-assemble base64
 
 Then call `request_repayment` with `challenge_id` + `wallet_address` + `signature` and a **new** submit-phase `idempotency_key`.
 
-## Agent STOP
-
-Show the operator:
-
-1. Amount (e.g. 0.02 USDC) and that this clears SohoPay credit.
-2. The consent URL.
-3. That they sign in wallet (phone QR or browser extension); the page submits; the agent continues after confirm.
-
-Never invent a signature. Never ask them to paste calldata as the primary path.
-
-## Workflow
-
-```text
-1. whoami (borrower_id ??= principal_id on human-direct)
-2. request_borrower_token — scopes repayment:execute, repayment:read
-3. request_repayment (challenge phase)
-     — borrower_id
-     — optional amount (USDC base units, 6 decimals); omit = full outstanding
-     — NO signature / challenge_id / wallet_address
-     — fresh idempotency_key (UUID v4)
-  → { challenge_id, typed_data, expires_at, amount, outstanding_balance, consent_url }
-
-4. STOP — open consent_url in the same turn
-     Page POSTs complete; challenge becomes SUBMITTED then CONFIRMED
-
-5. poll get_repayment_status ~2s (challenge_id) until CONFIRMED, FAILED, or expires_at
-6. get_outstanding_balance — quote should be 0 after CONFIRMED
-
-Fallback only: request_repayment submit with pasted signature + NEW idempotency_key
-```
-
-### Idempotency
-
-Challenge and submit are **separate writes**. Reusing one `idempotency_key` across both phases returns `409 IDEMPOTENCY_KEY_CONFLICT`. Always mint a fresh key for submit. See `{SKILLS_BASE}/idempotency.md`.
-
-### Statuses
-
-| Status | Meaning |
-|--------|---------|
-| `PENDING` | Challenge minted; waiting for wallet sign |
-| `SUBMITTED` | Signature accepted; relayer broadcast in flight |
-| `CONFIRMED` | V2 `RepaymentReceived` reconciled — not merely prepared |
-| `FAILED` | Submit or on-chain repayment failed |
-| `EXPIRED` | Challenge TTL elapsed (~1h) |
-
-### Scopes
-
-Challenge, submit, and status require `repayment:execute` (write) and `repayment:read` (poll). If the current borrower token lacks them, call `request_borrower_token` with those scopes **before** the challenge phase.
-
-## Expiry and retries
-
-| Situation | Action |
-|-----------|--------|
-| Consent page says challenge expired / `expires_at` passed | Mint a **new** challenge (new idempotency key); do not reuse the old `challenge_id` |
-| Operator rejects / closes without signing | STOP; do not invent a signature |
-| Submit fails (wrong wallet, reused nonce, expired) | Surface the error; mint a new challenge if the old one was consumed or expired |
-| `create_repayment` / `execute_repayment` | Leave them prepare-only. Do not use them as the primary repay path. |
-
-## Anti-patterns
-
-- Pasting the full typed_data blob into chat as the only UX when the consent page is available
-- Waiting for a JSON paste when the page already completed repayment
-- Re-assembling the hash URL instead of using backend `consent_url`
-- Reusing the challenge-phase `idempotency_key` on submit
-- Asking the borrower to broadcast `approve` + `repay` from chat
-- Fabricating a signature
-
-## Next steps
-
-- Human-direct operate path: `curl -fsSL {SKILLS_BASE}/human-direct-flow.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/human-direct-flow.md`
-- Idempotency: `curl -fsSL {SKILLS_BASE}/idempotency.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/idempotency.md`

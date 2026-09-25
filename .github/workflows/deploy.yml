@@ -12,6 +12,8 @@
 # deploy job is skipped rather than failing at credential load. After secrets
 # exist, a failed sync fails the job. Content correctness is covered independently
 # by validate.yml on every push and PR.
+#
+# Hosted URLs are https://agents.sohopay.xyz/skills/v1/<name>.md (matches index.json).
 name: Deploy agent skills
 
 on:
@@ -66,7 +68,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm run generate:llms-full
+      - run: npm run build
       - run: npm run validate
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4

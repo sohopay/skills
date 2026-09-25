@@ -1,50 +1,38 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Idempotency
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** defines the `Idempotency-Key` contract for financial and on-chain routes. **Before running it:** no prerequisites — reference this before any mutating call.
+On every MCP **write**, pass `idempotency_key` (UUID v4) in the tool args when the harness cannot set headers. If you also set `Idempotency-Key`, the values must match.
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+- Same key + same body → replay.
+- Same key + different body → `409 IDEMPOTENCY_KEY_CONFLICT`.
+- Network retry of the same call → **reuse** the key. New operation → new key.
+- 402 merchant **202** → replay the **same** payment header. Do not mint a new spend.
+- `authorize_agent` challenge and submit are two writes → two keys.
+- `request_repayment` challenge and submit are two writes → two keys.
 
-Required on every MCP **write** tool and every backend route that creates or mutates money, credit, or on-chain state (except the exempt routes below).
+TTL table: [references/ttl.md](#hosted-reference-ttl).
 
-## How to supply the key (minimal effort)
+---
 
-| Path | When to use |
-|------|-------------|
-| Tool argument `idempotency_key` | **Preferred for Cursor, ChatGPT, and any harness that cannot set custom HTTP headers.** UUID v4 in the tool call body. |
-| HTTP `Idempotency-Key` or `x-idempotency-key` | Harnesses / clients that can set headers (Claude Code headless with headers, curl, custom clients). |
+## Hosted references (load only when the skill says to)
 
-Rules:
+Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
 
-1. Format: **UUID v4**, max 64 chars.
-2. If both header and tool arg are present, they **must match** or the MCP server errors.
-3. Omitting the key on a write tool fails with a missing-key error — the server does **not** auto-generate one.
-4. Scope: **`(userId, key)`** — not global, not path-scoped. Same key + **different body** → `409 IDEMPOTENCY_KEY_CONFLICT`. Same key + same body (complete) → cached replay + `X-Idempotent-Replayed: true`.
+<a id="hosted-reference-ttl"></a>
 
-```http
-Idempotency-Key: <uuid-v4>
-```
+### Hosted reference: ttl.md
 
-MCP also accepts / dual-sends `x-idempotency-key`. The tool field is stripped before the body is forwarded to the backend.
 
-## Response semantics
-
-| Situation | HTTP | Behavior |
-|-----------|------|----------|
-| Missing key | 400 | `IDEMPOTENCY_KEY_MISSING` |
-| Invalid key | 400 | `IDEMPOTENCY_KEY_INVALID` |
-| Duplicate in flight | 409 | `IDEMPOTENCY_REQUEST_IN_FLIGHT` |
-| Same key + same body (complete) | Replay | Cached response + `X-Idempotent-Replayed: true` |
-| Same key + different body | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
-| Failed request | — | PENDING deleted; retry with same key allowed |
-
-## Per-route TTL
 
 | Route | TTL |
 |-------|-----|
@@ -80,5 +68,6 @@ Request body hash: RFC 8785 canonical JSON + SHA-256 on backend.
 
 ## Next steps
 
-- Setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`
-- Spend / pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
+- Setup: `curl -fsSL {SKILLS_BASE}/setup.md`
+- Spend / pay: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md`
+
