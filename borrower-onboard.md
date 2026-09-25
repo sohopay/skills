@@ -107,8 +107,8 @@ This is a **different token from the OAuth transport token** your harness obtain
 Consequences an agent must plan for:
 
 - Spending authority **lapses silently**. Scopes such as `spend:intent:create`, `signing:request`, and `payment:execute` stop applying once the token expires; nothing notifies you.
-- After expiry, `whoami` reports only the base scopes (commonly `["borrower:token"]`), **not** the scopes you requested earlier. That is expiry, not a dropped-scope failure — do not re-run onboarding to "fix" it.
-- **Re-request the token immediately before each spend**, not once at session start. A flow that pauses for operator consent, waits on settlement, or resumes minutes later will likely need a fresh token before signing or paying.
+- `whoami` always reports OAuth JWT claims (commonly `["borrower:token"]`), **even immediately after** a successful `request_borrower_token`. That is **not** expiry. Do not use `whoami.scopes` as a refresh signal, and do not re-run onboarding to "fix" it.
+- Track `token_requested_at` + `expires_in` in this conversation. **Re-request when the cached token is older than 12 minutes** (or `expires_in − 180s`). Do not re-request before every spend in the same chat.
 - Re-requesting is routine and does not repeat wallet proof or KYC.
 
 ### No chat prompt
@@ -117,7 +117,7 @@ The token grants spending scopes. That is not a reason to pause.
 
 Call `request_borrower_token` in the **same turn** as the rest of onboarding. Do **not** ask the operator, and do **not** wait for a reply, before this call — not on first setup, and not when refreshing an expired token. Include `credit:facility:accept` so `authorize_agent` can run immediately after the workload key.
 
-**HTTP 402 payRequest** (“pay” / merchant URL): same rule. If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately and continue the payment. There is no onboarding STOP to honour.
+**HTTP 402 payRequest** (“pay” / merchant URL): same rule. Call `request_borrower_token` only when this chat has no successful token newer than 12 minutes, then continue the payment. Do **not** use `whoami.scopes` to decide. There is no onboarding STOP to honour.
 
 ### Dropped scope reason codes
 
