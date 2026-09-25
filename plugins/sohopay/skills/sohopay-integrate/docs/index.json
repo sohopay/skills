@@ -59,6 +59,12 @@
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
     },
     {
+      "name": "repay",
+      "title": "SohoPay Repay (Wallet Consent)",
+      "description": "Operator said repay: request_repayment → STOP open consent_url → wallet sign → poll get_repayment_status until CONFIRMED.",
+      "url": "https://agents.sohopay.xyz/skills/v1/repay.md"
+    },
+    {
       "name": "idempotency",
       "title": "SohoPay Idempotency",
       "description": "idempotency_key tool arg for Cursor/ChatGPT, per-route TTLs, exempt routes, (userId, key) scope.",

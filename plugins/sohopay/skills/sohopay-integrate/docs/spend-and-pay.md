@@ -151,6 +151,8 @@ Confirmation uses **`l2_confirmations`** (L2 receipt + confirmation depth, typic
 | `get_outstanding_balance` | repayment:read | — | — | No |
 | `create_repayment` | repayment:execute | — | — | Yes |
 | `execute_repayment` | repayment:execute | — | — | Yes |
+| `request_repayment` | repayment:execute | — | — | Yes |
+| `get_repayment_status` | repayment:read | — | — | No |
 
 Payment itself is the x402 merchant header rail (`PAYMENT-SIGNATURE` / `X-PAYMENT`), not an MCP settle tool — see `{SKILLS_BASE}/x402-credit-pay.md`.
 
@@ -169,6 +171,9 @@ Payment itself is the x402 merchant header rail (`PAYMENT-SIGNATURE` / `X-PAYMEN
 | GET | `/api/v1/payments/:jobId/status` | payment:read (legacy job_id) |
 | GET | `/api/v1/repayments/quote` | repayment:read |
 | POST | `/api/v1/repayments/prepare` | repayment:execute |
+| POST | `/api/v1/repayments/consent/challenge` | repayment:execute |
+| GET | `/api/v1/repayments/consent/:challengeId/status` | repayment:read |
+| POST | `/api/v1/repayments/consent/:challengeId/submit` | repayment:execute |
 
 ## Before privileged calls
 

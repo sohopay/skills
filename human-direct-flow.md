@@ -59,11 +59,15 @@ On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, vou
 
 After the x402 settle submits: a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
 
-Optional repayment (permissionless payer model):
+**Repay (preferred):** operator said “repay” — follow `{SKILLS_BASE}/repay.md`. `request_repayment` returns `consent_url`; STOP and open it; poll `get_repayment_status` until `CONFIRMED`.
 
 ```text
-get_outstanding_balance → create_repayment or execute_repayment → payer submits on-chain repay tx
+whoami → request_borrower_token (repayment:execute, repayment:read)
+  → request_repayment → STOP open consent_url → poll get_repayment_status ~2s
+  → get_outstanding_balance
 ```
+
+`create_repayment` / `execute_repayment` stay prepare-only for third-party payers (permissionless calldata). Do not use them as the primary borrower repay path.
 
 ## High-risk tool
 
@@ -78,3 +82,4 @@ get_outstanding_balance → create_repayment or execute_repayment → payer subm
 - Onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
 - Spend/policy: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
 - x402 settlement: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+- Repay: `curl -fsSL {SKILLS_BASE}/repay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/repay.md`
