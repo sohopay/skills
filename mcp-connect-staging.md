@@ -176,7 +176,7 @@ curl -fsSL https://staging.mcp.sohopay.xyz/.well-known/oauth-protected-resource
 
 ## Option B: Local sohopay-mcp-server (requires Node.js)
 
-This path is for **developers** running the MCP server locally. End users on hosted staging MCP (Option A) do not need Node.js.
+This path is for **developers** running the MCP server locally. End users on hosted staging MCP (Option A) do not need Node.js. Clone only when the operator already has access to the private `sohopay-mcp-server` repository; a 404 must not abort hosted setup.
 
 ```bash
 git clone https://github.com/sohopay/sohopay-mcp-server.git
