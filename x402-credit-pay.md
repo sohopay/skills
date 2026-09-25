@@ -19,40 +19,56 @@ Protocol V2 tooling: [sohopay-mcp-server#94](https://github.com/sohopay/sohopay-
 
 ## Fast pay path (mandatory on payRequest)
 
-An operator message that says **pay**, **pay here**, or supplies a merchant 402 URL is a **payRequest**. That utterance **is** consent for this payment end-to-end. Complete it in **one short turn** (seconds). Do not invent extra STOPs or re-ask for tool approval.
+An operator message that says **pay**, **pay here**, or supplies a merchant 402 URL is a **payRequest**. That utterance **is** consent for this payment end-to-end. Complete a **warm** (already onboarded) pay in **three waves, under 15 seconds**. Do not invent extra STOPs, do not re-ask for tool approval, and do not chat between waves.
+
+**Session cache (this conversation).** Persist and reuse:
+
+- `borrower_id` (from a prior `whoami.principal_id` / `register_borrower` / `request_borrower_token`)
+- `operational_agent_id` (from `register_borrower`)
+- `token_requested_at` + `expires_in` from the last successful `request_borrower_token`
+- the payment `idempotency_key` already used for this `orderRef`
+
+Do **not** call `whoami` on the warm path. `whoami` reads the OAuth JWT only. Its `scopes` stay `["borrower:token"]` even seconds after a successful token call. That is **not** expiry and is **not** a refresh signal.
+
+Refresh `request_borrower_token` only when this chat has **no** successful token newer than **12 minutes** (or `expires_in − 180s` if you stored it). First pay in a new chat: request once, in parallel with the merchant GET. Repeat pays in the same chat: skip the token call.
+
+Same `orderRef` as an earlier prepare in this chat: **reuse that payment `idempotency_key`**. A new key on a repeated merchant challenge creates a second spend intent for the same order.
 
 ```text
-FAST PATH — payRequest to an HTTP 402 URL:
+WARM FAST PATH — already onboarded payRequest (budget: <15s, 3 waves):
 
-PARALLEL (start of turn):
+Wave 1 (parallel):
   A. GET merchant URL → parse challenge (full network once)
-  B. whoami → borrower_id ??= principal_id
-  C. Read LOCAL sticky only: this file § Protocol V2 sign recipe
-     (do NOT network-fetch SKILLS_BASE / WebSearch / WebFetch if local sticky exists)
-  D. Resolve workload key at the fixed path below; reuse only if
-     secret.borrower_id == this borrower AND jkt will match at sign time
-
-THEN (no operator prompts):
-  1. If scopes ⊆ {borrower:token} only → request_borrower_token
+  B. request_borrower_token ONLY if this chat has no successful token
+     newer than 12 minutes
      (spend:intent:create, policy:evaluate, signing:request[, payment:read])
-     — NO STOP; payRequest already authorized this. That is **token expiry**,
-     not missing onboard — do not re-run register / keygen / authorize_agent.
-  2. If prepare later returns X402_AGENT_KEY_NOT_REGISTERED or
-     AGENT_AUTHORIZATION_REQUIRED → onboard was skipped; follow § Recovery
-     if onboard was skipped, then resume here with the SAME idempotency_key
-  3. prepare_x402_payment (map challenge; one idempotency_key for this order)
-  4. VOUCHER_ISSUED → sign per response.signing (local key) → PAYMENT-SIGNATURE → retry URL
-     COMPLETED → header_name/header_value (or payment_intent+sig)
-  5. 200 → done | 202 → poll get_settlement_status ~2s; replay SAME header once CONFIRMED
+     — NO STOP; payRequest already authorized this
+  C. Reuse cached borrower_id + operational_agent_id
+  D. Keep this file § Protocol V2 sign recipe in context — do NOT
+     re-fetch SKILLS_BASE / WebSearch / WebFetch / the rest of this skill
 
-Latency: **warm** (onboarded) pay should finish in one short turn. L2 confirm poll ~2s; expect CONFIRMED ~5s (P95 under 30s).
+Wave 2:
+  prepare_x402_payment (map challenge; one idempotency_key per orderRef)
+  · same orderRef as an earlier pay in this chat → SAME idempotency_key
+  · RISK_FIRST_TIME_MERCHANT → retry immediately with the SAME key
+  · X402_AGENT_KEY_NOT_REGISTERED / AGENT_AUTHORIZATION_REQUIRED
+    → § Recovery if onboard was skipped, then resume with the SAME key
+
+Wave 3 (one shell):
+  VOUCHER_ISSUED → sign per response.signing (local key) → PAYMENT-SIGNATURE → retry URL
+  COMPLETED → header_name/header_value (or payment_intent+sig)
+  200 → done | 202 → poll get_settlement_status ~2s; replay SAME header once CONFIRMED
+
+SKIP on the warm path: whoami, get_borrower_status, tools/list,
+authorization-context, register_borrower, authorize_agent, and re-reading
+this skill past the sign recipe.
 ```
 
 ### Recovery if onboard was skipped
 
-The fast path above is the **warm** path: onboarding already created this host's terminal, registered a workload key for **this** borrower, and obtained an ACTIVE grant. **"One short turn"** applies only then.
+The fast path above is the **warm** path: onboarding already created this host's terminal, registered a workload key for **this** borrower, and obtained an ACTIVE grant. **Under 15 seconds / three waves** applies only then.
 
-`whoami` showing only `borrower:token` is **token expiry** — refresh scopes and stay on the warm path. Do **not** treat that as a reason to re-onboard.
+`whoami.scopes` of `["borrower:token"]` is the OAuth transport claim. It is **not** token expiry and is **not** a reason to re-onboard. Refresh from `token_requested_at` / `expires_in`, not from `whoami`.
 
 If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped. Do **not** iterate `prepare_x402_payment` to discover more 403s. Finish `{SKILLS_BASE}/borrower-onboard.md` (terminal → key → grant) once, then retry the **same** order / **same** `idempotency_key`. A payRequest still authorizes token refresh and first-time merchant.
 
@@ -87,6 +103,9 @@ See `{SKILLS_BASE}/borrower-onboard.md` and `{SKILLS_BASE}/authorize-agent.md`.
 - Grepping all AgentStores or other chats for keys — use the fixed path below
 - Asking for first-time merchant / token / voucher-sign consent after a payRequest
 - Serial `tools/list` rediscovery when schemas are already known this session
+- Calling `whoami` to decide whether to refresh the borrower token
+- Calling `request_borrower_token` on every pay when this chat already has a successful token newer than 12 minutes
+- Minting a new payment `idempotency_key` for an `orderRef` already prepared in this chat
 - Guessing `terminal_id` or registering a workload key before `register_borrower` has created this host's terminal
 
 ### STOP only if
@@ -134,8 +153,8 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 ```text
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge (X-SOHO-PAYMENT-REQUIRED / body.challenge)
-  → MCP: request_borrower_token if whoami scopes are only borrower:token (expiry, not re-onboard)
-  → MCP: prepare_x402_payment (map challenge; no session_id)
+  → MCP: request_borrower_token only if this chat has no successful token newer than 12 minutes (do not use whoami.scopes)
+  → MCP: prepare_x402_payment (map challenge; reuse the same idempotency_key if this orderRef was already prepared)
        · X402_AGENT_KEY_NOT_REGISTERED / AGENT_AUTHORIZATION_REQUIRED → § Recovery if onboard was skipped
   → branch on status:
        VOUCHER_ISSUED → agent signs → PAYMENT-SIGNATURE → retry
@@ -245,8 +264,8 @@ When prepare returns `COMPLETED`, retry the merchant with `header_name` / `heade
 A **payRequest** authorizes token refresh, prepare, agent voucher signing, merchant retry, and **first-time merchant** for that merchant in this turn.
 
 - Do **not** STOP for `request_borrower_token`, voucher signing, payment-header retry, settle, or a separate first-time prompt.
-- If `whoami` scopes are only `borrower:token`, call `request_borrower_token` immediately — no STOP.
-- Later pays to the **same** merchant: same silent fast path.
+- Call `request_borrower_token` only when this chat has no successful token newer than 12 minutes — no STOP. Do **not** use `whoami.scopes` as a refresh signal.
+- Later pays to the **same** merchant: same silent fast path. Reuse the cached token and, if the merchant repeats the same `orderRef`, the same payment `idempotency_key`.
 
 `request_borrower_token` never needs a chat prompt — not during onboarding and not on a payRequest. If wallet proof is already verified, skip it; otherwise collect the off-device signature in the same turn (`{SKILLS_BASE}/borrower-onboard.md`).
 
@@ -314,7 +333,7 @@ Use when `prepare_x402_payment` is unavailable, or when V2 is off and you follow
 ```text
 GET {MERCHANT_BASE_URL}/api/premium
   → 402 + challenge
-  → MCP: request_borrower_token if whoami scopes are only borrower:token
+  → MCP: request_borrower_token only if this chat has no successful token newer than 12 minutes
   → MCP: create_spend_intent (map challenge.payment fields; no session_id)
   → MCP: evaluate_spend_policy → keep decision_id
   → MCP: sign_transaction (policy_decision_id; payload: {} object) → keep the payment_intent echo
@@ -403,7 +422,7 @@ Policy denial: HTTP 403 with `reasonCodes` / `policyDecisionId` — surface to u
 - [ ] `X402_AGENT_KEY_NOT_REGISTERED`: recovery — `register_borrower` if needed, then register key, retry **same** idempotency key — no custodial invent
 - [ ] `AGENT_AUTHORIZATION_REQUIRED`: recovery — consent page completes the grant; poll prepare; do not wait for paste; do not re-GET the merchant
 - [ ] `X402_INTENT_EXPIRED`: retry same order / same key — do not mint a new merchant `orderRef`
-- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in one turn. If a skill is needed, fetch CDN (`{SKILLS_BASE}` after publish), not GitHub raw.
+- [ ] payRequest: no STOP for token / sign / first-time / settle — complete **warm** fast path in three waves under 15s. Skip `whoami` on that path. If a skill is needed, fetch CDN (`{SKILLS_BASE}` after publish), not GitHub raw.
 - [ ] V1 fallback: challenge mapped; `policy_decision_id` on sign; `intentSig` from `get_signing_status`; envelope from `payment_intent` echo
 - [ ] On **202**, retry **same** payment header — never a new spend intent
 - [ ] Idempotency on MCP writes and on facilitator/borrower settle

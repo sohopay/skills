@@ -13,7 +13,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 ## MCP catalog
 
-The catalog covers `whoami` plus onboarding, spend, policy, signing, settlement, and repayment tools. Do not assume a fixed tool count — read the live `tools/list` from the connected server. Prefer `whoami` first when already authenticated.
+The catalog covers `whoami` plus onboarding, spend, policy, signing, settlement, and repayment tools. Do not assume a fixed tool count. Resolve identity once (cache `borrower_id` + `operational_agent_id`) and reuse it. Do **not** call `whoami` or re-read `tools/list` on a warm payRequest.
 
 **`whoami` usually omits `borrower_id` in this flow — use `principal_id` as the `borrower_id`.** The caller is the borrower here, so `principal_id` and `executor_id` both hold the borrower UUID; pass it to every tool that takes `borrower_id`. `whoami` also returns `wallet: null` because it reads JWT claims without calling the backend — get the wallet from `get_borrower_status`. Details: `{SKILLS_BASE}/borrower-onboard.md` § Resolving borrower_id from whoami.
 
@@ -43,13 +43,13 @@ V1 / when V2 is off (multi-step fallback — non-x402 spend, or prepare unavaila
   → get_settlement_status (poll by settlement_id until terminal)
 ```
 
-If `whoami` scopes are only `borrower:token`, that is base/expired token state — **re-request** `request_borrower_token` with spend/policy/signing scopes before creating a spend intent. It is not an onboarding failure.
+`whoami.scopes` of `["borrower:token"]` is the OAuth transport claim. It is **not** expiry and is **not** a refresh signal. Track `token_requested_at` + `expires_in` from the last successful `request_borrower_token`. Re-request only when this chat has no successful token newer than **12 minutes**. It is not an onboarding failure.
 
 `SESSION_GATE_SKIPPED_NO_SESSION` is expected on this path and needs no action.
 
-**payRequest:** operator says “pay” / “pay here” / supplies a merchant 402 URL. That utterance **is** consent for the full x402 fast path (token refresh, prepare, voucher sign, merchant retry, first-time merchant for that merchant). Follow `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path — complete in one short turn; do **not** invent extra STOPs. `RISK_FIRST_TIME_MERCHANT` on a payRequest: treat as accepted and retry (same key on prepare 403); see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
+**payRequest:** operator says “pay” / “pay here” / supplies a merchant 402 URL. That utterance **is** consent for the full x402 fast path (token refresh when stale, prepare, voucher sign, merchant retry, first-time merchant for that merchant). Follow `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path — complete a warm pay in **three waves under 15 seconds**; do **not** invent extra STOPs. `RISK_FIRST_TIME_MERCHANT` on a payRequest: treat as accepted and retry (same key on prepare 403); see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
 
-`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Re-request it immediately before `prepare_x402_payment` / spend when scopes are only `borrower:token`. After expiry `whoami` shows only the base scopes; that is expiry, not a scope failure. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
+`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Store `expires_in` from the response. Re-request when the cached token is older than 12 minutes — not before every spend, and not because `whoami` still shows `borrower:token`. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
 
 **Wallet proof:** if `get_borrower_status.wallet_proof_verified` is already true, skip it. Otherwise request the challenge and collect the off-device EIP-712 signature in this same turn. Never fabricate a signature, and do not ask a yes/no chat question before the challenge.
 
