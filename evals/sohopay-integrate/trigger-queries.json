@@ -1,0 +1,6 @@
+[
+  {"query": "I installed sohopay-integrate, what skill do I use?", "should_trigger": true},
+  {"query": "SohoPay without naming a workflow — point me", "should_trigger": true},
+  {"query": "Pay this exact 402 URL now.", "should_trigger": false},
+  {"query": "Send USDC from my wallet.", "should_trigger": false}
+]

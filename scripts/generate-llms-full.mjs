@@ -1,11 +1,8 @@
 #!/usr/bin/env node
 /** Concatenate hosted skill bodies into llms-full.txt for bulk agent context fetch. */
 import { readFileSync, writeFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(__dirname, '..');
+import { join } from 'node:path';
+import { ROOT } from './lib/skills.mjs';
 
 const index = JSON.parse(
   readFileSync(join(ROOT, '.well-known/agent-skills/index.json'), 'utf8'),

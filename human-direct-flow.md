@@ -1,80 +1,34 @@
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 # Skill: SohoPay Human-Direct Flow
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**What this skill does:** the default operate path — the human borrower acts directly. **Before running it:** the MCP server is connected (`mcp-connect.md`).
+Execute the next checklist item only. Do not plan. **Before:** MCP connected (`{SKILLS_BASE}/mcp-connect.md`).
 
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-## MCP catalog
+`whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
 
-The catalog covers `whoami` plus onboarding, spend, policy, signing, settlement, and repayment tools. Do not assume a fixed tool count. Resolve identity once (cache `borrower_id` + `operational_agent_id`) and reuse it. Do **not** call `whoami` or re-read `tools/list` on a warm payRequest.
+Load a sibling **only when that step is next**:
 
-**`whoami` usually omits `borrower_id` in this flow — use `principal_id` as the `borrower_id`.** The caller is the borrower here, so `principal_id` and `executor_id` both hold the borrower UUID; pass it to every tool that takes `borrower_id`. `whoami` also returns `wallet: null` because it reads JWT claims without calling the backend — get the wallet from `get_borrower_status`. Details: `{SKILLS_BASE}/borrower-onboard.md` § Resolving borrower_id from whoami.
-
-Harnesses may also expose an extra `mcp_auth` tool for connection auth. It is a harness connection helper, not a SohoPay tool.
-
-## End-to-end flow
-
-```text
-whoami (optional if already authenticated)
-  → register_borrower
-  → request_signature_challenge + submit_signature (wallet proof)
-  → request_borrower_token   # spend/policy/signing + credit:facility:accept — whoami often shows only borrower:token until then
-  → register_agent_workload_key   # Protocol V2: agent Ed25519 keygen + PoP (once per terminal); MCP never holds the private key
-  → authorize_agent            # same turn: open consent page; no chat prompt; grant must be ACTIVE before any pay
-  → HTTP 402: prepare_x402_payment  →  see {SKILLS_BASE}/x402-credit-pay.md
-       · VOUCHER_ISSUED (V2): agent signs voucher → PAYMENT-SIGNATURE → retry merchant
-       · COMPLETED (V1): header_name/header_value or payment_intent+signature → retry
-       · X402_AGENT_KEY_NOT_REGISTERED / AGENT_AUTHORIZATION_REQUIRED: onboard was skipped — recover, then retry SAME idempotency_key
-  → get_settlement_status (poll by settlement_id until terminal)
-
-V1 / when V2 is off (multi-step fallback — non-x402 spend, or prepare unavailable):
-  → create_spend_intent (include order_ref / resource_identifier when using x402)
-  → evaluate_spend_policy
-  → sign_transaction (policy_decision_id; payload: {} as object; keep payment_intent echo)
-  → get_signing_status (signature = intentSig)
-  → merchant-as-settler X-PAYMENT → {SKILLS_BASE}/x402-credit-pay.md → keep settlement_id
-  → get_settlement_status (poll by settlement_id until terminal)
-```
-
-`whoami.scopes` of `["borrower:token"]` is the OAuth transport claim. It is **not** expiry and is **not** a refresh signal. Track `token_requested_at` + `expires_in` from the last successful `request_borrower_token`. Re-request only when this chat has no successful token newer than **12 minutes**. It is not an onboarding failure.
-
-`SESSION_GATE_SKIPPED_NO_SESSION` is expected on this path and needs no action.
-
-**payRequest:** operator says “pay” / “pay here” / supplies a merchant 402 URL. That utterance **is** consent for the full x402 fast path (token refresh when stale, prepare, voucher sign, merchant retry, first-time merchant for that merchant). Follow `{SKILLS_BASE}/x402-credit-pay.md` § Fast pay path — complete a warm pay in **three waves under 15 seconds**; do **not** invent extra STOPs. `RISK_FIRST_TIME_MERCHANT` on a payRequest: treat as accepted and retry (same key on prepare 403); see `{SKILLS_BASE}/spend-and-pay.md` § First-time merchant.
-
-`request_borrower_token` issues a **short-lived** token (staging: 15 minutes) that is not auto-refreshed. Store `expires_in` from the response. Re-request when the cached token is older than 12 minutes — not before every spend, and not because `whoami` still shows `borrower:token`. See `{SKILLS_BASE}/borrower-onboard.md` § Token lifetime.
-
-**Wallet proof:** if `get_borrower_status.wallet_proof_verified` is already true, skip it. Otherwise request the challenge and collect the off-device EIP-712 signature in this same turn. Never fabricate a signature, and do not ask a yes/no chat question before the challenge.
-
-**Borrower token:** call `request_borrower_token` with no chat prompt (onboarding and payRequest). Then continue to the workload key and `authorize_agent` in that same turn. Open the grant consent URL immediately. Do not ask before the token or before the URL.
-
-On an **HTTP 402 payRequest**, do **not** STOP for `request_borrower_token`, voucher signing, merchant retry, or first-time merchant — complete merchant-as-settler silently. Under Protocol V2, do **not** fall back to custodial `sign_transaction` when prepare returns `VOUCHER_ISSUED` or `CUSTODIAL_SIGNING_DISABLED`. If the grant is already ACTIVE, do **not** re-run `authorize_agent`. Open `authorize_agent` only as **recovery** when prepare returns `AGENT_AUTHORIZATION_REQUIRED` (onboard was skipped) — follow `{SKILLS_BASE}/authorize-agent.md` (open the consent page in the same turn; wait for Grant active; then retry prepare with the same payment idempotency key). Do not ask a chat question first.
-
-After the x402 settle submits: a mined `tx_hash` is not final until confirmation. Under **`l2_confirmations`**, expect `CONFIRMED` in **~5 seconds** after a successful receipt (P95 under 30s); confirmation worker retries are the **same** settle tx. **`available_credit` / outstanding balance update only after `CONFIRMED`** — re-check `get_outstanding_balance` after terminal confirmation. Details: `spend-and-pay.md` § Settlement finality and available credit.
-
-Optional repayment (permissionless payer model):
+- [ ] Identity / register / wallet proof / token / workload key / agent grant — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn
+- [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
+- [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
+- [ ] Non-x402 spend / first-time merchant detail — **sohopay-spend** (`{SKILLS_BASE}/spend-and-pay.md`)
+- [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-get_outstanding_balance → create_repayment or execute_repayment → payer submits on-chain repay tx
+whoami → register_borrower → wallet proof if needed → request_borrower_token (no chat prompt)
+  → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
+  → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
 ```
 
-## High-risk tool
-
-`sign_transaction` is the published high-risk tool. It requires:
-
-- Live `POST /api/v1/auth/authorization-context`
-- `AUTH_INTROSPECTION_ENABLED=true` on the MCP server
-- Wallet proof + 2FA-equivalent where applicable
-
-## Related skills
-
-- Onboarding: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
-- Spend/policy: `curl -fsSL {SKILLS_BASE}/spend-and-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/spend-and-pay.md`
-- x402 settlement: `curl -fsSL {SKILLS_BASE}/x402-credit-pay.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/x402-credit-pay.md`
+Call `request_borrower_token` with no chat prompt during onboarding. On a later pay, do not call `whoami` to decide a refresh. Re-request only when this chat has no successful token newer than 12 minutes. **payRequest** = consent for the x402 fast path. Skip `whoami` on that warm path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.

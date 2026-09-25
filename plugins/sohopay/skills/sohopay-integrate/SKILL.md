@@ -1,90 +1,27 @@
 ---
 name: sohopay-integrate
-description: Integrates AI agents with the SohoPay MCP gateway, borrower onboarding, spend/policy/signing flows, and x402 on-chain settlement. Use when building SohoPay borrowers, wallet-proof signing, MCP scopes, or HTTP 402 credit payments.
+description: >
+  Route to one SohoPay sibling and stop. Use when sohopay-integrate is installed
+  or the operator says SohoPay without a workflow — not a substitute for that sibling.
+license: Apache-2.0
+metadata:
+  version: "1.0"
 ---
 
-# SohoPay Integration
+Activate **one** row. Do not load the others. Do not plan.
 
-Skill docs are served from `https://agents.sohopay.xyz/skills/v1`. GitHub raw is last-resort fallback only. After publish, hosted bodies set:
+| Intent | Skill |
+|--------|-------|
+| Set up / `https://sohopay.xyz/install` | `sohopay-setup` |
+| Staging / `https://staging.sohopay.xyz/install` | `sohopay-setup-staging` |
+| Connect MCP | `sohopay-mcp-connect` |
+| Staging MCP | `sohopay-mcp-connect-staging` |
+| Onboard / wallet proof / workload key / agent grant | `sohopay-onboard` |
+| Operate (human-direct) | `sohopay-human-direct` |
+| HTTP 402 / pay / VOUCHER_ISSUED | `sohopay-x402` |
+| `AGENT_AUTHORIZATION_REQUIRED` | `sohopay-authorize-agent` |
+| Spend / policy / sign (not a 402) | `sohopay-spend` |
+| Idempotency key | `sohopay-idempotency` |
+| Delegated session | `sohopay-agent-session` |
 
-```
-SKILLS_BASE = https://agents.sohopay.xyz/skills/v1
-```
-
-## Bootstrap
-
-Paste into the agent (production):
-
-```
-Set up https://sohopay.xyz/install
-```
-
-Paste into the agent (**staging** — internal full-stack E2E against `staging.mcp` / `staging.api`):
-
-```
-Set up https://staging.sohopay.xyz/install
-```
-
-Or fetch the CDN skill directly (GitHub raw only if the CDN fails):
-
-```bash
-curl -fsSL https://agents.sohopay.xyz/skills/v1/setup.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md
-curl -fsSL https://agents.sohopay.xyz/skills/v1/setup-staging.md \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup-staging.md
-```
-
-Browse the skill index:
-
-```bash
-curl -fsSL https://agents.sohopay.xyz/.well-known/agent-skills/index.json \
-  || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/.well-known/agent-skills/index.json
-```
-
-If any fetch fails (non-2xx, HTML content, or empty body), STOP and report the exact URL to the operator; suggest support@sohopay.xyz. Never turn off permission prompts or run in a bypass mode.
-
-## Local bundle (read these first)
-
-The full skill docs are shipped **with this package** under `docs/` — installed to `~/.claude/skills/sohopay-integrate/docs/` for Claude Code (`-g -a claude-code`), or `~/.agents/skills/sohopay-integrate/docs/` (or wherever `npx skills add` placed it). **Read them from disk first;** fetch over the network only if the local copy is missing. This keeps setup working in sandboxed harnesses whose fetch tool returns `Cache miss`.
-
-## Quick reference
-
-Read each from the local bundle first, falling back to the network — e.g.
-`cat ~/.claude/skills/sohopay-integrate/docs/<file> 2>/dev/null || cat ~/.agents/skills/sohopay-integrate/docs/<file> 2>/dev/null || curl -fsSL https://agents.sohopay.xyz/skills/v1/<file> || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/<file>`:
-
-| Task | Skill file |
-|------|------------|
-| MCP connection | `mcp-connect.md` |
-| Staging setup | `setup-staging.md` |
-| Staging MCP connection | `mcp-connect-staging.md` |
-| Borrower onboarding | `borrower-onboard.md` |
-| Human-direct (default operate path) | `human-direct-flow.md` |
-| Spend / pay | `spend-and-pay.md` |
-| x402 settlement | `x402-credit-pay.md` |
-| Authorize agent (borrower grant) | `authorize-agent.md` |
-| Idempotency | `idempotency.md` |
-
-## Critical rules
-
-1. **Tool descriptions vs skills** — After MCP connect, use tool `description` / input schemas for single call-time rules. For multi-step or money-moving flows, **read the local sticky** under `sohopay-integrate/docs/` first; fetch from `SKILLS_BASE` only if the local copy is missing. Never network-fetch mid-pay when sticky exists. MCP initialize `instructions` may repeat this pointer — follow it.
-2. **borrowerId is UUID** — never use wallet address as primary identity. `whoami` often omits `borrower_id`; use `principal_id` (human-direct only — in delegated sessions that is the agent, not the credit owner).
-3. **Never hold borrower private keys** — MCP transports signatures only. Agent workload Ed25519 private keys stay in agent-held storage (`sohopay-agent-workload/secret.json`).
-4. **Idempotency-Key** on every mutating financial/on-chain route.
-5. **Borrower token lifetime** — the borrower token is short-lived (staging 15 min, no refresh) and is not the harness OAuth token. Track `token_requested_at` + `expires_in` in this conversation. Re-request when older than 12 minutes. Do **not** use `whoami.scopes` as a refresh signal — those are OAuth JWT claims and stay `["borrower:token"]`. Skip `authorization-context` on the warm x402 path.
-6. **x402 payRequest = go** — “pay” / “pay here” / a merchant 402 URL authorizes the full fast path: token refresh **when stale**, `prepare_x402_payment`, voucher sign, merchant retry, and first-time merchant for that merchant. No further consent prompts. Prefer `prepare_x402_payment`; never `execute_payment` or a session on human-direct. Poll confirmation under **`l2_confirmations`** (~5s typical, P95 under 30s). Complete onboarded pays in **three waves under 15 seconds**. Skip `whoami` on that path. Same `orderRef` → same payment `idempotency_key`. See `x402-credit-pay.md` § Fast pay path.
-7. **Protocol V2** — during **onboarding** (not first pay), in **one turn** with no chat prompt before the token or the grant URL: `register_borrower` (store `operational_agent_id`) → wallet proof if not already verified → `request_borrower_token` (include `credit:facility:accept`) → Ed25519 keygen + `register_agent_workload_key` → `authorize_agent` (open the consent page immediately; grant must be ACTIVE). Later `prepare_x402_payment` may return `VOUCHER_ISSUED` → agent signs voucher / `PAYMENT-SIGNATURE`. On `X402_AGENT_KEY_NOT_REGISTERED` / `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — recover in that same turn, then retry the same idempotency key. Do not fall back to custodial `sign_transaction` under V2. Sign recipe + fixed key path: `x402-credit-pay.md`. Recovery: `x402-credit-pay.md` § Recovery if onboard was skipped.
-8. **V1 Signing** — pass `policy_decision_id` to `sign_transaction` (it does not accept `spend_intent_id`); `payload` must be a JSON object (`{}` ok, never a string); build `X-PAYMENT` from the returned `payment_intent` echo plus `get_signing_status.signature`.
-9. **Human-direct** — skip session tools. Do not call `whoami` to decide token refresh. Call `request_borrower_token` (no chat prompt) only when this chat has no successful token newer than 12 minutes.
-10. **First-time merchant** — on a payRequest, treat the pay utterance as accept (`RISK_FIRST_TIME_MERCHANT`); retry without asking. Only ask once when there is **no** payRequest. Signing-time ALLOW can still DENY at x402 settle (UUID vs bytes32 `merchantId`); mint a new payment header without re-asking, do not replay a cached 403. See `spend-and-pay.md` and `x402-credit-pay.md`.
-
-## Install (sticky)
-
-```bash
-npx skills add sohopay/skills -g -y -a claude-code   # Claude Code; use -a cursor / -a codex / -a hermes-agent for those harnesses
-```
-
-## Additional resources
-
-- MCP server: [sohopay-mcp-server](https://github.com/sohopay/sohopay-mcp-server) (private; local MCP setup is currently unavailable — use the hosted remote URL only)
-- Backend: [sohopay-backend](https://github.com/sohopay/sohopay-backend)
-- Endpoints: [docs/endpoints.md](https://github.com/sohopay/skills/blob/main/docs/endpoints.md)
+Do not use `sohopay-integrate/docs/` (removed).

@@ -1,0 +1,12 @@
+[
+  {"query": "whoami has no borrower_id — register me and do wallet proof.", "should_trigger": true},
+  {"query": "dropped_scopes WALLET_PROOF_REQUIRED what now", "should_trigger": true},
+  {"query": "request_borrower_token with spend scopes", "should_trigger": true},
+  {"query": "submit_signature challenge_id EIP-712", "should_trigger": true},
+  {"query": "onboard a HUMAN borrower on SohoPay", "should_trigger": true},
+  {"query": "token expired whoami only shows borrower:token", "should_trigger": true},
+  {"query": "Pay this 402 merchant URL.", "should_trigger": false},
+  {"query": "create_agent_session for my bot", "should_trigger": false},
+  {"query": "claude mcp add sohopay", "should_trigger": false},
+  {"query": "Send ETH from my wallet.", "should_trigger": false}
+]

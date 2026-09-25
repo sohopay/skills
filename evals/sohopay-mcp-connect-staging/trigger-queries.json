@@ -1,0 +1,6 @@
+[
+  {"query": "Register sohopay-staging MCP without overwriting production sohopay.", "should_trigger": true},
+  {"query": "connect to staging.mcp.sohopay.xyz/mcp", "should_trigger": true},
+  {"query": "Add production mcp.sohopay.xyz for customers.", "should_trigger": false},
+  {"query": "Pay HTTP 402 with X-PAYMENT.", "should_trigger": false}
+]

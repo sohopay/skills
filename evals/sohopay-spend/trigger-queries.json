@@ -1,0 +1,13 @@
+[
+  {"query": "create_spend_intent then evaluate_spend_policy", "should_trigger": true},
+  {"query": "sign_transaction failed — I passed spend_intent_id", "should_trigger": true},
+  {"query": "RISK_FIRST_TIME_MERCHANT DENY what do I tell the operator", "should_trigger": true},
+  {"query": "poll settlement — do I use payment_id or settlement_id", "should_trigger": true},
+  {"query": "get_signing_status signature is that intentSig", "should_trigger": true},
+  {"query": "payload as stringified empty object for sign_transaction", "should_trigger": true},
+  {"query": "available_credit didn't move after 202", "should_trigger": true},
+  {"query": "Build the X-PAYMENT header from the 402 challenge fields.", "should_trigger": false},
+  {"query": "Send USDC from my wallet to 0xabc.", "should_trigger": false},
+  {"query": "Add SohoPay MCP to Cursor.", "should_trigger": false},
+  {"query": "Update formulas in my Excel budget spreadsheet.", "should_trigger": false}
+]

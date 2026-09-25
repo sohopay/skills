@@ -1,0 +1,18 @@
+[
+  {"query": "Set up SohoPay in this Cursor workspace so I can use the hosted MCP.", "should_trigger": true},
+  {"query": "Fetch setup.md and bootstrap SohoPay for production.", "should_trigger": true},
+  {"query": "install sohopay skills globally for claude code", "should_trigger": true},
+  {"query": "wire up agents.sohopay for my agent please", "should_trigger": true},
+  {"query": "I need the default SohoPay bootstrap, not staging.", "should_trigger": true},
+  {"query": "connect my coding agent to sohopay from scratch", "should_trigger": true},
+  {"query": "how do I get SohoPay running in this environment", "should_trigger": true},
+  {"query": "paste the sohopay setup skill and follow it", "should_trigger": true},
+  {"query": "Pay this HTTP 402 URL with X-PAYMENT using my SohoPay credit.", "should_trigger": false},
+  {"query": "create_spend_intent for merchant X and sign_transaction", "should_trigger": false},
+  {"query": "Register me as a borrower and do wallet proof.", "should_trigger": false},
+  {"query": "Use staging.mcp.sohopay.xyz for internal E2E.", "should_trigger": false},
+  {"query": "Send USDC from my MetaMask wallet to this address.", "should_trigger": false},
+  {"query": "Add a Stripe checkout session to our Next.js app.", "should_trigger": false},
+  {"query": "What's the weather in Dhaka?", "should_trigger": false},
+  {"query": "Fix the failing unit tests in src/utils.ts", "should_trigger": false}
+]

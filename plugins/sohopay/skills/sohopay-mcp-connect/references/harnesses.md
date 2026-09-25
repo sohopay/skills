@@ -1,50 +1,3 @@
-<!-- SKILLS_BASE: set to the base URL serving these docs.
-     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
-     Prod: https://agents.sohopay.xyz/skills/v1 -->
-SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
-
-# Skill: Connect to SohoPay MCP Server
-
-**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
-
-**What this skill does:** registers the SohoPay MCP server with your agent harness and verifies the connection. **Before running it:** you have completed environment detection and prerequisites in `setup.md`.
-
-## Choose environment
-
-Pick **one** row. Substitute `{API_BASE}`, `{MCP_URL}`, `{MCP_ORIGIN}`, and `{MCP_SERVER_ID}` everywhere below. Do not mix production and staging hosts.
-
-| Environment | `{API_BASE}` | `{MCP_URL}` (register this) | `{MCP_ORIGIN}` (health / OAuth PRM) | `{MCP_SERVER_ID}` |
-|-------------|--------------|-----------------------------|-------------------------------------|-------------------|
-| **Production** (default) | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` |
-| **Staging** (internal E2E) | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` |
-
-For staging, you may start from `{SKILLS_BASE}/mcp-connect-staging.md` — it pins the staging row and chains here.
-
-CRITICAL: MCP is the **interface layer**. SohoPay Backend is the **source of truth**. Policy Engine is the decision authority. MCP tools never move money directly. Read the live `tools/list` from the connected server rather than assuming a fixed tool count.
-
-**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise or guess the missing steps. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
-
-Note to the agent: registering an MCP server writes to your harness config. Request permission normally. If denied, stop and explain what was blocked and why. Never turn off permission prompts or run in a bypass mode.
-
-## Architecture
-
-```text
-MCP Client / AI Agent
-        ↓
-SOHO MCP Server (sohopay-mcp-server)  — HTTP stream at /mcp
-        ↓  x-soho-service-token + x-soho-* identity headers
-SOHO Backend API (sohopay-backend /api/v1/*)
-        ↓
-Auth + Policy + Settlement
-```
-
-## Choose a path
-
-- **Option A — Hosted MCP** (the only available path; **no Node.js on your machine**): point your harness at `{MCP_URL}`.
-- **Option B — Local MCP** is **currently not available**. Do not clone or run `sohopay-mcp-server`. Register only the remote hosted URL.
-
----
-
 ## Option A: Hosted MCP
 
 Server URL: `{MCP_URL}` (canonical hosted MCP resource URL for your environment)
@@ -95,7 +48,7 @@ Cursor reads the server's protected-resource metadata and shows a "Needs Login"
 prompt; approve in the browser to complete the OAuth 2.1 + PKCE flow. No
 `type`/`transport` field is needed.
 
-**Important for Cursor (and ChatGPT):** write tools require an `idempotency_key` **tool argument** (UUID v4) because these harnesses cannot set custom HTTP headers. See `{SKILLS_BASE}/idempotency.md`.
+**Important for Cursor (and ChatGPT):** write tools require an `idempotency_key` **tool argument** (UUID v4) because these harnesses cannot set custom HTTP headers. See `{SKILL:sohopay-idempotency}`.
 
 **Codex** — edit `~/.codex/config.toml` and add, then log in:
 
@@ -172,7 +125,7 @@ curl -fsSL {MCP_ORIGIN}/health
 
 Then confirm authenticated access with a **read-only** MCP tool call (e.g. `whoami` or `get_borrower_status`). An unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
 
-After connect: read MCP tool descriptions (and initialize `instructions` if present) for call-time rules. For multi-step onboarding, spend/pay, or x402, fetch the matching skill from `{SKILLS_BASE}` (network is normal; local sticky copy if present) — start with `{SKILLS_BASE}/borrower-onboard.md` or `{SKILLS_BASE}/spend-and-pay.md`.
+After connect: read MCP tool descriptions (and initialize `instructions` if present) for call-time rules. For multi-step onboarding, spend/pay, or x402, fetch the matching skill from `{SKILLS_BASE}` (network is normal; local sticky copy if present) — start with `{SKILL:sohopay-onboard}` or `{SKILL:sohopay-spend}`.
 
 OAuth protected-resource metadata:
 
@@ -181,43 +134,3 @@ curl -fsSL {MCP_ORIGIN}/.well-known/oauth-protected-resource
 ```
 
 ---
-
-## Option B: Local sohopay-mcp-server (currently unavailable)
-
-**Local MCP setup is currently not available.** Do not clone, install, or run `sohopay-mcp-server`. A 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check. Register only the hosted remote URL `{MCP_URL}`.
-
----
-
-## MCP session bootstrap (hosted)
-
-1. Your harness obtains an OAuth access token via the consent flow above (issuer
-   discovered from the server's protected-resource metadata; typically `{API_BASE}`).
-   On the headless fallback, this is the pre-issued `SOHO_TOKEN`.
-2. `POST` to the MCP resource path with `Authorization: Bearer <token>` and `initialize`.
-3. Capture the `Mcp-Session-Id` response header — this is the **MCP transport** session.
-4. Use that session ID for `tools/list` and tool calls.
-
-`Mcp-Session-Id` is the **MCP transport** session — use it for `tools/list` and tool calls. It is not an application-level identity.
-
-Unauthenticated `tools/list` must return `401` with `WWW-Authenticate: Bearer`.
-
-## Backend trust contract
-
-MCP → Backend requests carry:
-
-| Header | Purpose |
-|--------|---------|
-| `x-soho-service-token` | MCP service authentication |
-| `x-soho-borrower-id` | Canonical borrower UUID |
-| `x-soho-principal-id` | Authenticated caller |
-| `x-soho-executor-id` | Action performer |
-| `x-soho-principal-type` | HUMAN \| AGENT \| BUSINESS |
-| `x-session-id` | Delegated SohoPay session (when using agent delegation) |
-| `Idempotency-Key` / `x-idempotency-key` | Write tools (or tool arg `idempotency_key`) |
-
-Backend trusts `x-soho-*` headers **only** when the service token is valid.
-
-## Next steps
-
-- Onboard borrower: `curl -fsSL {SKILLS_BASE}/borrower-onboard.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/borrower-onboard.md`
-- Back to setup: `curl -fsSL {SKILLS_BASE}/setup.md || curl -fsSL https://raw.githubusercontent.com/sohopay/skills/main/setup.md`

@@ -1,0 +1,13 @@
+[
+  {"query": "This merchant URL returned HTTP 402 — pay with SohoPay credit.", "should_trigger": true},
+  {"query": "retry X-PAYMENT after 202 Retry-After", "should_trigger": true},
+  {"query": "facilitator settle vs execute_payment which one", "should_trigger": true},
+  {"query": "borrower-direct /api/v2/x402 settle", "should_trigger": true},
+  {"query": "POLICY_DECISION_DENIED RISK_FIRST_TIME_MERCHANT on X-PAYMENT", "should_trigger": true},
+  {"query": "scheme credit envelope intentSig from signing status", "should_trigger": true},
+  {"query": "create_agent_session then pay the 402", "should_trigger": true},
+  {"query": "create_spend_intent field XOR merchant vs merchant_id only", "should_trigger": false},
+  {"query": "Send USDC from my Metamask, no 402 involved.", "should_trigger": false},
+  {"query": "claude mcp add sohopay", "should_trigger": false},
+  {"query": "Stripe payment intent for our SaaS.", "should_trigger": false}
+]
