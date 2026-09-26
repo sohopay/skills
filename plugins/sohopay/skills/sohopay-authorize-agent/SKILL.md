@@ -23,10 +23,11 @@ Need `credit:facility:accept` on the borrower token. If it is missing, call `req
 
 ```text
 1. authorize_agent challenge (operational_agent_id, terms, fresh idempotency_key)
-2. Open consent URL now (hash payload). Page POSTs complete — do not wait for a JSON paste
-3. Onboarding: wait only for Grant active on the page — do not call prepare with no order
-   Pay-time recovery: retry prepare_x402_payment SAME order / SAME payment idempotency_key
-4. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
+2. Open consent URL now (hash payload). Page POSTs complete and auto-returns to the harness — do not wait for a JSON paste
+3. get_agent_authorization every 5s for up to 2 minutes (24 attempts). Do not remint the challenge. Do not end the turn after only opening the page
+4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish signing; do not invent a signature
+5. Onboarding: no prepare. Pay-time recovery: after ACTIVE, prepare_x402_payment SAME order / SAME payment idempotency_key
+6. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
 ```
 
 Challenge and submit are separate writes — new idempotency_key for submit fallback only. Continue `{SKILL:sohopay-x402}` only after a pay-time recovery.
