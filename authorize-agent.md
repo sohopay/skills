@@ -25,10 +25,11 @@ Need `credit:facility:accept` on the borrower token. If it is missing, call `req
 
 ```text
 1. authorize_agent challenge (operational_agent_id, terms, fresh idempotency_key)
-2. Open consent URL now (hash payload). Page POSTs complete — do not wait for a JSON paste
-3. Onboarding: wait only for Grant active on the page — do not call prepare with no order
-   Pay-time recovery: retry prepare_x402_payment SAME order / SAME payment idempotency_key
-4. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
+2. Open consent URL now (hash payload). Page POSTs complete and auto-returns to the harness — do not wait for a JSON paste
+3. get_agent_authorization every 5s for up to 2 minutes (24 attempts). Do not remint the challenge. Do not end the turn after only opening the page
+4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish signing; do not invent a signature
+5. Onboarding: no prepare. Pay-time recovery: after ACTIVE, prepare_x402_payment SAME order / SAME payment idempotency_key
+6. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
 ```
 
 Challenge and submit are separate writes — new idempotency_key for submit fallback only. Continue `{SKILLS_BASE}/x402-credit-pay.md` only after a pay-time recovery.
@@ -58,7 +59,8 @@ Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the 
 - JSON fields: `challenge_id` (UUID), `typed_data` (exact challenge `typed_data`), optional `expires_at` (ISO string from the challenge response).
 - `typed_data.primaryType` must be `AgentAuthorizationGrant`.
 - Empty / missing hash → page shows **Invalid authorization link** (expected without a challenge).
-- After wallet sign → the page POSTs the signature to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`) and shows **Grant signed**. The grant becomes ACTIVE in the backend. **Do not wait for the operator to paste JSON.**
+- After wallet sign → the page POSTs the signature to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`). If complete returns a safe harness `redirect_uri`, the page auto-navigates (same as MCP login approve). If missing or unsafe, it stays on **Grant active**. Never put `redirect_uri` in the hash.
+- The grant becomes ACTIVE in the backend. **Do not wait for the operator to paste JSON.** The agent still polls `get_agent_authorization` until ACTIVE.
 
 Build the link (Node):
 
@@ -73,7 +75,7 @@ const url = `https://staging.sohopay.xyz/agent/authorize#${hash}`; // or sohopay
 
 Use **standard base64url** (no padding). The page reads the **hash only**.
 
-**Preferred completion:** poll `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key` until it returns `VOUCHER_ISSUED` (or a non-grant error). Do not re-GET the merchant. Do not mint a new payment idempotency key.
+**Preferred completion:** poll `get_agent_authorization` with this `challenge_id` every **5 seconds** for **2 minutes** (max 24 attempts). Do not poll `authorizations/current`. Do not remint the challenge while polling. After ACTIVE on pay-time recovery, retry `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key`. During onboard do not invent a dummy prepare. Do not re-GET the merchant. Do not mint a new payment idempotency key.
 
 **Fallback only** if the page cannot complete (shows an error, or the operator has no in-page success): they may copy:
 
