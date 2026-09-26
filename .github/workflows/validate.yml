@@ -19,10 +19,10 @@ jobs:
         run: |
           git add -A -- setup.md setup-staging.md mcp-connect.md mcp-connect-staging.md \
             borrower-onboard.md human-direct-flow.md spend-and-pay.md x402-credit-pay.md \
-            authorize-agent.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json
+            authorize-agent.md repay.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json
           git diff --cached --exit-code -- \
             setup.md setup-staging.md mcp-connect.md mcp-connect-staging.md \
             borrower-onboard.md human-direct-flow.md spend-and-pay.md x402-credit-pay.md \
-            authorize-agent.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json \
+            authorize-agent.md repay.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json \
             || { echo "FAIL: generated files drifted — run npm run build and commit"; exit 1; }
       - run: npm run validate

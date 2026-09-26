@@ -20,6 +20,7 @@ Load a sibling **only when that step is next**:
 - [ ] Identity / register / wallet proof / token / workload key / agent grant — **sohopay-onboard** (`{SKILL:sohopay-onboard}`), then **sohopay-authorize-agent** in that same turn
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILL:sohopay-x402}`)
 - [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILL:sohopay-authorize-agent}`)
+- [ ] Repay / pay back SohoPay credit — **sohopay-repay** (`{SKILL:sohopay-repay}`)
 - [ ] Non-x402 spend / first-time merchant detail — **sohopay-spend** (`{SKILL:sohopay-spend}`)
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
