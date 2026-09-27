@@ -15,7 +15,7 @@ Execute this grant in the same turn. Do not plan. Do not fall back to `sign_tran
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-Consent URL + hash payload: [references/consent-page.md](references/consent-page.md). Staging `https://staging.sohopay.xyz/agent/authorize`. Production `https://sohopay.xyz/agent/authorize`.
+Consent link: open the `consent_url` returned by the challenge **verbatim** (`…/agent/authorize#<challenge_id>`) — never rebuild it from `typed_data`. Details: [references/consent-page.md](references/consent-page.md). Staging `https://staging.sohopay.xyz/agent/authorize`. Production `https://sohopay.xyz/agent/authorize`.
 
 Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. On pay-time recovery, cover the pending payment.
 
@@ -23,7 +23,7 @@ Need `credit:facility:accept` on the borrower token. If it is missing, call `req
 
 ```text
 1. authorize_agent challenge (operational_agent_id, terms, fresh idempotency_key)
-2. Open consent URL now (hash payload). Page POSTs complete and auto-returns to the harness — do not wait for a JSON paste
+2. Open the response's consent_url now, verbatim. Page POSTs complete and auto-returns to the harness — do not wait for a JSON paste
 3. get_agent_authorization every 5s for up to 2 minutes (24 attempts). Do not remint the challenge. Do not end the turn after only opening the page
 4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish signing; do not invent a signature
 5. Onboarding: no prepare. Pay-time recovery: after ACTIVE, prepare_x402_payment SAME order / SAME payment idempotency_key
