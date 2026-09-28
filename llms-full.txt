@@ -1168,8 +1168,9 @@ Merchant calls SohoPay with `X-API-Key` (never the borrower JWT):
 | Method | Path | Notes |
 |--------|------|-------|
 | POST | `{API_BASE}/api/v1/facilitator/verify` | Gate-1 verify; body = envelope |
-| POST | `{API_BASE}/api/v1/facilitator/settle` | Requires `Idempotency-Key` (72h TTL); **202** |
-| GET | `{API_BASE}/api/v1/facilitator/settle/status/:jobId` | Poll until `CONFIRMED` or terminal |
+| POST | `{API_BASE}/api/v1/facilitator/capture` | Terminal money call. Requires `Idempotency-Key` (receipt replay 15 min); **200** `{ success, replayed, receipt:{ paymentId, … , signature } }`. Deliver on the receipt — there is no `POST /settle`; SohoPay settles captures on-chain in a scheduled batch (default every 60s) |
+| GET | `{API_BASE}/api/v1/facilitator/settle/status/by-payment/:paymentId` | Poll with the receipt's `paymentId`: `CREATED` until batched → `SUBMITTED` (batch `jobId` = `confirm-batch-<uuid>`, `txHash`) → `CONFIRMED` / `FAILED` |
+| GET | `{API_BASE}/api/v1/facilitator/settle/status/:jobId` | Same body keyed on the batch `jobId` above (numeric, `confirm-<uuid>`, `confirm-batch-<uuid>`) |
 | POST | `{API_BASE}/api/v1/facilitator/verify-proof` | Proof verification (optional tooling) |
 | GET | `{API_BASE}/api/v1/facilitator/supported` | Public discovery |
 
@@ -1479,7 +1480,7 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 | Default financial MCP writes (sessions, spend intents, signing, credit approve, repayments prepare) | **24h** |
 | `POST /api/v1/payments/execute` | **72h** |
 | `POST /api/v2/x402/settle` (+ legacy `/api/v1/x402/v2/settle`) | **72h** |
-| `POST /api/v1/facilitator/settle` | **72h** (scoped to merchant `userId`) |
+| `POST /api/v1/facilitator/capture` | **15 min** (capture-receipt replay; scoped to merchant `userId`). No `POST /facilitator/settle` — settlement is a scheduled batch |
 
 ## Exempt (no Idempotency-Key required)
 

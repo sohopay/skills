@@ -8,7 +8,7 @@
 | Default financial MCP writes (sessions, spend intents, signing, credit approve, repayments prepare) | **24h** |
 | `POST /api/v1/payments/execute` | **72h** |
 | `POST /api/v2/x402/settle` (+ legacy `/api/v1/x402/v2/settle`) | **72h** |
-| `POST /api/v1/facilitator/settle` | **72h** (scoped to merchant `userId`) |
+| `POST /api/v1/facilitator/capture` | **15 min** (capture-receipt replay; scoped to merchant `userId`). No `POST /facilitator/settle` — settlement is a scheduled batch |
 
 ## Exempt (no Idempotency-Key required)
 
