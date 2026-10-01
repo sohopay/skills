@@ -19,13 +19,22 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 1. Connect / authenticate → `{SKILLS_BASE}/mcp-connect.md` (setup presets: `{SKILLS_BASE}/setup.md`).
 2. If not yet onboarded — identity + onboarding state → `{SKILLS_BASE}/borrower-onboard.md`.
 3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and one `next_actions` step. On v7: `whoami` + `get_borrower_status`.
-4. Route on `next_actions` / `can_pay`:
-   - operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md`
-   - spend / sign, non-x402 → `{SKILLS_BASE}/spend-and-pay.md`
-   - pay an HTTP 402 merchant → `{SKILLS_BASE}/x402-credit-pay.md`
-   - repay outstanding credit → `{SKILLS_BASE}/repay.md`
-   - authorize an agent grant → `{SKILLS_BASE}/authorize-agent.md`
-   - delegated session → `{SKILLS_BASE}/agent-session.md`
+4. Route on the first `next_actions` entry — see **Routing** below. Do not re-derive the next step from raw balances/statuses; `get_context` already decided it.
+
+### Routing — branch on `next_actions[0]`
+`get_context` returns `next_actions` with the blocking step first (if any), then `PAY` when spending is available, then `AWAIT_REPAYMENT`. Branch on `next_actions[0]`: its `reason_code`, `actor`, and `handoff_required` tell you the move and whether the borrower is needed.
+
+| `next_actions[0].reason_code` | `actor` · handoff | Meaning | Go to |
+|-------------------------------|-------------------|---------|-------|
+| `BORROWER_REGISTRATION_REQUIRED` | BORROWER · yes | Borrower not registered | `{SKILLS_BASE}/borrower-onboard.md` |
+| `CREDIT_OFFER_ACCEPTANCE_REQUIRED` | BORROWER · yes | Facility not ACTIVE — credit offer must be accepted (`accept_facility_offer`) | `{SKILLS_BASE}/borrower-onboard.md` |
+| `AGENT_AUTHORIZATION_REQUIRED` | BORROWER · yes | No ACTIVE agent grant | `{SKILLS_BASE}/authorize-agent.md` |
+| `SPENDING_AVAILABLE` (`can_pay: true`) | AGENT · no | Spending available — pick the pay flow by context | HTTP 402 merchant → `{SKILLS_BASE}/x402-credit-pay.md`; non-x402 spend/sign → `{SKILLS_BASE}/spend-and-pay.md`; operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md` |
+| `REPAYMENT_IN_FLIGHT` | AGENT · no | A repayment is confirming | `{SKILLS_BASE}/repay.md` (monitor) |
+
+**`handoff_required: true` → stop and hand off.** The step needs the borrower's signature/decision (`actor: BORROWER`); surface it to the borrower and do not attempt it as the agent. `actor: AGENT` steps you perform yourself. For a delegated session, continue in `{SKILLS_BASE}/agent-session.md`.
+
+> v8 emits at most the first blocking step plus `PAY`; `REPAYMENT_IN_FLIGHT` is reserved (not emitted yet). If `next_actions` is empty and `can_pay` is false, resolve the blocker shown in `authorization` (frozen / suspended / compliance) before retrying.
 
 ### get_context essentials
 `get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and one `next_actions` step. It replaces the `whoami` → `get_borrower_status` dance on v8+.
