@@ -18,6 +18,8 @@
 | `principal_type` | `null` unless the claim is present. |
 | `scopes` | Token claims, **not** live grants. A fresh token may hold only `borrower:token`. |
 
+> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILL:sohopay-get-context}`
+
 ### Resolving borrower_id from whoami
 
 **Use `principal_id` as the `borrower_id`.** In the human-direct flow the authenticated caller *is* the borrower, so `principal_id` and `executor_id` both carry the borrower UUID, and `whoami` typically omits `borrower_id` altogether. Feed `principal_id` straight into `get_borrower_status`, `create_spend_intent`, `sign_transaction`, and every other tool that takes `borrower_id`.

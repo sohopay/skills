@@ -21,7 +21,8 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 
 | Tool | Purpose |
 |------|---------|
-| `whoami` | JWT identity snapshot (start here when already connected) |
+| `get_context` | Backend-backed identity + credit + authorization + one next step — prefer when connected (catalog v8+) |
+| `whoami` | JWT identity snapshot (start here on v7; on v8+ prefer `get_context`) |
 | `register_borrower` | Register HUMAN/AGENT/BUSINESS |
 | `request_signature_challenge` | Start wallet proof |
 | `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |

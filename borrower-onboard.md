@@ -17,7 +17,7 @@ Execute the numbered workflow in **one turn**. Do not plan. Do not defer the wor
 
 Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
-0. `whoami` — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. Field caveats: [references/whoami.md](#hosted-reference-whoami)
+0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/get-context.md`
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
@@ -61,7 +61,8 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 
 | Tool | Purpose |
 |------|---------|
-| `whoami` | JWT identity snapshot (start here when already connected) |
+| `get_context` | Backend-backed identity + credit + authorization + one next step — prefer when connected (catalog v8+) |
+| `whoami` | JWT identity snapshot (start here on v7; on v8+ prefer `get_context`) |
 | `register_borrower` | Register HUMAN/AGENT/BUSINESS |
 | `request_signature_challenge` | Start wallet proof |
 | `submit_signature` | Complete wallet proof (`challenge_id` + `signature` + `wallet_address`) |
@@ -94,6 +95,8 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `wallet` | Commonly `null` even when wallet proof is verified — the wallet is backend state, not a token claim. |
 | `principal_type` | `null` unless the claim is present. |
 | `scopes` | Token claims, **not** live grants. A fresh token may hold only `borrower:token`. |
+
+> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILLS_BASE}/get-context.md`
 
 ### Resolving borrower_id from whoami
 

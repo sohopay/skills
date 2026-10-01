@@ -25,6 +25,7 @@ export const HOSTED_SKILL_DIRS = [
   'sohopay-repay',
   'sohopay-idempotency',
   'sohopay-agent-session',
+  'sohopay-get-context',
 ];
 
 export const HOSTED_HEADER = `<!-- SKILLS_BASE: set to the base URL serving these docs.

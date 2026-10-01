@@ -1,0 +1,9 @@
+[
+  {"query": "who am I and can I pay right now", "should_trigger": true},
+  {"query": "get_context returned next_actions — what does can_pay mean", "should_trigger": true},
+  {"query": "how do I get my borrower_id without whoami principal_id", "should_trigger": true},
+  {"query": "check my credit and authorization before starting a SohoPay workflow", "should_trigger": true},
+  {"query": "Pay this 402 merchant URL.", "should_trigger": false},
+  {"query": "create_agent_session for my bot", "should_trigger": false},
+  {"query": "Send ETH from my wallet.", "should_trigger": false}
+]
