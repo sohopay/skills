@@ -15,6 +15,8 @@ Execute this repay in the same turn. Do not plan. Do not invent a signature. Do 
 
 **Before:** MCP connected; borrower onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers.
 
+**First — orient:** confirm identity and outstanding balance with `{SKILLS_BASE}/bootstrap.md` (v8+: `get_context` returns `borrower_id` + outstanding debt; v7: `whoami` + `get_borrower_status`).
+
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Need `repayment:execute` and `repayment:read` on the borrower token. If they are missing, call `request_borrower_token` with those scopes before the challenge.

@@ -15,6 +15,8 @@ HTTP 402 → **sohopay-x402** (`prepare_x402_payment`). This skill is the non-x4
 
 `idempotency_key` on writes — `{SKILL:sohopay-idempotency}`. Default operate: `{SKILL:sohopay-human-direct}`.
 
+**First — orient:** establish context with `{SKILL:sohopay-bootstrap}` (v8+: `get_context` → `borrower_id`, credit, authorization, next step; v7: `whoami` + `get_borrower_status`).
+
 **V1 / non-x402:** `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction(policy_decision_id, payload: {})` → `get_signing_status` (`signature` = `intentSig`) → x402 settle → poll `settlement_id`.
 
 Merchant XOR `merchant`/`merchant_id`. Amount XOR `amount`/`amount_decimal`. `sign_transaction` does **not** accept `spend_intent_id`. Signing: [references/signing.md](references/signing.md).
