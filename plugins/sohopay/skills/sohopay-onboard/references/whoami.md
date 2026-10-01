@@ -18,7 +18,7 @@
 | `principal_type` | `null` unless the claim is present. |
 | `scopes` | Token claims, **not** live grants. A fresh token may hold only `borrower:token`. |
 
-> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILL:sohopay-get-context}`
+> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILL:sohopay-bootstrap}`
 
 ### Resolving borrower_id from whoami
 

@@ -13,7 +13,7 @@ Execute the next checklist item only. Do not plan. **Before:** MCP connected (`{
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-On a server advertising catalog v8+, open with `get_context` (`borrower_id` + credit + authorization + next step in one call — `{SKILL:sohopay-get-context}`); on v7 open with `whoami`. `whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
+On a server advertising catalog v8+, open with `get_context` (`borrower_id` + credit + authorization + next step in one call — `{SKILL:sohopay-bootstrap}`); on v7 open with `whoami`. `whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
 
 Load a sibling **only when that step is next**:
 
