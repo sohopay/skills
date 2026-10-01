@@ -15,7 +15,7 @@ metadata:
 
 ### Cold-start sequence
 1. Connect / authenticate → `{SKILL:sohopay-mcp-connect}` (setup presets: `{SKILL:sohopay-setup}`).
-2. Identity + onboarding state → `{SKILL:sohopay-onboard}`.
+2. If not yet onboarded — identity + onboarding state → `{SKILL:sohopay-onboard}`.
 3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and one `next_actions` step. On v7: `whoami` + `get_borrower_status`.
 4. Route on `next_actions` / `can_pay`:
    - operate (human-direct default) → `{SKILL:sohopay-human-direct}`

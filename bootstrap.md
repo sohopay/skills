@@ -17,7 +17,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 ### Cold-start sequence
 1. Connect / authenticate → `{SKILLS_BASE}/mcp-connect.md` (setup presets: `{SKILLS_BASE}/setup.md`).
-2. Identity + onboarding state → `{SKILLS_BASE}/borrower-onboard.md`.
+2. If not yet onboarded — identity + onboarding state → `{SKILLS_BASE}/borrower-onboard.md`.
 3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and one `next_actions` step. On v7: `whoami` + `get_borrower_status`.
 4. Route on `next_actions` / `can_pay`:
    - operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md`
