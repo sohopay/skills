@@ -10,3 +10,11 @@ Not run in CI (no live agent harness). When editing a description:
 4. Keep descriptions ≤ 1024 characters and include “Use when”.
 
 Near-miss negatives (shared wallet / payments keywords that must **not** fire SohoPay money skills): “Send USDC from my wallet”, spreadsheet/Excel edits, Stripe checkout.
+
+## Behavioral scenarios (`scenarios.json`)
+
+Optional per-skill `scenarios.json`: an array of
+`{ id, given: { catalog: "v7"|"v8", state: "fresh"|"onboarded"|"authorized"|"frozen"|"post-payment"|"authz-error" }, expect: { tool, rationale } }`
+capturing the tool choice the skill should produce for a given server catalog + borrower state.
+
+**Documentation-of-intent, not CI-run** — there is no live-agent harness. `npm run validate` checks only the file's shape (fields present, `catalog`/`state` in their enums), so it cannot silently rot or go malformed; it never executes the expectations.

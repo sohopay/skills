@@ -13,7 +13,7 @@ Execute the next checklist item only. Do not plan. **Before:** MCP connected (`{
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-`whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
+On a server advertising catalog v8+, open with `get_context` (`borrower_id` + credit + authorization + next step in one call — `{SKILL:sohopay-bootstrap}`); on v7 open with `whoami`. `whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
 
 Load a sibling **only when that step is next**:
 
@@ -25,7 +25,7 @@ Load a sibling **only when that step is next**:
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-whoami → register_borrower → wallet proof if needed → request_borrower_token (no chat prompt)
+get_context (v8+) or whoami (v7) → register_borrower → wallet proof if needed → request_borrower_token (no chat prompt)
   → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
   → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
 ```
