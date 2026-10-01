@@ -36,7 +36,7 @@
 | 3 | Relationship to #61 | **Stack on #61** (new branch off its branch; #61 merges first) |
 | 4 | Eval workstream | **Both** — richer trigger fixtures AND a new documented behavioral-scenario format |
 
-**Accepted tradeoff (decision 3):** stacking means #61 adds `sohopay-get-context` and this PR immediately renames/reshapes it — add-then-restructure churn visible across two PRs. Harmless (neither reaches prod before both merge), but the combined history looks like it changed its mind. The alternative (fold into #61) was declined.
+**Accepted tradeoff (decision 3):** stacking means #61 adds `sohopay-get-context` and this PR immediately renames/reshapes it — add-then-restructure churn visible across two PRs. Harmless (neither reaches prod before both merge), but the combined history looks like it changed its mind. The alternative (fold into #61) was declined. **Reconfirmed after design review** (the "stack buys nothing if #61 is unreviewed" finding): stay stacked — #61 is reviewed/handled as its own PR.
 
 ---
 
@@ -75,6 +75,8 @@ Body, in order:
 
 **Principle:** owns only the get_context step; every other step is a one-line `{SKILL:…}` pointer. No duplication of onboard/spend/x402 mechanics.
 
+**Boundary vs `sohopay-onboard` / `sohopay-setup` (explicit, to avoid two "start here" skills colliding).** `sohopay-bootstrap` answers *"I have a connected, authenticated session — what's my state and which flow next?"*; it does **not** carry connection or onboarding mechanics. `sohopay-setup` / `sohopay-mcp-connect` own getting connected; `sohopay-onboard` owns the borrower onboarding steps. Bootstrap's description is scoped to **post-connect orientation** (identity/credit/authorization/next-step via `get_context`), not to "how do I set up / onboard" — so a setup or onboarding query fires those skills, not bootstrap. The skill body states this boundary in one line and points to setup/onboard for their parts.
+
 ### 2. Cross-skill wiring
 
 Target `SKILL.md`s: `sohopay-spend`, `sohopay-x402`, `sohopay-repay`, `sohopay-authorize-agent`, `sohopay-agent-session`. Insert one identical pointer block near the top (after frontmatter and any existing STOP/preamble), worded as a convention:
@@ -87,12 +89,14 @@ Rules:
 - **No behavior/flow change** to target skills — entry pointer only; existing steps, field tables, STOP gates untouched.
 - **Placement never contradicts an existing mandatory first step.** Where a skill already has a hard first action (e.g. `sohopay-agent-session`'s "STOP — ask the operator" before `create_agent_session`), the context pointer is sequenced *before* it as establish-context-then-STOP, not placed so the two compete. The plan pins exact placement per file.
 - **Idempotent with #61:** onboard + human-direct already point at the old skill; their pointers flip to `sohopay-bootstrap` here, so all seven end up uniform.
+- **Per-skill pointer-fit check (new, per design review).** The pointer is **not** applied blindly. `get_context` assumes an agent principal holding `borrower:token`; before inserting the block the plan verifies the fit for each target. `sohopay-authorize-agent` is a borrower-EOA-signing flow (the actor may be the borrower, not an agent) and parts of `sohopay-repay` may run under a different actor — for any skill where "call get_context first" is semantically wrong for its actor, the pointer is reworded (e.g. "establish identity for the acting principal") or omitted, with the reason recorded in the plan. The uniform wording is the default, not a mandate.
 
 ### 3. Evals (`evals/sohopay-bootstrap/`, moved from `evals/sohopay-get-context/`)
 
 **(a) Richer trigger fixtures — `trigger-queries.json`** (existing flat `{query, should_trigger}` format; enough entries for a ~60/40 train/validation split):
 - Positives: cold-start, identity-without-principal_id, post-event (onboarded/paid/repaid) "can I pay now", authz-error recovery, `can_pay`/`next_actions` meaning.
 - Near-miss negatives (from the README's list): "Send USDC from my wallet", Stripe checkout, spreadsheet/Excel edits, plus the existing `create_agent_session` / raw-402-pay negatives.
+- **Skill-vs-skill startup negatives (new, per design review):** queries that belong to a *neighbouring* startup skill and must **not** fire bootstrap — e.g. "how do I connect to the SohoPay MCP server" (→ setup/mcp-connect), "walk me through onboarding a new borrower" (→ onboard), "configure my API keys" (→ setup). These pin the §Design-1 boundary so bootstrap does not cannibalize setup/onboard triggers.
 
 **(b) Behavioral-scenario format — `scenarios.json`** (new; documentation-of-intent, no runner):
 ```json
@@ -110,6 +114,8 @@ Rules:
 Schema: `{ id, given: { catalog: "v7"|"v8", state: "fresh"|"onboarded"|"authorized"|"frozen"|"post-payment"|"authz-error" }, expect: { tool, rationale } }`.
 
 Extend `evals/README.md` with a section defining this schema and stating explicitly it is **documentation-of-intent, not CI-run**, until a live-agent harness exists (mirroring the README's existing honesty about trigger fixtures).
+
+**Schema self-check (new, per design review).** Even without a behavioral runner, `scenarios.json` must not be unguarded dead documentation: `npm run validate` gains a lightweight shape check — every entry has `id`/`given`/`expect`, `given.catalog` ∈ {`v7`,`v8`}, and `given.state` ∈ the enum — so the file cannot silently rot or go malformed. This validates structure only; it does not execute the expectations.
 
 ### 4. Generation & registration
 - `HOSTED_SKILL_DIRS` in `scripts/lib/skills.mjs`: entry `sohopay-get-context` → `sohopay-bootstrap` (preserve list position).
@@ -129,7 +135,7 @@ Extend `evals/README.md` with a section defining this schema and stating explici
 - `npm run validate` → green (skill structure, registration, eval presence).
 - **Stale-pointer grep gate (RED→GREEN for the rename):** zero matches for `sohopay-get-context` or `get-context.md` across SKILL bodies, generated artifacts, and the index — fails before pointer rewrites, passes after.
 - **Build-determinism:** `npm run build` then `git diff --exit-code` on generated files → no drift.
-- **scenarios.json guardrail:** `npm run validate` still green with the new eval file present.
+- **scenarios.json guardrail + schema self-check:** `npm run validate` still green with the new eval file present, AND the added shape check (fields present, `catalog`/`state` in their enums) passes — a malformed `scenarios.json` must fail validate.
 - Trigger fixtures reviewed by the README's optimize-descriptions method (hand-run; no CI).
 
 ---
@@ -148,4 +154,7 @@ Extend `evals/README.md` with a section defining this schema and stating explici
 - Rename completeness: no dangling `sohopay-get-context`/`get-context.md` anywhere, including generated artifacts and the hosted index.
 - Non-duplication: the five pointers and bootstrap body do not restate get_context mechanics in more than one place.
 - Wiring vs existing first-steps: the context pointer never contradicts a skill's existing mandatory first action (esp. agent-session's STOP gate).
+- **Bootstrap↔onboard/setup boundary:** bootstrap's description stays scoped to post-connect orientation and does not cannibalize setup/onboard triggers — the skill-vs-skill negative fixtures must encode this.
+- **Per-skill pointer-fit:** for each of the five wired skills, "call get_context first" is semantically right for that skill's actor, or reworded/omitted with a recorded reason.
+- **scenarios.json self-check:** a malformed scenarios file fails `npm run validate`.
 - Generation determinism: committed generated files exactly match a fresh `npm run build`.
