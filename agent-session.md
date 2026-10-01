@@ -15,6 +15,8 @@ Human-direct is the default. Do not create a session to fix `SESSION_GATE_SKIPPE
 
 `Mcp-Session-Id` is MCP transport. SohoPay `session_id` / `x-session-id` is the delegated session. Never swap them.
 
+**First — orient:** establish context with `{SKILLS_BASE}/bootstrap.md` (v8+: `get_context` → `borrower_id`, authorization; v7: `whoami` + `get_borrower_status`), then proceed to the STOP gate below.
+
 Before `create_agent_session`:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**

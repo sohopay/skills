@@ -438,7 +438,7 @@ Execute the numbered workflow in **one turn**. Do not plan. Do not defer the wor
 
 Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
-0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/get-context.md`
+0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/bootstrap.md`
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
@@ -517,7 +517,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `principal_type` | `null` unless the claim is present. |
 | `scopes` | Token claims, **not** live grants. A fresh token may hold only `borrower:token`. |
 
-> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILLS_BASE}/get-context.md`
+> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILLS_BASE}/bootstrap.md`
 
 ### Resolving borrower_id from whoami
 
@@ -668,7 +668,7 @@ Execute the next checklist item only. Do not plan. **Before:** MCP connected (`{
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-On a server advertising catalog v8+, open with `get_context` (`borrower_id` + credit + authorization + next step in one call — `{SKILLS_BASE}/get-context.md`); on v7 open with `whoami`. `whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
+On a server advertising catalog v8+, open with `get_context` (`borrower_id` + credit + authorization + next step in one call — `{SKILLS_BASE}/bootstrap.md`); on v7 open with `whoami`. `whoami` usually omits `borrower_id` — use `principal_id`. `wallet: null` is normal — `get_borrower_status`. `SESSION_GATE_SKIPPED_NO_SESSION` is expected.
 
 Load a sibling **only when that step is next**:
 
@@ -710,6 +710,8 @@ HTTP 402 → **sohopay-x402** (`prepare_x402_payment`). This skill is the non-x4
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`. Default operate: `{SKILLS_BASE}/human-direct-flow.md`.
+
+**First — orient:** establish context with `{SKILLS_BASE}/bootstrap.md` (v8+: `get_context` → `borrower_id`, credit, authorization, next step; v7: `whoami` + `get_borrower_status`).
 
 **V1 / non-x402:** `create_spend_intent` → `evaluate_spend_policy` → `sign_transaction(policy_decision_id, payload: {})` → `get_signing_status` (`signature` = `intentSig`) → x402 settle → poll `settlement_id`.
 
@@ -896,7 +898,7 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
-**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare.
+**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context should already be established via `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`) — do not fetch it mid-pay if this file is already loaded.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -1369,6 +1371,8 @@ Execute this repay in the same turn. Do not plan. Do not invent a signature. Do 
 
 **Before:** MCP connected; borrower onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers.
 
+**First — orient:** confirm identity and outstanding balance with `{SKILLS_BASE}/bootstrap.md` (v8+: `get_context` returns `borrower_id` + outstanding debt; v7: `whoami` + `get_borrower_status`).
+
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Need `repayment:execute` and `repayment:read` on the borrower token. If they are missing, call `request_borrower_token` with those scopes before the challenge.
@@ -1535,6 +1539,8 @@ Human-direct is the default. Do not create a session to fix `SESSION_GATE_SKIPPE
 
 `Mcp-Session-Id` is MCP transport. SohoPay `session_id` / `x-session-id` is the delegated session. Never swap them.
 
+**First — orient:** establish context with `{SKILLS_BASE}/bootstrap.md` (v8+: `get_context` → `borrower_id`, authorization; v7: `whoami` + `get_borrower_status`), then proceed to the STOP gate below.
+
 Before `create_agent_session`:
 
 > **STOP — ask the operator and wait for their reply. Do not proceed, skip, or simulate this step. Never fabricate keys, tokens, or signatures.**
@@ -1652,7 +1658,7 @@ Creating a delegated session grants an agent spending authority on the borrower'
 
 ---
 
-# SohoPay get_context
+# SohoPay Agent Bootstrap
 
 <!-- SKILLS_BASE: set to the base URL serving these docs.
      Dev:  https://raw.githubusercontent.com/sohopay/skills/main
@@ -1663,15 +1669,30 @@ Creating a delegated session grants an agent spending authority on the borrower'
 <!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
 SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
-# Skill: SohoPay get_context
+# Skill: SohoPay Agent Bootstrap
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
 **Availability:** requires a server advertising tool-catalog **v8+**. On v7 servers use `whoami` (resolve `borrower_id = whoami.borrower_id ?? whoami.principal_id`) + `get_borrower_status`.
 
-`get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and one `next_actions` step. It replaces the `whoami` → `get_borrower_status` dance.
+**Boundary.** This skill orients an already-connected, authenticated session — *what is my state and which flow next*. It does **not** connect or onboard: getting connected is `{SKILLS_BASE}/mcp-connect.md` / `{SKILLS_BASE}/setup.md`; borrower onboarding steps are `{SKILLS_BASE}/borrower-onboard.md`.
 
-**When to call:** at workflow start; after onboarding, credit activation, authorization, a material payment, a repayment, or an authorization error. Not before every trivial read.
+### Cold-start sequence
+1. Connect / authenticate → `{SKILLS_BASE}/mcp-connect.md` (setup presets: `{SKILLS_BASE}/setup.md`).
+2. If not yet onboarded — identity + onboarding state → `{SKILLS_BASE}/borrower-onboard.md`.
+3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and one `next_actions` step. On v7: `whoami` + `get_borrower_status`.
+4. Route on `next_actions` / `can_pay`:
+   - operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md`
+   - spend / sign, non-x402 → `{SKILLS_BASE}/spend-and-pay.md`
+   - pay an HTTP 402 merchant → `{SKILLS_BASE}/x402-credit-pay.md`
+   - repay outstanding credit → `{SKILLS_BASE}/repay.md`
+   - authorize an agent grant → `{SKILLS_BASE}/authorize-agent.md`
+   - delegated session → `{SKILLS_BASE}/agent-session.md`
+
+### get_context essentials
+`get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and one `next_actions` step. It replaces the `whoami` → `get_borrower_status` dance on v8+.
+
+**When to call:** at session start, and after onboarding, credit activation, authorization, a material payment, a repayment, or an authorization error. Not before every trivial read.
 
 **Invariant — descriptive only.** `prepare_x402_payment` revalidates and is authoritative. Never skip a payment attempt, or assume success, because `can_pay` was true.
 
@@ -1683,5 +1704,3 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 | `get_context` | v8+ — **prefer**: identity + credit + authorization + next step |
 | `get_session_context` | Delegated-session detail — only if the host lists it |
 | `authorization-context` | Grant limits behind a specific denial |
-
-Onboarding steps: `{SKILLS_BASE}/borrower-onboard.md`. Operate: `{SKILLS_BASE}/human-direct-flow.md`.

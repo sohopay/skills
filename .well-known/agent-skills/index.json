@@ -77,10 +77,10 @@
       "url": "https://agents.sohopay.xyz/skills/v1/agent-session.md"
     },
     {
-      "name": "get-context",
-      "title": "SohoPay get_context",
-      "description": "Read backend-backed identity, credit, authorization and one next step in a single call with get_context. Use when starting a SohoPay workflow, resolving borrower_id, or checking whether this borrower can pay after onboarding, credit activation, authorization, a payment, a repayment, or an authorization error — requires catalog v8+; not for every trivial read.",
-      "url": "https://agents.sohopay.xyz/skills/v1/get-context.md"
+      "name": "bootstrap",
+      "title": "SohoPay Agent Bootstrap",
+      "description": "Orient at the start of a connected SohoPay session: read identity, credit, authorization and one next step with get_context, then route to the right flow. Use when you have an authenticated session and need borrower_id, want to know whether this borrower can pay, or must decide which SohoPay flow comes next — after onboarding, credit activation, authorization, a payment, a repayment, or an authorization error. Requires catalog v8+; on v7 use whoami + get_borrower_status. Not for connecting or onboarding themselves, nor for every trivial read.",
+      "url": "https://agents.sohopay.xyz/skills/v1/bootstrap.md"
     }
   ],
   "fullContext": "https://agents.sohopay.xyz/skills/v1/llms-full.txt",

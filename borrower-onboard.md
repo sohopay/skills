@@ -17,7 +17,7 @@ Execute the numbered workflow in **one turn**. Do not plan. Do not defer the wor
 
 Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
-0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/get-context.md`
+0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/bootstrap.md`
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
@@ -96,7 +96,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `principal_type` | `null` unless the claim is present. |
 | `scopes` | Token claims, **not** live grants. A fresh token may hold only `borrower:token`. |
 
-> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILLS_BASE}/get-context.md`
+> **Catalog v8+:** `get_context` returns `borrower_id` plus facility/credit state in one backend-backed call, so the `whoami` → `get_borrower_status` sequence below is unnecessary there. Everything in this section stays the v7 / human-direct path. `{SKILLS_BASE}/bootstrap.md`
 
 ### Resolving borrower_id from whoami
 
