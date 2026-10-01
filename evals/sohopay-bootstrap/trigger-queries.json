@@ -1,9 +1,16 @@
 [
+  {"query": "I'm starting a SohoPay workflow — what do I check first", "should_trigger": true},
   {"query": "who am I and can I pay right now", "should_trigger": true},
-  {"query": "get_context returned next_actions — what does can_pay mean", "should_trigger": true},
   {"query": "how do I get my borrower_id without whoami principal_id", "should_trigger": true},
-  {"query": "check my credit and authorization before starting a SohoPay workflow", "should_trigger": true},
+  {"query": "I just onboarded — can this borrower pay now", "should_trigger": true},
+  {"query": "get_context returned next_actions — what does can_pay mean", "should_trigger": true},
+  {"query": "I hit AGENT_AUTHORIZATION_REQUIRED, re-check my context", "should_trigger": true},
+  {"query": "check my credit and authorization before starting", "should_trigger": true},
+  {"query": "how do I connect to the SohoPay MCP server", "should_trigger": false},
+  {"query": "walk me through onboarding a new borrower", "should_trigger": false},
+  {"query": "configure my SohoPay API keys and environment", "should_trigger": false},
   {"query": "Pay this 402 merchant URL.", "should_trigger": false},
   {"query": "create_agent_session for my bot", "should_trigger": false},
-  {"query": "Send ETH from my wallet.", "should_trigger": false}
+  {"query": "Send USDC from my wallet.", "should_trigger": false},
+  {"query": "Create a Stripe checkout session.", "should_trigger": false}
 ]

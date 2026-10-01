@@ -1,0 +1,12 @@
+[
+  { "id": "v8-fresh", "given": { "catalog": "v8", "state": "fresh" },
+    "expect": { "tool": "get_context", "rationale": "one call returns borrower_id + credit + authorization + next step" } },
+  { "id": "v7-fresh", "given": { "catalog": "v7", "state": "fresh" },
+    "expect": { "tool": "whoami+get_borrower_status", "rationale": "get_context not advertised on v7" } },
+  { "id": "v8-onboarded", "given": { "catalog": "v8", "state": "onboarded" },
+    "expect": { "tool": "get_context", "rationale": "confirm can_pay + next_actions after onboarding" } },
+  { "id": "v8-frozen", "given": { "catalog": "v8", "state": "frozen" },
+    "expect": { "tool": "get_context", "rationale": "reports frozen state + next_action; does not deny" } },
+  { "id": "v8-authz-error", "given": { "catalog": "v8", "state": "authz-error" },
+    "expect": { "tool": "get_context", "rationale": "re-establish context, then authorization-context for the specific grant limit" } }
+]
