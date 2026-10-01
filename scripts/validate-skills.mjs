@@ -251,6 +251,27 @@ for (const dirName of dirs) {
   } catch {
     fail(`missing evals/${dirName}/trigger-queries.json`);
   }
+
+  const scenariosPath = join(ROOT, 'evals', dirName, 'scenarios.json');
+  if (existsSync(scenariosPath)) {
+    const CATALOGS = new Set(['v7', 'v8']);
+    const STATES = new Set(['fresh', 'onboarded', 'authorized', 'frozen', 'post-payment', 'authz-error']);
+    try {
+      const scenarios = JSON.parse(readFileSync(scenariosPath, 'utf8'));
+      if (!Array.isArray(scenarios) || scenarios.length < 1) {
+        fail(`evals/${dirName}/scenarios.json must be a non-empty array`);
+      } else if (!scenarios.every((s) =>
+        typeof s.id === 'string' &&
+        s.given && CATALOGS.has(s.given.catalog) && STATES.has(s.given.state) &&
+        s.expect && typeof s.expect.tool === 'string' && typeof s.expect.rationale === 'string')) {
+        fail(`evals/${dirName}/scenarios.json entries must have id, given{catalog in v7|v8, state in enum}, expect{tool, rationale}`);
+      } else {
+        pass(`evals/${dirName}/scenarios.json`);
+      }
+    } catch {
+      fail(`evals/${dirName}/scenarios.json is not valid JSON`);
+    }
+  }
 }
 
 if (failed) process.exit(1);

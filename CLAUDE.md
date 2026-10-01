@@ -67,7 +67,7 @@ Sibling pointers in `SKILL.md` use `{SKILL:sohopay-onboard}`; the generator rewr
 
 ## SohoPay domain rules to preserve in skill content
 
-1. `borrowerId` is a UUID — never use a wallet address as primary identity. `whoami` often omits `borrower_id`; resolve it as `whoami.borrower_id ?? whoami.principal_id` (human-direct only — in delegated sessions `principal_id` is the agent, not the credit owner).
+1. `borrowerId` is a UUID — never use a wallet address as primary identity. On a server advertising tool-catalog v8+, prefer `get_context` (returns `borrower_id` + credit + authorization + one next step in one call; `get_context.borrower_id` needs no `principal_id` fallback). On v7 servers and for the human-direct path, `whoami` often omits `borrower_id`; resolve it as `whoami.borrower_id ?? whoami.principal_id` (human-direct only — in delegated sessions `principal_id` is the agent, not the credit owner) and read state with `get_borrower_status`. `get_context` is descriptive — `prepare_x402_payment` revalidates and is authoritative.
 2. Never hold borrower private keys — the MCP transport carries signatures only.
 3. Idempotency: `Idempotency-Key` **or** tool arg `idempotency_key` (required for Cursor/ChatGPT) on write tools.
 4. The borrower token from `request_borrower_token` is short-lived (staging 15 min) and is **not** the auto-refreshed OAuth transport token. Track `token_requested_at` + `expires_in`; re-request when older than 12 minutes. Do **not** use `whoami.scopes` as a refresh signal. Skip `authorization-context` on the warm x402 path.

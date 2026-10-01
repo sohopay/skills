@@ -13,6 +13,8 @@ Execute this repay in the same turn. Do not plan. Do not invent a signature. Do 
 
 **Before:** MCP connected; borrower onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers.
 
+**First — orient:** confirm identity and outstanding balance with `{SKILL:sohopay-bootstrap}` (v8+: `get_context` returns `borrower_id` + outstanding debt; v7: `whoami` + `get_borrower_status`).
+
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Need `repayment:execute` and `repayment:read` on the borrower token. If they are missing, call `request_borrower_token` with those scopes before the challenge.
@@ -20,7 +22,7 @@ Need `repayment:execute` and `repayment:read` on the borrower token. If they are
 Consent URL + hash payload: [references/consent-page.md](references/consent-page.md). Staging `https://staging.sohopay.xyz/repay/authorize`. Production `https://sohopay.xyz/repay/authorize`. The backend returns `consent_url` already assembled — do not rebuild the hash.
 
 ```text
-1. whoami (borrower_id ??= principal_id) → request_borrower_token (repayment:execute, repayment:read)
+1. Reuse `borrower_id` from the orient step (`get_context`, v8+); v7 only: `whoami` (borrower_id ??= principal_id). → request_borrower_token (repayment:execute, repayment:read)
 2. request_repayment challenge (optional amount; omit = full outstanding; fresh idempotency_key)
 3. STOP — open consent_url now. Page POSTs complete — do not wait for a JSON paste
 4. poll get_repayment_status ~2s until CONFIRMED, FAILED, or expires_at

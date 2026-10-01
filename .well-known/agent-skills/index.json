@@ -75,6 +75,12 @@
       "title": "SohoPay Agent Sessions (Delegated)",
       "description": "Create a delegated SohoPay agent session. Use when the operator asks for create_agent_session — not human-direct and not an HTTP 402 pay.",
       "url": "https://agents.sohopay.xyz/skills/v1/agent-session.md"
+    },
+    {
+      "name": "bootstrap",
+      "title": "SohoPay Agent Bootstrap",
+      "description": "Orient at the start of a connected SohoPay session: read identity, credit, authorization and one next step with get_context, then route to the right flow. Use when you have an authenticated session and need borrower_id, want to know whether this borrower can pay, or must decide which SohoPay flow comes next — after onboarding, credit activation, authorization, a payment, a repayment, or an authorization error. Requires catalog v8+; on v7 use whoami + get_borrower_status. Not for connecting or onboarding themselves, nor for every trivial read.",
+      "url": "https://agents.sohopay.xyz/skills/v1/bootstrap.md"
     }
   ],
   "fullContext": "https://agents.sohopay.xyz/skills/v1/llms-full.txt",
