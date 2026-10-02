@@ -35,6 +35,12 @@
       "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
+      "name": "handle",
+      "title": "SohoPay Handles",
+      "description": "Resolve a recipient @handle to a borrower_id, and explain what a borrower's own handle is. Use when you have an @handle (e.g. to address a gift) and need the borrower_id, or when a borrower asks about their handle. Not for sending the gift itself ({SKILL:sohopay-spend}) or for changing/hiding a handle (that is a borrower web action).",
+      "url": "https://agents.sohopay.xyz/skills/v1/handle.md"
+    },
+    {
       "name": "human-direct-flow",
       "title": "SohoPay Human-Direct Flow",
       "description": "Run the default human-direct operate path (whoami through prepare_x402_payment and settlement_id polling). Use when the borrower acts directly, SESSION_GATE_SKIPPED_NO_SESSION appears, or after MCP connect to operate — not for create_agent_session.",
