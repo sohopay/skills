@@ -2,10 +2,9 @@
 name: sohopay-handle
 description: >
   Resolve a recipient @handle to a borrower_id, and explain what a borrower's
-  own handle is. Use when you have an @handle (e.g. to address a gift) and need
-  the borrower_id, or when a borrower asks about their handle. Not for sending
-  the gift itself ({SKILL:sohopay-spend}) or for changing/hiding a handle (that
-  is a borrower web action).
+  own handle is. Use when you have an @handle and need the borrower_id, or when
+  a borrower asks about their handle. Not for sending value itself, or for
+  changing or hiding a handle (a borrower web action).
 license: Apache-2.0
 metadata:
   hosted_name: handle
@@ -14,9 +13,9 @@ metadata:
 ---
 
 Handles are a borrower's public address. `register_borrower` returns the
-borrower's own `handle`. To send value TO someone by their @handle, resolve it
-to a `borrower_id` first — the gift/payment routes bind a `borrower_id`, never a
-raw handle.
+borrower's own `handle` — not an input to `resolve_handle`, which takes someone
+else's @handle. To send value to someone by their @handle, resolve it to a
+`borrower_id` first — use the returned `borrower_id`, never the raw handle.
 
 1. `resolve_handle` — input `{ handle }` (a raw `@handle`; the gateway
    normalizes `@alice` / `alice` / ` Alice `). Returns `{ borrower_id,
@@ -27,6 +26,6 @@ raw handle.
      recipient to share their `borrower_id` directly, or to make their handle
      discoverable.
    - `429` → you are resolving too fast; back off.
-2. Use the returned `borrower_id` as the recipient on the gift/payment step.
+2. Use the returned `borrower_id` as the recipient when you send value.
 
 Needs the `handle:resolve` scope on the borrower token.

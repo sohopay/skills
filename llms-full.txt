@@ -665,9 +665,9 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
 Handles are a borrower's public address. `register_borrower` returns the
-borrower's own `handle`. To send value TO someone by their @handle, resolve it
-to a `borrower_id` first — the gift/payment routes bind a `borrower_id`, never a
-raw handle.
+borrower's own `handle` — not an input to `resolve_handle`, which takes someone
+else's @handle. To send value to someone by their @handle, resolve it to a
+`borrower_id` first — use the returned `borrower_id`, never the raw handle.
 
 1. `resolve_handle` — input `{ handle }` (a raw `@handle`; the gateway
    normalizes `@alice` / `alice` / ` Alice `). Returns `{ borrower_id,
@@ -678,7 +678,7 @@ raw handle.
      recipient to share their `borrower_id` directly, or to make their handle
      discoverable.
    - `429` → you are resolving too fast; back off.
-2. Use the returned `borrower_id` as the recipient on the gift/payment step.
+2. Use the returned `borrower_id` as the recipient when you send value.
 
 Needs the `handle:resolve` scope on the borrower token.
 
