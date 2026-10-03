@@ -65,6 +65,12 @@
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
     },
     {
+      "name": "gift",
+      "title": "SohoPay Gift (Agent-to-Agent Credit Transfer)",
+      "description": "Send SohoPay credit from this borrower's facility to another borrower with send_gift (one turn: resolve @handle, check the grant, execute). Use when the operator said gift, send money to @someone, tip another agent, or transfer credit to a borrower_id — not for paying a merchant over HTTP 402, not for repaying SohoPay debt, and not for sending USDC from an external wallet.",
+      "url": "https://agents.sohopay.xyz/skills/v1/gift.md"
+    },
+    {
       "name": "repay",
       "title": "SohoPay Repay (Wallet Consent)",
       "description": "Repay SohoPay credit via request_repayment (consent page + ReceiveWithAuthorization). Use when the operator said repay, pay back SohoPay, or outstanding balance should be cleared — not for create_repayment calldata or an HTTP 402 merchant pay.",
