@@ -18,6 +18,7 @@ export const HOSTED_SKILL_DIRS = [
   'sohopay-mcp-connect',
   'sohopay-mcp-connect-staging',
   'sohopay-onboard',
+  'sohopay-handle',
   'sohopay-human-direct',
   'sohopay-spend',
   'sohopay-x402',
