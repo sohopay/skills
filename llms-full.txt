@@ -486,7 +486,7 @@ Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com
 | `check_handle_availability` | `POST /api/v1/handles/availability` | `{ handle }` | `{ handle, available, reason? }` | read (scoped `handle:claim`, throttled) |
 | `claim_handle` | `POST /api/v1/handles/me/claim` | `{ handle }` (+ `idempotency_key`) | `{ handle, discoverable, claimed_at }` | write (scoped `handle:claim`) |
 
-`handle` is 1–64 chars; the gateway normalizes and validates it (strip or keep a leading `@` — both normalize server-side). `check_handle_availability` is throttled — check a few candidates, not a brute-force sweep. Reuse a `claim_handle` idempotency key only to retry the **same** handle.
+**Handle format:** 3–30 characters, lowercase ASCII `a-z0-9` with `.` or `_` as internal separators (must start with a letter/digit, no trailing separator, no two separators in a row). A leading `@` and case/whitespace are normalized server-side; the MCP input only caps raw length at 64, so rely on these rules, not that cap. `check_handle_availability` is throttled — check a few candidates, not a brute-force sweep. Reuse a `claim_handle` idempotency key only to retry the **same** handle.
 
 ### Errors (recover, never block)
 
@@ -494,7 +494,7 @@ Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com
 |------|---------|----|
 | `HANDLE_UNAVAILABLE` | Taken by someone else | Offer `suggested_handles` or another candidate |
 | `HANDLE_ALREADY_CLAIMED` | This borrower already has a handle | Show it, skip claiming |
-| `HANDLE_INVALID_FORMAT` / `HANDLE_ALPHABET` / `HANDLE_MIN_LENGTH` / `HANDLE_MAX_LENGTH` | Bad format (charset / length) | Ask for a valid one (letters/digits, 1–64 chars) |
+| `HANDLE_INVALID_FORMAT` / `HANDLE_ALPHABET` / `HANDLE_MIN_LENGTH` / `HANDLE_MAX_LENGTH` | Bad format (charset / length) | Ask for a valid one (3–30 chars, lowercase `a-z0-9`, `.`/`_` allowed between) |
 | `HANDLE_RESERVED_BLOCKLIST` | Reserved / blocked word | Pick a different handle |
 | `HANDLE_AVAILABILITY_RATE_LIMITED` | Too many availability checks | Back off; claim a `suggested_handles` entry directly |
 
