@@ -37,7 +37,7 @@
     {
       "name": "handle",
       "title": "SohoPay Handles",
-      "description": "Resolve a recipient @handle to a borrower_id, and explain what a borrower's own handle is. Use when you have an @handle and need the borrower_id, or when a borrower asks about their handle. Not for sending value itself, or for changing or hiding a handle (a borrower web action).",
+      "description": "Resolve a recipient @handle to a borrower_id, and turn the borrower's own handle discoverability on or off. Use when you have an @handle and need the borrower_id, when a borrower asks about their handle, or when they want their handle to be findable by others or hidden. Not for sending value itself, or for renaming or releasing a handle.",
       "url": "https://agents.sohopay.xyz/skills/v1/handle.md"
     },
     {

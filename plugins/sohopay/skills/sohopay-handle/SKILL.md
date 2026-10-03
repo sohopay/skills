@@ -1,10 +1,11 @@
 ---
 name: sohopay-handle
 description: >
-  Resolve a recipient @handle to a borrower_id, and explain what a borrower's
-  own handle is. Use when you have an @handle and need the borrower_id, or when
-  a borrower asks about their handle. Not for sending value itself, or for
-  changing or hiding a handle (a borrower web action).
+  Resolve a recipient @handle to a borrower_id, and turn the borrower's own
+  handle discoverability on or off. Use when you have an @handle and need the
+  borrower_id, when a borrower asks about their handle, or when they want their
+  handle to be findable by others or hidden. Not for sending value itself, or
+  for renaming or releasing a handle.
 license: Apache-2.0
 metadata:
   hosted_name: handle
@@ -27,5 +28,16 @@ else's @handle. To send value to someone by their @handle, resolve it to a
      discoverable.
    - `429` → you are resolving too fast; back off.
 2. Use the returned `borrower_id` as the recipient when you send value.
+3. `set_discoverability` — input `{ discoverable: boolean }`. Returns
+   `{ discoverable }`, the value now in effect. Turns discoverability on or off
+   for the ACTING borrower's OWN handle only; it cannot change anyone else's.
+   Idempotent: setting the same value again succeeds as a no-op.
+   - Auto-assigned handles start non-discoverable (private), so others get
+     `404 NOT_RESOLVABLE` from `resolve_handle`. Call
+     `set_discoverability { discoverable: true }` to make the borrower's handle
+     resolvable by others; `{ discoverable: false }` hides it again.
+   - Only do this when the borrower wants it; it changes their privacy.
 
-Needs the `handle:resolve` scope on the borrower token.
+Scopes on the borrower token: `handle:resolve` for `resolve_handle`,
+`handle:update` for `set_discoverability` (a lookup scope never implies the
+privacy change).
