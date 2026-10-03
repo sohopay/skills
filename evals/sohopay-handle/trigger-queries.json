@@ -1,11 +1,11 @@
 [
   {"query": "resolve the recipient @handle to a borrower_id before sending", "should_trigger": true},
-  {"query": "resolve @alice to send a gift", "should_trigger": true},
+  {"query": "what borrower_id does @alice map to", "should_trigger": true},
   {"query": "resolve_handle returned 404 NOT_RESOLVABLE for this handle", "should_trigger": true},
   {"query": "my handle isn't resolvable, make it discoverable", "should_trigger": true},
   {"query": "hide my own handle so others can't find it (set_discoverability false)", "should_trigger": true},
-  {"query": "send 5 USDC to the recipient", "should_trigger": false},
-  {"query": "register_borrower wallet-proof EIP-712 onboarding challenge_id", "should_trigger": false},
+  {"query": "send value to @alice", "should_trigger": false},
+  {"query": "rename my handle", "should_trigger": false},
   {"query": "create a Stripe checkout session", "should_trigger": false},
   {"query": "claude mcp add sohopay", "should_trigger": false}
 ]

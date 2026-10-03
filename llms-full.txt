@@ -679,15 +679,19 @@ else's @handle. To send value to someone by their @handle, resolve it to a
      discoverable.
    - `429` → you are resolving too fast; back off.
 2. Use the returned `borrower_id` as the recipient when you send value.
-3. `set_discoverability` — input `{ discoverable: boolean }`. Returns
-   `{ discoverable }`, the value now in effect. Turns discoverability on or off
-   for the ACTING borrower's OWN handle only; it cannot change anyone else's.
-   Idempotent: setting the same value again succeeds as a no-op.
-   - Auto-assigned handles start non-discoverable (private), so others get
-     `404 NOT_RESOLVABLE` from `resolve_handle`. Call
-     `set_discoverability { discoverable: true }` to make the borrower's handle
-     resolvable by others; `{ discoverable: false }` hides it again.
-   - Only do this when the borrower wants it; it changes their privacy.
+
+Separately — your own handle (an independent action, not a step in the flow
+above):
+
+- `set_discoverability` — input `{ discoverable: boolean }`. Returns
+  `{ discoverable }`, the value now in effect. Turns discoverability on or off
+  for the ACTING borrower's OWN handle only; it cannot change anyone else's.
+  Idempotent: setting the same value again succeeds as a no-op.
+  - Auto-assigned handles start non-discoverable (private), so others get
+    `404 NOT_RESOLVABLE` from `resolve_handle`. Call
+    `set_discoverability { discoverable: true }` to make the borrower's handle
+    resolvable by others; `{ discoverable: false }` hides it again.
+  - Only do this when the borrower wants it; it changes their privacy.
 
 Scopes on the borrower token: `handle:resolve` for `resolve_handle`,
 `handle:update` for `set_discoverability` (a lookup scope never implies the
