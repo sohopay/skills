@@ -1,0 +1,94 @@
+<!-- SKILLS_BASE: set to the base URL serving these docs.
+     Dev:  https://raw.githubusercontent.com/sohopay/skills/main
+     Prod: https://agents.sohopay.xyz/skills/v1
+     SKILLS_HOST (CDN origin): https://agents.sohopay.xyz
+     Fetch order: local sticky → {SKILLS_BASE} → GitHub raw last-resort.
+     Publish rewrites SKILLS_BASE to Prod and {SKILLS_HOST} to the origin. -->
+<!-- Generated from plugins/sohopay/skills — do not hand-edit this file. Run npm run generate:hosted -->
+SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
+
+# Skill: SohoPay Gift (Agent-to-Agent Credit Transfer)
+
+**Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
+
+Send the gift in the same turn. Do not plan. Do not pass an `@handle` to `send_gift`.
+
+**Before:** MCP connected; borrower onboarded with an **ACTIVE** grant; `operational_agent_id` stored from `register_borrower`. Recipient resolution and grant terms: `{SKILLS_BASE}/handle.md` / `{SKILLS_BASE}/authorize-agent.md`.
+
+**Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
+
+Need `gift:send` on the borrower token. If it is missing, call `request_borrower_token` with `gift:send` before the write — do not ask the operator first. `payment:execute` does **not** imply gifting permission.
+
+```text
+1. Recipient — if the operator gave an @handle: resolve_handle → recipient_borrower_id (UUID v4).
+   If they gave a UUID, use it. Never send the handle string.
+2. Grant — get_agent_authorization: gift_enabled must be true and status ACTIVE (amount caps are server-side)
+3. send_gift — fresh UUID v4 idempotency_key, with borrower_id + operational_agent_id
+4. Report — gift_id, amount, recipient, remaining headroom
+```
+
+## Phase 1 — Recipient resolution
+
+- `@handle` → `resolve_handle({ handle })` → use the returned `borrower_id` as `recipient_borrower_id`.
+  - `404 NOT_RESOLVABLE` → **STOP.** The handle does not exist or is not discoverable (auto-assigned
+    handles are private until the owner opts in). Tell the operator and ask for the recipient's
+    `borrower_id`, or for them to enable discoverability. Do not guess a UUID and do not retry.
+  - `429` → back off, then retry once.
+- UUID v4 already in hand → skip `resolve_handle` entirely.
+- Sending to **yourself** (`recipient_borrower_id == borrower_id`) is not a gift; refuse and say so.
+
+## Phase 2 — Authorization & capability check
+
+Read `get_agent_authorization` (or the authorization block on `get_context`). Only two things on the grant gate a gift — the binary gift permission and the grant being live:
+
+| Field | Meaning |
+|-------|---------|
+| `gift_enabled` | Borrower signed permission to gift. Grants minted before the field existed read `false`; a gift permission is never inferred. |
+| `status` | Must be `ACTIVE` (and the grant inside its validity window). |
+| `authorization_version` | Echoed back in the gift response. |
+
+- `gift_enabled: false` → **STOP** and present the `authorize_agent` consent URL so the operator can
+  sign a grant with gifting enabled (`allow_gifts: true`). Open the page verbatim; do not rebuild the
+  URL, do not end the turn on "please open this page".
+- Grant not `ACTIVE` (`PENDING`, `REVOKED`, `SUPERSEDED`, `EXPIRED`) → recover with
+  `{SKILLS_BASE}/authorize-agent.md` first, then continue in the same turn.
+
+**Do not pre-flight the gift amount against `max_per_payment` / `daily_limit` / `daily_spent`.** Those are
+the agent's *payment* limits (USDC base units, 6 decimals) and do **not** gate gifts — the gift path reads
+only `gift_enabled` from the grant. A gift's size is bounded instead by the sender's available credit, the
+protocol exposure ceiling, and SohoPay's gifting caps (per-sender outstanding, per-pair-per-day, hourly
+velocity, minimum sender account age) — all enforced server-side and **not** visible on the grant, so there
+is nothing to compute up front and no re-grant that raises them. Send the gift and let the backend decide:
+
+- `GIFT_INSUFFICIENT_CREDIT` → the amount exceeds available credit (or the exposure ceiling). Report it
+  and offer a smaller amount; a larger grant does not help.
+- `GIFT_CAP_EXCEEDED` (`details.cap` names the limit hit) → a gifting cap was reached. Report the named
+  cap. Do **not** split the gift into smaller sends to slip under a cap — that is deliberate cap evasion.
+- `AGENT_GIFT_NOT_PERMITTED` → gifting is off on the grant; take the `gift_enabled: false` path above.
+
+## Phase 3 — Execution
+
+`send_gift` with `borrower_id`, `operational_agent_id`, `recipient_borrower_id`, `amount_usd`, `idempotency_key`.
+
+- `idempotency_key`: fresh UUID v4 per gift (`{SKILLS_BASE}/idempotency.md`). Same gift retried after a
+  timeout or an `AGENT_AUTHORIZATION_REQUIRED` → **same** key. Never mint a new key to "make it work".
+- `amount_usd`: `0.01`–`1_000_000`, at most 2 decimal places. More precision is a client-side validation
+  error, not something to round silently into a different amount — ask the operator which amount they want.
+- A `@handle` in `recipient_borrower_id` fails schema validation by design. That is Phase 1 not having run.
+- `send_gift` is a write tool: `Idempotency-Key` header **or** `idempotency_key` arg (required for
+  Cursor/ChatGPT). One write per turn; no retry loop on a non-idempotent-looking failure.
+
+## Phase 4 — Confirmation
+
+The response is `{ gift_id, sender_borrower_id, recipient_borrower_id, amount_usd, remaining_usd, gifted_at, spendable, operational_agent_id, authorization_version }`. Report `gift_id`, the amount actually sent, the recipient (`@handle` and/or UUID), and `remaining_usd` as the borrower's remaining credit headroom.
+
+Gifted credit is **immediately spendable** (`spendable: true`) — it funds the recipient's own payments, including x402, and it is not a refundable credit line. Say that once, in the confirmation, before the operator gifts again. Do not follow up with a payment on the recipient's behalf; that needs the recipient's own grant.
+
+A later payment may come back with a `funding` breakdown (`gifts[]`, `own_credit_amount`, `total_amount`) from `prepare_x402_payment` — gifts are spent first. Mention it when the operator asks why a payment was smaller than the balance.
+
+## Out of scope
+
+- Merchant HTTP 402 pays → `{SKILLS_BASE}/x402-credit-pay.md`.
+- Paying back SohoPay debt → `{SKILLS_BASE}/repay.md` (a gift is not a repayment and does not reduce `outstanding`).
+- Sending USDC from an external wallet, or any on-chain transfer — SohoPay gifts move **credit**, not tokens.
+- Gifting to yourself, splitting a gift to evade a cap, or gifting on a non-`ACTIVE` grant.
