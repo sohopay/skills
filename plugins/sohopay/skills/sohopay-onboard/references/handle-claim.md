@@ -1,0 +1,22 @@
+## Handle claim (optional, soft gate)
+
+A **@handle** is the public address other agents resolve to send gifts. It is **optional**: a borrower is always addressed by `borrowerId` and can pay, be authorized, and repay without one. A handle only makes the borrower discoverable and resolvable by others. **Never block onboarding on it** — if the borrower declines or a claim fails, finish onboarding and mention they can claim one later.
+
+Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 4); a dropped scope is not fatal — retry after gates, and skip the handle step if it stays absent.
+
+**Ordering (critical):** run the handle step **after** `request_borrower_token` and the workload key, never before them. The borrower-token rule forbids any chat question before the token, and the confirmation below is a chat question. Keep it out of the critical chain (steps 1–7).
+
+### Flow
+
+1. `register_borrower` (step 1) returns `handle` (`null` or an existing handle), `suggested_handles` (ready-to-claim candidates), and `next_action`.
+2. If `handle` is already set — show it, skip claiming.
+3. If `next_action == "claim_handle"` — present `suggested_handles` and let the borrower pick one or propose a custom handle.
+4. Custom handle → `check_handle_availability` first. If unavailable, offer the `suggested_handles` or another candidate. A `suggested_handles` entry can be claimed directly without checking.
+5. **Confirmation STOP** — show the exact handle that will be claimed and wait for an explicit yes. A claim is public and hard to undo, so this is the one allowed chat question in the otherwise no-question turn.
+6. `claim_handle` with the confirmed handle and an `idempotency_key` — `{SKILL:sohopay-idempotency}`.
+
+### Tool mechanics, format rules, and errors
+
+The `claim_handle` / `check_handle_availability` contract — routes, input/return shapes, the 3–30-char lowercase `a-z0-9` + `.`/`_` format rules, and the recover-never-block error codes — is owned by `{SKILL:sohopay-handle}`. This onboarding step only orchestrates **when** to run them; that skill is also where a borrower claims or changes a handle any time after onboarding.
+
+On any non-2xx, follow the skill's global failure rule (STOP and report the exact failed route) — except a handle failure never blocks onboarding: finish the remaining steps and tell the borrower they can claim a handle later via `{SKILL:sohopay-handle}`.
