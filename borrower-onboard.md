@@ -25,7 +25,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
 6. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
 7. `POST /api/v1/auth/authorization-context` before privileged tools
-8. Handle (optional, soft gate) — only **after** steps 4–6 (never a chat question before the token). If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and let the borrower pick or propose one; for a custom handle, `check_handle_availability` first. Confirm the exact handle (one allowed chat question), then `claim_handle` (write, `idempotency_key`). A handle is optional to transact — declining or a failed claim must **never** block onboarding. [references/handle-claim.md](#hosted-reference-handle-claim)
+8. Handle (optional, soft gate) — only **after** steps 4–6 (never a chat question before the token). If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and let the borrower pick or propose one; for a custom handle, `check_handle_availability` first. Confirm the exact handle (one allowed chat question), then `claim_handle` (write, `idempotency_key`). A handle is optional to transact — declining or a failed claim must **never** block onboarding; the borrower can claim or change one any time via `{SKILLS_BASE}/handle.md`. Ordering + flow: [references/handle-claim.md](#hosted-reference-handle-claim)
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
@@ -56,26 +56,11 @@ Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com
 5. **Confirmation STOP** — show the exact handle that will be claimed and wait for an explicit yes. A claim is public and hard to undo, so this is the one allowed chat question in the otherwise no-question turn.
 6. `claim_handle` with the confirmed handle and an `idempotency_key` — `{SKILLS_BASE}/idempotency.md`.
 
-### Tools
+### Tool mechanics, format rules, and errors
 
-| Tool | Route | Input | Returns | Kind |
-|------|-------|-------|---------|------|
-| `check_handle_availability` | `POST /api/v1/handles/availability` | `{ handle }` | `{ handle, available, reason? }` | read (scoped `handle:claim`, throttled) |
-| `claim_handle` | `POST /api/v1/handles/me/claim` | `{ handle }` (+ `idempotency_key`) | `{ handle, discoverable, claimed_at }` | write (scoped `handle:claim`) |
+The `claim_handle` / `check_handle_availability` contract — routes, input/return shapes, the 3–30-char lowercase `a-z0-9` + `.`/`_` format rules, and the recover-never-block error codes — is owned by `{SKILLS_BASE}/handle.md`. This onboarding step only orchestrates **when** to run them; that skill is also where a borrower claims or changes a handle any time after onboarding.
 
-**Handle format:** 3–30 characters, lowercase ASCII `a-z0-9` with `.` or `_` as internal separators (must start with a letter/digit, no trailing separator, no two separators in a row). A leading `@` and case/whitespace are normalized server-side; the MCP input only caps raw length at 64, so rely on these rules, not that cap. `check_handle_availability` is throttled — check a few candidates, not a brute-force sweep. Reuse a `claim_handle` idempotency key only to retry the **same** handle.
-
-### Errors (recover, never block)
-
-| Code | Meaning | Do |
-|------|---------|----|
-| `HANDLE_UNAVAILABLE` | Taken by someone else | Offer `suggested_handles` or another candidate |
-| `HANDLE_ALREADY_CLAIMED` | This borrower already has a handle | Show it, skip claiming |
-| `HANDLE_INVALID_FORMAT` / `HANDLE_ALPHABET` / `HANDLE_MIN_LENGTH` / `HANDLE_MAX_LENGTH` | Bad format (charset / length) | Ask for a valid one (3–30 chars, lowercase `a-z0-9`, `.`/`_` allowed between) |
-| `HANDLE_RESERVED_BLOCKLIST` | Reserved / blocked word | Pick a different handle |
-| `HANDLE_AVAILABILITY_RATE_LIMITED` | Too many availability checks | Back off; claim a `suggested_handles` entry directly |
-
-On any other non-2xx, follow the skill's global failure rule: STOP and report the exact failed route — except a handle failure never blocks onboarding; finish the remaining steps and tell the borrower they can claim a handle later.
+On any non-2xx, follow the skill's global failure rule (STOP and report the exact failed route) — except a handle failure never blocks onboarding: finish the remaining steps and tell the borrower they can claim a handle later via `{SKILLS_BASE}/handle.md`.
 
 
 <a id="hosted-reference-scopes"></a>

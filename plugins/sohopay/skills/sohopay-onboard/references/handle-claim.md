@@ -15,23 +15,8 @@ Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com
 5. **Confirmation STOP** — show the exact handle that will be claimed and wait for an explicit yes. A claim is public and hard to undo, so this is the one allowed chat question in the otherwise no-question turn.
 6. `claim_handle` with the confirmed handle and an `idempotency_key` — `{SKILL:sohopay-idempotency}`.
 
-### Tools
+### Tool mechanics, format rules, and errors
 
-| Tool | Route | Input | Returns | Kind |
-|------|-------|-------|---------|------|
-| `check_handle_availability` | `POST /api/v1/handles/availability` | `{ handle }` | `{ handle, available, reason? }` | read (scoped `handle:claim`, throttled) |
-| `claim_handle` | `POST /api/v1/handles/me/claim` | `{ handle }` (+ `idempotency_key`) | `{ handle, discoverable, claimed_at }` | write (scoped `handle:claim`) |
+The `claim_handle` / `check_handle_availability` contract — routes, input/return shapes, the 3–30-char lowercase `a-z0-9` + `.`/`_` format rules, and the recover-never-block error codes — is owned by `{SKILL:sohopay-handle}`. This onboarding step only orchestrates **when** to run them; that skill is also where a borrower claims or changes a handle any time after onboarding.
 
-**Handle format:** 3–30 characters, lowercase ASCII `a-z0-9` with `.` or `_` as internal separators (must start with a letter/digit, no trailing separator, no two separators in a row). A leading `@` and case/whitespace are normalized server-side; the MCP input only caps raw length at 64, so rely on these rules, not that cap. `check_handle_availability` is throttled — check a few candidates, not a brute-force sweep. Reuse a `claim_handle` idempotency key only to retry the **same** handle.
-
-### Errors (recover, never block)
-
-| Code | Meaning | Do |
-|------|---------|----|
-| `HANDLE_UNAVAILABLE` | Taken by someone else | Offer `suggested_handles` or another candidate |
-| `HANDLE_ALREADY_CLAIMED` | This borrower already has a handle | Show it, skip claiming |
-| `HANDLE_INVALID_FORMAT` / `HANDLE_ALPHABET` / `HANDLE_MIN_LENGTH` / `HANDLE_MAX_LENGTH` | Bad format (charset / length) | Ask for a valid one (3–30 chars, lowercase `a-z0-9`, `.`/`_` allowed between) |
-| `HANDLE_RESERVED_BLOCKLIST` | Reserved / blocked word | Pick a different handle |
-| `HANDLE_AVAILABILITY_RATE_LIMITED` | Too many availability checks | Back off; claim a `suggested_handles` entry directly |
-
-On any other non-2xx, follow the skill's global failure rule: STOP and report the exact failed route — except a handle failure never blocks onboarding; finish the remaining steps and tell the borrower they can claim a handle later.
+On any non-2xx, follow the skill's global failure rule (STOP and report the exact failed route) — except a handle failure never blocks onboarding: finish the remaining steps and tell the borrower they can claim a handle later via `{SKILL:sohopay-handle}`.
