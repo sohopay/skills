@@ -22,10 +22,9 @@ else's @handle. To send value to someone by their @handle, resolve it to a
    normalizes `@alice` / `alice` / ` Alice `). Returns `{ borrower_id,
    display_name, avatar_hash, resolved_at, expires_at }`. **Bind to
    `borrower_id`**, not the handle, and re-resolve after `expires_at`.
-   - `404 NOT_RESOLVABLE` → the handle is not discoverable (auto-assigned
-     handles are private until the owner opts in) or does not exist. Ask the
-     recipient to share their `borrower_id` directly, or to make their handle
-     discoverable.
+   - `404 NOT_RESOLVABLE` → the handle's owner has opted out of discoverability,
+     or the handle does not exist. Ask the recipient to share their
+     `borrower_id` directly, or to make their handle discoverable.
    - `429` → you are resolving too fast; back off.
 2. Use the returned `borrower_id` as the recipient when you send value.
 
@@ -36,10 +35,10 @@ above):
   `{ discoverable }`, the value now in effect. Turns discoverability on or off
   for the ACTING borrower's OWN handle only; it cannot change anyone else's.
   Idempotent: setting the same value again succeeds as a no-op.
-  - Auto-assigned handles start non-discoverable (private), so others get
-    `404 NOT_RESOLVABLE` from `resolve_handle`. Call
-    `set_discoverability { discoverable: true }` to make the borrower's handle
-    resolvable by others; `{ discoverable: false }` hides it again.
+  - Handles are discoverable by default (set at onboarding), so others can
+    resolve them. Call `set_discoverability { discoverable: false }` to opt the
+    borrower's handle out — others then get `404 NOT_RESOLVABLE` from
+    `resolve_handle`; `{ discoverable: true }` opts it back in.
   - Only do this when the borrower wants it; it changes their privacy.
 
 Scopes on the borrower token: `handle:resolve` for `resolve_handle`,
