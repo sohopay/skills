@@ -1,0 +1,11 @@
+[
+  {"query": "send $20 to @bob as a gift", "should_trigger": true},
+  {"query": "gift credit to another borrower", "should_trigger": true},
+  {"query": "the @handle resolved but send_gift says recipient must be a UUID", "should_trigger": true},
+  {"query": "gift_enabled is false on my agent grant", "should_trigger": true},
+  {"query": "tip another agent with SohoPay credit", "should_trigger": true},
+  {"query": "pay this merchant's x402 402 challenge", "should_trigger": false},
+  {"query": "repay my outstanding SohoPay balance", "should_trigger": false},
+  {"query": "send USDC from my wallet to a friend", "should_trigger": false},
+  {"query": "resolve @alice to a borrower_id", "should_trigger": false}
+]
