@@ -11,7 +11,7 @@ metadata:
 
 Execute this checklist in order. Do not write a plan, recap, or load other SohoPay skills until a step names them.
 
-For **staging**, stop and follow **sohopay-setup-staging** (`{SKILL:sohopay-setup-staging}`) — do not mix production and staging hosts.
+For **staging**, first load **sohopay-setup-staging** (`{SKILL:sohopay-setup-staging}`) to pin the staging row, then run this checklist against those staging hosts — do not mix production and staging hosts. If you already arrived here from **sohopay-setup-staging** with the staging row pinned, continue the checklist below; do not loop back.
 
 CRITICAL: **sohopay-mcp-server** is the MCP runtime and **sohopay-backend** is the source of truth. Do not hold borrower private keys. MCP transports signatures only.
 
@@ -25,7 +25,7 @@ Verify identity first: [references/prereqs.md](references/prereqs.md).
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](references/prereqs.md)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](references/sticky-install.md)
-- [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP: `https://mcp.sohopay.xyz`
+- [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: spend-ready onboard in **one turn** — **sohopay-onboard** (`{SKILL:sohopay-onboard}`), then **sohopay-authorize-agent** (`{SKILL:sohopay-authorize-agent}`) immediately after the workload key. Do not wait for the first payment
 - [ ] Report — [references/report.md](references/report.md)

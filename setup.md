@@ -13,7 +13,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Execute this checklist in order. Do not write a plan, recap, or load other SohoPay skills until a step names them.
 
-For **staging**, stop and follow **sohopay-setup-staging** (`{SKILLS_BASE}/setup-staging.md`) — do not mix production and staging hosts.
+For **staging**, first load **sohopay-setup-staging** (`{SKILLS_BASE}/setup-staging.md`) to pin the staging row, then run this checklist against those staging hosts — do not mix production and staging hosts. If you already arrived here from **sohopay-setup-staging** with the staging row pinned, continue the checklist below; do not loop back.
 
 CRITICAL: **sohopay-mcp-server** is the MCP runtime and **sohopay-backend** is the source of truth. Do not hold borrower private keys. MCP transports signatures only.
 
@@ -27,7 +27,7 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](#hosted-reference-prereqs)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
-- [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP: `https://mcp.sohopay.xyz`
+- [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: spend-ready onboard in **one turn** — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`) immediately after the workload key. Do not wait for the first payment
 - [ ] Report — [references/report.md](#hosted-reference-report)
@@ -71,6 +71,8 @@ curl -fsSL {SKILLS_HOST}/skills/v1/SECURITY.md \
 ```
 
 If both fetches fail (non-2xx, HTML, or empty), STOP and report the exact URL and error; suggest support@sohopay.xyz. Do not switch `{SKILLS_HOST}` to GitHub after a successful CDN fetch.
+
+**What this check does — and does not — prove.** Fetching `SECURITY.md` from the same origin that serves these docs is a consistency check, not cryptographic authentication: a compromised or spoofed origin would serve a matching `SECURITY.md` too, so it cannot by itself prove you are talking to SohoPay. Until the signed checksum manifest below ships, treat this as trust-on-first-use — pin to a reviewed commit SHA, prefer an origin the operator already trusts, and escalate to the operator if anything about the host looks off.
 
 Do **not** fetch or clone `sohopay-mcp-server` on the hosted path. That repository is private; a 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check.
 
