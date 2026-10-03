@@ -1,6 +1,6 @@
 # borrower-onboard: handle claim step (SOHO-340)
 
-Status: DRAFT. Blocked by SOHO-339 (sohopay-mcp-server must expose `check_handle_availability` + `claim_handle` and surface handle fields on `register_borrower`). Backend: sohopay-backend#1296. Do not change any shipped `SKILL.md` until SOHO-339 is published in the MCP catalog.
+Status: IMPLEMENTED (2026-10-04). SOHO-339 landed — `check_handle_availability` + `claim_handle` ship in MCP catalog v13 (sohopay-mcp-server#142) and `handle:claim` in `@sohopay/mcp-contract` 0.19.0 (sohopay-backend#1296 / #1299). The skill edits below are now in `plugins/sohopay/skills/sohopay-onboard/SKILL.md` (step 8) + `references/handle-claim.md` + `references/scopes.md` + evals. Kept for history.
 
 ## Target change
 
