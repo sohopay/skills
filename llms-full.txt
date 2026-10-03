@@ -444,10 +444,11 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
-4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**. Store `token_requested_at` + `expires_in`. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
+4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**, `handle:claim`. Store `token_requested_at` + `expires_in`. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
 5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
 6. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
 7. `POST /api/v1/auth/authorization-context` before privileged tools
+8. Handle (optional, soft gate) — only **after** steps 4–6 (never a chat question before the token). If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and let the borrower pick or propose one; for a custom handle, `check_handle_availability` first. Confirm the exact handle (one allowed chat question), then `claim_handle` (write, `idempotency_key`). A handle is optional to transact — declining or a failed claim must **never** block onboarding; the borrower can claim or change one any time via `{SKILLS_BASE}/handle.md`. Ordering + flow: [references/handle-claim.md](#hosted-reference-handle-claim)
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
@@ -456,6 +457,34 @@ Dropped scopes are not fatal — re-request after gates complete. Scope table: [
 ## Hosted references (load only when the skill says to)
 
 Native Agent Skills read these from `references/` on demand. This hosted export inlines them so `curl -fsSL` bootstrap still works.
+
+<a id="hosted-reference-handle-claim"></a>
+
+### Hosted reference: handle-claim.md
+
+## Handle claim (optional, soft gate)
+
+A **@handle** is the public address other agents resolve to send gifts. It is **optional**: a borrower is always addressed by `borrowerId` and can pay, be authorized, and repay without one. A handle only makes the borrower discoverable and resolvable by others. **Never block onboarding on it** — if the borrower declines or a claim fails, finish onboarding and mention they can claim one later.
+
+Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 4); a dropped scope is not fatal — retry after gates, and skip the handle step if it stays absent.
+
+**Ordering (critical):** run the handle step **after** `request_borrower_token` and the workload key, never before them. The borrower-token rule forbids any chat question before the token, and the confirmation below is a chat question. Keep it out of the critical chain (steps 1–7).
+
+### Flow
+
+1. `register_borrower` (step 1) returns `handle` (`null` or an existing handle), `suggested_handles` (ready-to-claim candidates), and `next_action`.
+2. If `handle` is already set — show it, skip claiming.
+3. If `next_action == "claim_handle"` — present `suggested_handles` and let the borrower pick one or propose a custom handle.
+4. Custom handle → `check_handle_availability` first. If unavailable, offer the `suggested_handles` or another candidate. A `suggested_handles` entry can be claimed directly without checking.
+5. **Confirmation STOP** — show the exact handle that will be claimed and wait for an explicit yes. A claim is public and hard to undo, so this is the one allowed chat question in the otherwise no-question turn.
+6. `claim_handle` with the confirmed handle and an `idempotency_key` — `{SKILLS_BASE}/idempotency.md`.
+
+### Tool mechanics, format rules, and errors
+
+The `claim_handle` / `check_handle_availability` contract — routes, input/return shapes, the 3–30-char lowercase `a-z0-9` + `.`/`_` format rules, and the recover-never-block error codes — is owned by `{SKILLS_BASE}/handle.md`. This onboarding step only orchestrates **when** to run them; that skill is also where a borrower claims or changes a handle any time after onboarding.
+
+On any non-2xx, follow the skill's global failure rule (STOP and report the exact failed route) — except a handle failure never blocks onboarding: finish the remaining steps and tell the borrower they can claim a handle later via `{SKILLS_BASE}/handle.md`.
+
 
 <a id="hosted-reference-scopes"></a>
 
@@ -479,6 +508,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | signing:request | ✅ | — (+ 2FA-equiv) |
 | credit:approve | — | ✅ (+ 2FA-equiv) |
 | repayment:execute | ✅ | NOT KYC-gated |
+| handle:claim | — | — (discoverability only; optional soft gate) |
 
 ## MCP tools (via sohopay-mcp-server)
 
@@ -493,6 +523,8 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `request_borrower_token` | Scope-gated token (onboard: include `credit:facility:accept`) |
 | `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
 | `authorize_agent` | Borrower EIP-712 grant — required during onboarding after the workload key |
+| `check_handle_availability` | Check a candidate @handle before claiming (read, scope `handle:claim`) — [references/handle-claim.md](#hosted-reference-handle-claim) |
+| `claim_handle` | Claim the borrower's own @handle (write, scope `handle:claim`, `idempotency_key`) — [references/handle-claim.md](#hosted-reference-handle-claim) |
 
 
 <a id="hosted-reference-whoami"></a>
@@ -675,9 +707,10 @@ else's @handle. To send value to someone by their @handle, resolve it to a
    normalizes `@alice` / `alice` / ` Alice `). Returns `{ borrower_id,
    display_name, avatar_hash, resolved_at, expires_at }`. **Bind to
    `borrower_id`**, not the handle, and re-resolve after `expires_at`.
-   - `404 NOT_RESOLVABLE` → the handle's owner has opted out of discoverability,
-     or the handle does not exist. Ask the recipient to share their
-     `borrower_id` directly, or to make their handle discoverable.
+   - `404 NOT_RESOLVABLE` → the handle does not exist, or its owner has opted
+     out of discoverability. Handles are discoverable by default, so this
+     usually means no such handle. Ask the recipient to share their
+     `borrower_id` directly, or (if it is theirs) to re-enable discoverability.
    - `429` → you are resolving too fast; back off.
 2. Use the returned `borrower_id` as the recipient when you send value.
 
@@ -688,15 +721,41 @@ above):
   `{ discoverable }`, the value now in effect. Turns discoverability on or off
   for the ACTING borrower's OWN handle only; it cannot change anyone else's.
   Idempotent: setting the same value again succeeds as a no-op.
-  - Handles are discoverable by default (set at onboarding), so others can
-    resolve them. Call `set_discoverability { discoverable: false }` to opt the
-    borrower's handle out — others then get `404 NOT_RESOLVABLE` from
-    `resolve_handle`; `{ discoverable: true }` opts it back in.
+  - Handles are discoverable by default (set at claim / onboarding), so others
+    can `resolve_handle` them. Call `set_discoverability { discoverable: false }`
+    to hide the borrower's handle — others then get `404 NOT_RESOLVABLE` — and
+    `{ discoverable: true }` to make it resolvable again.
   - Only do this when the borrower wants it; it changes their privacy.
+
+Separately — claim or check the borrower's OWN handle (also independent of the
+resolve flow; this is where handle claiming lives, during onboarding via
+`{SKILLS_BASE}/borrower-onboard.md` or any time after):
+
+- `check_handle_availability` — input `{ handle }`. Returns
+  `{ handle, available, reason? }` (`handle` normalized; `reason` explains an
+  unavailable or invalid one). Read-only and throttled — check a few
+  candidates, not a brute-force sweep.
+- `claim_handle` — input `{ handle }` (+ `idempotency_key`,
+  `{SKILLS_BASE}/idempotency.md`). Returns `{ handle, discoverable, claimed_at }`
+  — a first claim, discoverable by default. A claim is public and hard to undo,
+  so confirm the exact handle with the borrower before calling. Optional: a
+  borrower is always addressed by `borrower_id` and can transact without a
+  handle; a handle only adds discoverability. `register_borrower` returns
+  `handle: null` + `suggested_handles` + `next_action: "claim_handle"` when the
+  borrower has none — claim a suggestion directly, or a custom handle after
+  `check_handle_availability`.
+  - **Format:** 3–30 chars, lowercase ASCII `a-z0-9` with `.`/`_` as internal
+    separators (start alphanumeric, no trailing or consecutive separators). A
+    leading `@`, case, and whitespace normalize server-side.
+  - Errors recover, never block: `HANDLE_UNAVAILABLE` (taken) → try another;
+    `HANDLE_ALREADY_CLAIMED` → the borrower already has one, show it;
+    `HANDLE_INVALID_FORMAT` / `HANDLE_ALPHABET` / `HANDLE_MIN_LENGTH` /
+    `HANDLE_MAX_LENGTH` → fix the format; `HANDLE_RESERVED_BLOCKLIST` → pick
+    another; availability `429` / rate-limit → back off, claim a suggestion.
 
 Scopes on the borrower token: `handle:resolve` for `resolve_handle`,
 `handle:update` for `set_discoverability` (a lookup scope never implies the
-privacy change).
+privacy change), `handle:claim` for `claim_handle` + `check_handle_availability`.
 
 
 ---

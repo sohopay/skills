@@ -31,13 +31,13 @@
     {
       "name": "borrower-onboard",
       "title": "SohoPay Borrower Onboarding",
-      "description": "Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, and an ACTIVE agent grant. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, or the operator asks to onboard — not for a warm 402 pay or delegated sessions.",
+      "description": "Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, an ACTIVE agent grant, and optionally claim a @handle. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, the operator asks to onboard or to claim/check a handle — not for a warm 402 pay or delegated sessions.",
       "url": "https://agents.sohopay.xyz/skills/v1/borrower-onboard.md"
     },
     {
       "name": "handle",
       "title": "SohoPay Handles",
-      "description": "Resolve a recipient @handle to a borrower_id, and turn the borrower's own handle discoverability on or off. Use when you have an @handle and need the borrower_id, when a borrower asks about their handle, or when they want their handle to be findable by others or hidden. Not for sending value itself, or for renaming or releasing a handle.",
+      "description": "Resolve a recipient @handle to a borrower_id, claim or check the borrower's own @handle, and turn their handle discoverability on or off. Use when you have an @handle and need the borrower_id, when a borrower wants to claim or check availability of a handle, asks about their handle, or wants it findable by others or hidden. Not for sending value itself, or for renaming or releasing an existing handle.",
       "url": "https://agents.sohopay.xyz/skills/v1/handle.md"
     },
     {

@@ -4,6 +4,8 @@
   {"query": "resolve_handle returned 404 NOT_RESOLVABLE for this handle", "should_trigger": true},
   {"query": "my handle isn't resolvable, make it discoverable", "should_trigger": true},
   {"query": "hide my own handle so others can't find it (set_discoverability false)", "should_trigger": true},
+  {"query": "claim my own @handle", "should_trigger": true},
+  {"query": "is the handle @alice available to claim", "should_trigger": true},
   {"query": "send value to @alice", "should_trigger": false},
   {"query": "rename my handle", "should_trigger": false},
   {"query": "create a Stripe checkout session", "should_trigger": false},
