@@ -19,6 +19,8 @@ curl -fsSL {SKILLS_HOST}/skills/v1/SECURITY.md \
 
 If both fetches fail (non-2xx, HTML, or empty), STOP and report the exact URL and error; suggest support@sohopay.xyz. Do not switch `{SKILLS_HOST}` to GitHub after a successful CDN fetch.
 
+**What this check does — and does not — prove.** Fetching `SECURITY.md` from the same origin that serves these docs is a consistency check, not cryptographic authentication: a compromised or spoofed origin would serve a matching `SECURITY.md` too, so it cannot by itself prove you are talking to SohoPay. Until the signed checksum manifest below ships, treat this as trust-on-first-use — pin to a reviewed commit SHA, prefer an origin the operator already trusts, and escalate to the operator if anything about the host looks off.
+
 Do **not** fetch or clone `sohopay-mcp-server` on the hosted path. That repository is private; a 404 from https://github.com/sohopay/sohopay-mcp-server is expected and is **not** a failed check.
 
 For reproducibility, pin fetches to a commit SHA you have reviewed rather than a mutable branch, e.g. `https://raw.githubusercontent.com/sohopay/skills/<commit-sha>/setup.md`. A signed checksum manifest is planned; until it ships, pin to a reviewed SHA. Questions, or something that looks wrong: support@sohopay.xyz.
