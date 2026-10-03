@@ -1431,7 +1431,7 @@ Need `gift:send` on the borrower token. If it is missing, call `request_borrower
 ```text
 1. Recipient — if the operator gave an @handle: resolve_handle → recipient_borrower_id (UUID v4).
    If they gave a UUID, use it. Never send the handle string.
-2. Grant — get_agent_authorization: read gift_enabled, max_per_payment, daily_limit, daily_spent
+2. Grant — get_agent_authorization: gift_enabled must be true and status ACTIVE (amount caps are server-side)
 3. send_gift — fresh UUID v4 idempotency_key, with borrower_id + operational_agent_id
 4. Report — gift_id, amount, recipient, remaining headroom
 ```
@@ -1448,24 +1448,32 @@ Need `gift:send` on the borrower token. If it is missing, call `request_borrower
 
 ## Phase 2 — Authorization & capability check
 
-Read `get_agent_authorization` (or the authorization block on `get_context`). Grant limits are **USDC base units, 6 decimals** — compare against `amount_usd × 1_000_000`.
+Read `get_agent_authorization` (or the authorization block on `get_context`). Only two things on the grant gate a gift — the binary gift permission and the grant being live:
 
 | Field | Meaning |
 |-------|---------|
 | `gift_enabled` | Borrower signed permission to gift. Grants minted before the field existed read `false`; a gift permission is never inferred. |
-| `max_per_payment` | Per-gift cap |
-| `daily_limit` / `daily_spent` | Rolling daily gifting cap and what is already used |
-| `status` | Must be `ACTIVE` |
-| `authorization_version` | Echoed back in the gift response |
+| `status` | Must be `ACTIVE` (and the grant inside its validity window). |
+| `authorization_version` | Echoed back in the gift response. |
 
 - `gift_enabled: false` → **STOP** and present the `authorize_agent` consent URL so the operator can
-  sign a grant with gifting enabled (`allow_gifts: true`, caps that cover `amount_usd`). Open the
-  page verbatim; do not rebuild the URL, do not end the turn on "please open this page".
-- `amount_usd × 1e6 > max_per_payment` or `daily_spent + amount_usd × 1e6 > daily_limit` → **STOP.**
-  Report the cap and the shortfall, and offer the `authorize_agent` re-grant with larger terms. Do not
-  split the gift into smaller sends to fit under a cap — that is deliberate cap evasion.
+  sign a grant with gifting enabled (`allow_gifts: true`). Open the page verbatim; do not rebuild the
+  URL, do not end the turn on "please open this page".
 - Grant not `ACTIVE` (`PENDING`, `REVOKED`, `SUPERSEDED`, `EXPIRED`) → recover with
   `{SKILLS_BASE}/authorize-agent.md` first, then continue in the same turn.
+
+**Do not pre-flight the gift amount against `max_per_payment` / `daily_limit` / `daily_spent`.** Those are
+the agent's *payment* limits (USDC base units, 6 decimals) and do **not** gate gifts — the gift path reads
+only `gift_enabled` from the grant. A gift's size is bounded instead by the sender's available credit, the
+protocol exposure ceiling, and SohoPay's gifting caps (per-sender outstanding, per-pair-per-day, hourly
+velocity, minimum sender account age) — all enforced server-side and **not** visible on the grant, so there
+is nothing to compute up front and no re-grant that raises them. Send the gift and let the backend decide:
+
+- `GIFT_INSUFFICIENT_CREDIT` → the amount exceeds available credit (or the exposure ceiling). Report it
+  and offer a smaller amount; a larger grant does not help.
+- `GIFT_CAP_EXCEEDED` (`details.cap` names the limit hit) → a gifting cap was reached. Report the named
+  cap. Do **not** split the gift into smaller sends to slip under a cap — that is deliberate cap evasion.
+- `AGENT_GIFT_NOT_PERMITTED` → gifting is off on the grant; take the `gift_enabled: false` path above.
 
 ## Phase 3 — Execution
 
