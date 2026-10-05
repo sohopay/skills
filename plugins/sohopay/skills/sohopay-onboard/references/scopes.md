@@ -16,7 +16,7 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | signing:request | ✅ | — (+ 2FA-equiv) |
 | credit:approve | — | ✅ (+ 2FA-equiv) |
 | repayment:execute | ✅ | NOT KYC-gated |
-| handle:claim | — | — (discoverability only; optional soft gate) |
+| handle:claim | — | — (discoverability only, but a **required** onboarding gate) |
 
 ## MCP tools (via sohopay-mcp-server)
 
