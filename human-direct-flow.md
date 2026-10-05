@@ -19,7 +19,7 @@ On a server advertising catalog v8+, open with `get_context` (`borrower_id` + cr
 
 Load a sibling **only when that step is next**:
 
-- [ ] Identity / register / wallet proof / token / workload key / agent grant — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn
+- [ ] Identity / register / wallet proof / token / workload key / agent grant / **claimed @handle** — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn. The handle is a required gate: a borrower without one is **not onboarded**
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
 - [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
 - [ ] Repay / pay back SohoPay credit — **sohopay-repay** (`{SKILLS_BASE}/repay.md`)

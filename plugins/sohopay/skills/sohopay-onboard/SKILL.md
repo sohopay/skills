@@ -1,7 +1,7 @@
 ---
 name: sohopay-onboard
 description: >
-  Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, an ACTIVE agent grant, and optionally claim a @handle. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, the operator asks to onboard or to claim/check a handle — not for a warm 402 pay or delegated sessions.
+  Make this host spend-ready: register the terminal, wallet proof, scoped token, Protocol V2 workload key, an ACTIVE agent grant, and a claimed @handle. Use when whoami shows no borrower, wallet_proof is missing, dropped_scopes, X402_AGENT_KEY_NOT_REGISTERED, the operator asks to onboard or to claim/check a handle — not for a warm 402 pay or delegated sessions.
 license: Apache-2.0
 metadata:
   hosted_name: borrower-onboard
@@ -23,6 +23,6 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 5. Protocol V2 workload key — [references/workload-key.md](references/workload-key.md) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
 6. Agent grant — `{SKILL:sohopay-authorize-agent}` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
 7. `POST /api/v1/auth/authorization-context` before privileged tools
-8. Handle (optional, soft gate) — only **after** steps 4–6 (never a chat question before the token). If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and let the borrower pick or propose one; for a custom handle, `check_handle_availability` first. Confirm the exact handle (one allowed chat question), then `claim_handle` (write, `idempotency_key`). A handle is optional to transact — declining or a failed claim must **never** block onboarding; the borrower can claim or change one any time via `{SKILL:sohopay-handle}`. Ordering + flow: [references/handle-claim.md](references/handle-claim.md)
+8. Handle (**required gate**) — only **after** steps 4–6 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](references/handle-claim.md)
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](references/scopes.md). Operate: `{SKILL:sohopay-human-direct}`. Warm pay after the grant is ACTIVE: `{SKILL:sohopay-x402}`.
