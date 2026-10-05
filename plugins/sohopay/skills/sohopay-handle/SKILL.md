@@ -54,16 +54,20 @@ resolve flow; this is where handle claiming lives, during onboarding via
 - `claim_handle` — input `{ handle }` (+ `idempotency_key`,
   `{SKILL:sohopay-idempotency}`). Returns `{ handle, discoverable, claimed_at }`
   — a first claim, discoverable by default. A claim is public and hard to undo,
-  so confirm the exact handle with the borrower before calling. Optional: a
-  borrower is always addressed by `borrower_id` and can transact without a
-  handle; a handle only adds discoverability. `register_borrower` returns
-  `handle: null` + `suggested_handles` + `next_action: "claim_handle"` when the
-  borrower has none — claim a suggestion directly, or a custom handle after
-  `check_handle_availability`.
+  so confirm the exact handle with the borrower before calling. A borrower is
+  still addressed by `borrower_id` for every payment, so a handle only adds
+  discoverability — but **claiming one is a required onboarding gate**
+  (`{SKILL:sohopay-onboard}`): this skill owns the mechanics, that skill owns the
+  gate. `register_borrower` returns `handle: null` + `suggested_handles` +
+  `next_action: "claim_handle"` when the borrower has none — claim a suggestion
+  directly, or a custom handle after `check_handle_availability`.
+  - **Never claim without an explicit yes on the exact string.** The gate requires
+    the borrower's choice, not the agent's; a claim is public and hard to undo.
   - **Format:** 3–30 chars, lowercase ASCII `a-z0-9` with `.`/`_` as internal
     separators (start alphanumeric, no trailing or consecutive separators). A
     leading `@`, case, and whitespace normalize server-side.
-  - Errors recover, never block: `HANDLE_UNAVAILABLE` (taken) → try another;
+  - Errors are recoverable — offer the next candidate: `HANDLE_UNAVAILABLE`
+    (taken) → try another;
     `HANDLE_ALREADY_CLAIMED` → the borrower already has one, show it;
     `HANDLE_INVALID_FORMAT` / `HANDLE_ALPHABET` / `HANDLE_MIN_LENGTH` /
     `HANDLE_MAX_LENGTH` → fix the format; `HANDLE_RESERVED_BLOCKLIST` → pick
