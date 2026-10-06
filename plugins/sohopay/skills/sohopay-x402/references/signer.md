@@ -32,12 +32,12 @@ Write the **entire** `prepare_x402_payment` response to a private temp dir and s
 
 ```
 dir=$(mktemp -d); chmod 700 "$dir"
-# prepare wrote its response straight to disk as $dir/prep.json (curl -o), byte-for-byte.
+# prepare wrote its response straight to disk as $dir/prep.json (curl -fsS -o), byte-for-byte.
 <signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt"
 ```
 
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
-  written by the `prepare` HTTP call with `curl … -o "$dir/prep.json"`. If the host must use a
+  written by the `prepare` HTTP call with `curl -fsS … -o "$dir/prep.json"`. If the host must use a
   file-write tool instead, it writes the response **byte-for-byte as received — no
   re-serialization**. **Never** interpolate the JSON into a shell string (a quoted heredoc
   `<<'SOHOPAY_EOF'` is a shell-only last resort).
