@@ -86,7 +86,7 @@ Do **not** hand-roll the signature or the header. Resolve a signer and run one c
   enters `argv`/`stdin`.
 - Assert `header_name === "PAYMENT-SIGNATURE"`; cross-check the signer's `payment_id` +
   `agent_key_jkt` against the prepare `voucher.paymentId` + `voucher.agentKeyJkt` (mismatch →
-  stop, no retry). `header_value` is opaque; retry with `curl -H @<hdrfile>`.
+  stop, no retry). `header_value` is opaque; retry with `curl -fsS -H @<hdrfile>`.
 - Any nonzero exit / malformed output → surface the signer's code and stop before the retry.
   On a lapsed voucher or terminal retry failure, **re-prepare** (new `payment_id`) — never
   re-sign a stale envelope.
