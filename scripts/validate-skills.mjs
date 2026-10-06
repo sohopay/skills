@@ -318,15 +318,27 @@ function checkSp5Invariants() {
 
   // #3 — every `voucher sign` invocation in x402 docs is file-based (no stdin / inline JSON),
   // checked on logical lines (backslash continuations joined); at least one complete call must exist.
+  // The stdin/inline ban applies to BOTH --input (the prepare response) AND --key (the private
+  // key): the key must be an opaque file path, never argv/stdin — so `--key -` is rejected too.
   const x402Files = [pv, join(SKILLS_DIR, 'sohopay-x402/references/signer.md'), join(SKILLS_DIR, 'sohopay-x402/SKILL.md')];
   const REQUIRED_FLAGS = ['--key', '--input', '--write-header'];
+  // `<flag> -` | `<flag>=-` | `<flag> "-"` | `<flag> /dev/stdin` | `<flag> {`/`"{` (inline JSON).
+  const stdinOrInline = (flag) =>
+    new RegExp(`${flag}(\\s+|=)(-(\\s|$|['"])|['"]-['"]|/dev/stdin|['"]?\\{)`);
   let completeInvocation = false;
   for (const f of x402Files) {
     if (!existsSync(f)) continue;
     const logical = readFileSync(f, 'utf8').replace(/\\\r?\n/g, ' ').split('\n');
     for (const line of logical) {
       if (!/\bvoucher sign\b/.test(line)) continue;
-      if (/--input(\s+|=)(-(\s|$|['"])|['"]-['"]|\/dev\/stdin|['"]?\{)/.test(line) || /\|\s*\S*voucher sign/.test(line) || /<<</.test(line)) {
+      // Reject stdin/inline for EITHER sensitive input, a pipe that feeds voucher sign
+      // (through any leading tokens, e.g. `cat key | <signer> voucher sign`), or a here-string.
+      if (
+        stdinOrInline('--input').test(line) ||
+        stdinOrInline('--key').test(line) ||
+        /\|\s*(?:\S+\s+)*voucher sign/.test(line) ||
+        /<<</.test(line)
+      ) {
         fail(`${f}: voucher sign must be file-based (no stdin, inline JSON, pipe or here-string): ${line.trim()}`);
       }
       if (/voucher sign --envelope/.test(line)) {
