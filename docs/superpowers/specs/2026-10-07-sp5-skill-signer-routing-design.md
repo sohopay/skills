@@ -113,6 +113,24 @@ A candidate **answers** iff: it runs `capabilities`, exits 0, stdout parses as J
 `signer_protocol === "sohopay-signer/1"`. If `capabilities` reports embedded conformance
 vectors, run `verify-vectors` **once** and require exit 0 before trusting the candidate.
 
+**Header-format / version pin.** The curl-ready `--write-header` line format (`<name>:
+<value>\n`) ships in `@sohopay/agent-signer` **0.2.0** alongside `--envelope`. The package is
+**private and was never published**, and `--write-header` is new in the Amendment A change,
+so the brief raw-value form — which existed only between two in-branch commits — was **never
+released**. `sohopay-signer/1` therefore **defines** `--write-header` as the curl-line
+format; any `/1` signer emits it. As belt-and-suspenders for the one implementation that
+briefly had an unreleased build, when `implementation === "@sohopay/agent-signer"` the skill
+additionally requires `implementation_version >= 0.2.0` (from `capabilities`); a lower
+version is a **miss**. (A pre-Amendment-A build has no `--envelope` at all, so the
+`voucher sign --envelope` call fails loudly — exit 2 — rather than emitting a malformed
+header.)
+
+**`verify-vectors`/`capabilities` cost.** Both run in-process and complete sub-second on a
+resolved local signer, so they fit inside the 10 s per-candidate budget. The only thing that
+can approach 10 s is a **cold `npx` download** of the package — which is moot until SP3
+publishes `@sohopay/agent-signer` (until then resolution is `$SOHOPAY_SIGNER` / `PATH`); SP3
+revisits the budget when it enables the `npx` path.
+
 If no candidate answers → **`SIGNER_UNAVAILABLE`**, STOP, surface to the operator. **Never**
 hand-sign, WebSearch, or install crypto libraries as a fallback.
 
@@ -254,10 +272,45 @@ violation:
   `plugins/sohopay/skills/sohopay-x402/references/signer.md`.
 - Run `npm run build` (regenerates root `*.md`, `index.json`, `llms-full.txt`) then
   `npm run validate` (must pass the new invariants + existing frontmatter/link/secret rules).
-- **Evals:** SP5 edits are **body-only** (SKILL.md body pointer + references); the
-  `sohopay-x402` skill `description` is not changed, so **no eval changes are required**. If
-  a later change does touch the description, update `evals/sohopay-x402/trigger-queries.json`.
+- **Triggering evals:** the `sohopay-x402` `description` is unchanged, so
+  `evals/sohopay-x402/trigger-queries.json` (a *triggering*-only harness — does the skill
+  fire for a query) needs **no change**.
+- **Behavioral invariants (required).** SP5 changes behavior materially, and those changes
+  must be enforced, not left as prose. Two layers:
+  - **Static (in-repo, mechanical) — the three CI invariants** below. These prevent the
+    doc-level failure modes outright: the agent cannot copy a crypto recipe that the grep
+    guarantees is absent, cannot use a non-file-based `voucher sign`, and cannot follow a
+    dangling recipe link.
+  - **Runtime behavioral cases** — the repo's eval harness is **triggering-only**, so these
+    agent-execution assertions are captured as committed behavioral-eval fixtures
+    (`evals/sohopay-x402/behavioral-cases.*`) for the multi-host execution harness (SP6) to
+    run, **not** left in prose:
+    1. **No signer →** the agent fails closed with `SIGNER_UNAVAILABLE` and does **not**
+       hand-sign, import a crypto lib, or write signing code.
+    2. **Key opacity —** the agent never reads/`cat`s/parses `secret.json`; the key never
+       appears in any tool input.
+    3. **Header opacity —** the retry uses `curl -H @<hdrfile>`; `header_value` never appears
+       in model output or `argv`.
+    4. **Cross-check mismatch —** a mismatched `payment_id` or `agent_key_jkt` stops the flow
+       with no retry.
+    5. **Sequencing —** no sign call occurs before `consent_ok`.
+  - **Open fork (see §Decision below):** whether SP5 also builds a minimal behavioral runner
+    for cases 1–5 now, or commits them as fixtures and defers *execution* to SP6.
+- **Merge order (strict).** The SP5 skill change **must not ship ahead of a signer that
+  satisfies it.** Required order: (1) `@sohopay/signer-vectors@0.2.0` published (done); (2)
+  signer PR #2 (`voucher sign --envelope` + curl-line `--write-header`, `@sohopay/agent-signer@0.2.0`)
+  **merged and a `/1` signer installable**; (3) **then** the SP5 skill change merges. A skill
+  that routes to `voucher sign --envelope` before such a signer exists would fail every pay.
 - Work in the parked worktree `skills-wt-signer-sdk`, branch `feat/signer-sdk-migration`.
+
+### Decision needed before `writing-plans`
+
+The five runtime behavioral cases cannot run in the current triggering-only harness. Either
+(A) SP5 builds a minimal behavioral/execution eval runner for cases 1–5 (larger SP5), or
+(B) SP5 commits cases 1–5 as structured fixtures + maximizes the static CI coverage, and the
+multi-host execution harness (SP6) runs them. Recommended: **B** — keeps SP5 a focused
+routing change, and the three static invariants already give mechanical prevention for the
+doc-level failure modes today.
 
 ## Testing
 
