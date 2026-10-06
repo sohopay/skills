@@ -19,26 +19,31 @@ Try these in order; use the first that **answers**:
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities` exits 0, its
 stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
-reports embedded vectors, run `<signer> verify-vectors` once and require exit 0. When
-`implementation` is `@sohopay/agent-signer`, also require `implementation_version >= 0.2.0`
-(the version that emits the curl-ready header line).
+reports embedded vectors, run `<signer> verify-vectors` once and require exit 0 — a
+**nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
+is `@sohopay/agent-signer`, also require `implementation_version >= 0.2.0` (the version that
+emits the curl-ready header line).
 
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
 
 ### Sign the voucher (one call)
 
-Write the **entire** `prepare_x402_payment` response to a private temp dir and sign it:
+Call `prepare_x402_payment` (carrying the borrower token and `Idempotency-Key` header; see
+the prepare recipe in `{SKILL:sohopay-x402}` for details), write its response to a
+private temp dir, then invoke the signer:
 
 ```
 dir=$(mktemp -d); chmod 700 "$dir"
-# prepare wrote its response straight to disk as $dir/prep.json (curl -fsS -o), byte-for-byte.
+umask 077
+# prepare_x402_payment HTTP call itself, write response straight to disk byte-for-byte.
+curl -fsS … -o "$dir/prep.json" {MERCHANT_BASE_URL}/api/v1/prepare_x402_payment
 <signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt"
 ```
 
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
-  written by the `prepare` HTTP call with `curl -fsS … -o "$dir/prep.json"`. If the host must use a
-  file-write tool instead, it writes the response **byte-for-byte as received — no
+  written byte-for-byte as received from the prepare call. If the host must use a file-write
+  tool instead of curl, it writes the response **byte-for-byte as received — no
   re-serialization**. **Never** interpolate the JSON into a shell string (a quoted heredoc
   `<<'SOHOPAY_EOF'` is a shell-only last resort).
 - `--key` is the **opaque** canonical key path onboarding wrote
@@ -60,10 +65,11 @@ The signer prints JSON on stdout with `signer_protocol`, `payment_id`, `agent_ke
    replayable credential until expiry). Retry the merchant with the header **file**:
 
    ```
-   curl -fsS -H @"$dir/hdr.txt" {MERCHANT_URL}
+   curl -fsS -H @"$dir/hdr.txt" {MERCHANT_BASE_URL}
    ```
-4. After the retry resolves (success **or** terminal failure), delete the temp dir:
-   `rm -rf "$dir"`.
+4. **On any exit from this flow** (success, cross-check mismatch stop, or signer error),
+   delete the temp dir: `rm -rf "$dir"`. Both `prep.json` and `hdr.txt` must never be left
+   on disk.
 
 ### If the signer fails
 
