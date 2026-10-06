@@ -294,8 +294,8 @@ violation:
     4. **Cross-check mismatch —** a mismatched `payment_id` or `agent_key_jkt` stops the flow
        with no retry.
     5. **Sequencing —** no sign call occurs before `consent_ok`.
-  - **Open fork (see §Decision below):** whether SP5 also builds a minimal behavioral runner
-    for cases 1–5 now, or commits them as fixtures and defers *execution* to SP6.
+  - **Decided:** SP5 commits cases 1–5 as fixtures + the static CI invariants; the
+    behavioral *runner* that executes them is **SP6's** (multi-host execution harness).
 - **Merge order (strict).** The SP5 skill change **must not ship ahead of a signer that
   satisfies it.** Required order: (1) `@sohopay/signer-vectors@0.2.0` published (done); (2)
   signer PR #2 (`voucher sign --envelope` + curl-line `--write-header`, `@sohopay/agent-signer@0.2.0`)
@@ -303,14 +303,14 @@ violation:
   that routes to `voucher sign --envelope` before such a signer exists would fail every pay.
 - Work in the parked worktree `skills-wt-signer-sdk`, branch `feat/signer-sdk-migration`.
 
-### Decision needed before `writing-plans`
+### Decision (locked)
 
-The five runtime behavioral cases cannot run in the current triggering-only harness. Either
-(A) SP5 builds a minimal behavioral/execution eval runner for cases 1–5 (larger SP5), or
-(B) SP5 commits cases 1–5 as structured fixtures + maximizes the static CI coverage, and the
-multi-host execution harness (SP6) runs them. Recommended: **B** — keeps SP5 a focused
-routing change, and the three static invariants already give mechanical prevention for the
-doc-level failure modes today.
+The five runtime behavioral cases cannot run in the current triggering-only harness.
+**Decided: option B** — SP5 commits cases 1–5 as structured fixtures
+(`evals/sohopay-x402/behavioral-cases.*`) and maximizes the static CI coverage; the
+multi-host execution harness (SP6) runs them. This keeps SP5 a focused routing change, and
+the three static invariants already give mechanical prevention for the doc-level failure
+modes today.
 
 ## Testing
 
