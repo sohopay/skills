@@ -26,7 +26,7 @@ Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat h
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
-Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key ~/.agents/sohopay-agent-workload/secret.json; copy PAYMENT-SIGNATURE and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
+Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key ~/.agents/sohopay-agent-workload/secret.json; use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent

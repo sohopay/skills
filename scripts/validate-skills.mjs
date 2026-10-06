@@ -299,22 +299,27 @@ function checkSp5Invariants() {
     }
   }
 
-  // #3 — every `voucher sign` invocation in x402 docs is file-based (no stdin / inline JSON).
+  // #3 — every `voucher sign` invocation in x402 docs is file-based (no stdin / inline JSON),
+  // checked on logical lines (backslash continuations joined); at least one complete call must exist.
   const x402Files = [pv, join(SKILLS_DIR, 'sohopay-x402/references/signer.md'), join(SKILLS_DIR, 'sohopay-x402/SKILL.md')];
+  const REQUIRED_FLAGS = ['--key', '--input', '--write-header'];
+  let completeInvocation = false;
   for (const f of x402Files) {
     if (!existsSync(f)) continue;
-    for (const line of readFileSync(f, 'utf8').split('\n')) {
+    const logical = readFileSync(f, 'utf8').replace(/\\\r?\n/g, ' ').split('\n');
+    for (const line of logical) {
       if (!/\bvoucher sign\b/.test(line)) continue;
-      if (/--input\s+-(\s|$)/.test(line) || /\|\s*\S*voucher sign/.test(line)) {
-        fail(`${f}: voucher sign must be file-based (no '--input -' or piped JSON): ${line.trim()}`);
+      if (/--input(\s+|=)(-(\s|$|['"])|['"]-['"]|\/dev\/stdin|['"]?\{)/.test(line) || /\|\s*\S*voucher sign/.test(line) || /<<</.test(line)) {
+        fail(`${f}: voucher sign must be file-based (no stdin, inline JSON, pipe or here-string): ${line.trim()}`);
       }
       if (/voucher sign --envelope/.test(line)) {
-        for (const flag of ['--key', '--input', '--write-header']) {
-          if (!line.includes(flag)) fail(`${f}: 'voucher sign --envelope' line missing ${flag}: ${line.trim()}`);
-        }
+        const missing = REQUIRED_FLAGS.filter((flag) => !line.includes(flag));
+        for (const flag of missing) fail(`${f}: 'voucher sign --envelope' line missing ${flag}: ${line.trim()}`);
+        if (missing.length === 0) completeInvocation = true;
       }
     }
   }
+  if (!completeInvocation) fail('SP5: no complete voucher sign --envelope --key --input --write-header invocation found in x402 docs');
 }
 checkSp5Invariants();
 
