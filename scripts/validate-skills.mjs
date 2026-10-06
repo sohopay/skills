@@ -274,5 +274,49 @@ for (const dirName of dirs) {
   }
 }
 
+// ── SP5 invariants: the x402 voucher sign step routes to the signer ──────────
+function checkSp5Invariants() {
+  const pv = join(SKILLS_DIR, 'sohopay-x402/references/prepare-and-voucher.md');
+  if (!existsSync(pv)) { fail('sohopay-x402/references/prepare-and-voucher.md missing'); return; }
+  const pvRaw = readFileSync(pv, 'utf8');
+
+  // #1 — no hand-crypto recipe in the hot-path file (scoped to this file only).
+  const FORBIDDEN_CRYPTO = [/Ed25519/i, /\bcanonicalize\b/i, /@noble/i, /private_key/i, /base64url/i, /\bJCS\b/];
+  for (const re of FORBIDDEN_CRYPTO) {
+    if (re.test(pvRaw)) fail(`prepare-and-voucher.md contains forbidden crypto token ${re} (route to the signer, do not hand-roll)`);
+  }
+
+  // #2 — no skill file links to the removed "Protocol V2 sign recipe" anchor.
+  const anchorRe = /#protocol-v2-sign-recipe[\w-]*/i;
+  for (const dirName of dirs) {
+    const dir = join(SKILLS_DIR, dirName);
+    const files = [join(dir, 'SKILL.md')];
+    const refs = join(dir, 'references');
+    if (existsSync(refs)) for (const f of readdirSync(refs).filter((n) => n.endsWith('.md'))) files.push(join(refs, f));
+    for (const f of files) {
+      if (!existsSync(f)) continue;
+      if (anchorRe.test(readFileSync(f, 'utf8'))) fail(`${f} links to the removed "Protocol V2 sign recipe" anchor`);
+    }
+  }
+
+  // #3 — every `voucher sign` invocation in x402 docs is file-based (no stdin / inline JSON).
+  const x402Files = [pv, join(SKILLS_DIR, 'sohopay-x402/references/signer.md'), join(SKILLS_DIR, 'sohopay-x402/SKILL.md')];
+  for (const f of x402Files) {
+    if (!existsSync(f)) continue;
+    for (const line of readFileSync(f, 'utf8').split('\n')) {
+      if (!/\bvoucher sign\b/.test(line)) continue;
+      if (/--input\s+-(\s|$)/.test(line) || /\|\s*\S*voucher sign/.test(line)) {
+        fail(`${f}: voucher sign must be file-based (no '--input -' or piped JSON): ${line.trim()}`);
+      }
+      if (/voucher sign --envelope/.test(line)) {
+        for (const flag of ['--key', '--input', '--write-header']) {
+          if (!line.includes(flag)) fail(`${f}: 'voucher sign --envelope' line missing ${flag}: ${line.trim()}`);
+        }
+      }
+    }
+  }
+}
+checkSp5Invariants();
+
 if (failed) process.exit(1);
 console.log('All skill validations passed.');
