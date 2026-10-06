@@ -272,6 +272,22 @@ for (const dirName of dirs) {
       fail(`evals/${dirName}/scenarios.json is not valid JSON`);
     }
   }
+
+  const behavioralPath = join(ROOT, 'evals', dirName, 'behavioral-cases.json');
+  if (existsSync(behavioralPath)) {
+    try {
+      const cases = JSON.parse(readFileSync(behavioralPath, 'utf8'));
+      if (!Array.isArray(cases) || cases.length < 1) {
+        fail(`evals/${dirName}/behavioral-cases.json must be a non-empty array`);
+      } else if (!cases.every((c) => typeof c.id === 'string' && typeof c.given === 'string' && typeof c.expect === 'string')) {
+        fail(`evals/${dirName}/behavioral-cases.json entries must have id, given, expect (strings)`);
+      } else {
+        pass(`evals/${dirName}/behavioral-cases.json`);
+      }
+    } catch {
+      fail(`evals/${dirName}/behavioral-cases.json is not valid JSON`);
+    }
+  }
 }
 
 // ── SP5 invariants: the x402 voucher sign step routes to the signer ──────────
