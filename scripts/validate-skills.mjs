@@ -272,7 +272,85 @@ for (const dirName of dirs) {
       fail(`evals/${dirName}/scenarios.json is not valid JSON`);
     }
   }
+
+  const behavioralPath = join(ROOT, 'evals', dirName, 'behavioral-cases.json');
+  if (existsSync(behavioralPath)) {
+    try {
+      const cases = JSON.parse(readFileSync(behavioralPath, 'utf8'));
+      if (!Array.isArray(cases) || cases.length < 1) {
+        fail(`evals/${dirName}/behavioral-cases.json must be a non-empty array`);
+      } else if (!cases.every((c) => typeof c.id === 'string' && typeof c.given === 'string' && typeof c.expect === 'string')) {
+        fail(`evals/${dirName}/behavioral-cases.json entries must have id, given, expect (strings)`);
+      } else {
+        pass(`evals/${dirName}/behavioral-cases.json`);
+      }
+    } catch {
+      fail(`evals/${dirName}/behavioral-cases.json is not valid JSON`);
+    }
+  }
 }
+
+// ── SP5 invariants: the x402 voucher sign step routes to the signer ──────────
+function checkSp5Invariants() {
+  const pv = join(SKILLS_DIR, 'sohopay-x402/references/prepare-and-voucher.md');
+  if (!existsSync(pv)) { fail('sohopay-x402/references/prepare-and-voucher.md missing'); return; }
+  const pvRaw = readFileSync(pv, 'utf8');
+
+  // #1 — no hand-crypto recipe in the hot-path file (scoped to this file only).
+  const FORBIDDEN_CRYPTO = [/Ed25519/i, /\bcanonicalize\b/i, /@noble/i, /private_key/i, /base64url/i, /\bJCS\b/];
+  for (const re of FORBIDDEN_CRYPTO) {
+    if (re.test(pvRaw)) fail(`prepare-and-voucher.md contains forbidden crypto token ${re} (route to the signer, do not hand-roll)`);
+  }
+
+  // #2 — no skill file links to the removed "Protocol V2 sign recipe" anchor.
+  // Also flag the prose phrase (the form that actually occurred), not just the anchor.
+  const anchorRe = /#protocol-v2-sign-recipe[\w-]*|Protocol V2 sign recipe/i;
+  for (const dirName of dirs) {
+    const dir = join(SKILLS_DIR, dirName);
+    const files = [join(dir, 'SKILL.md')];
+    const refs = join(dir, 'references');
+    if (existsSync(refs)) for (const f of readdirSync(refs).filter((n) => n.endsWith('.md'))) files.push(join(refs, f));
+    for (const f of files) {
+      if (!existsSync(f)) continue;
+      if (anchorRe.test(readFileSync(f, 'utf8'))) fail(`${f} references the removed "Protocol V2 sign recipe" (anchor or prose)`);
+    }
+  }
+
+  // #3 — every `voucher sign` invocation in x402 docs is file-based (no stdin / inline JSON),
+  // checked on logical lines (backslash continuations joined); at least one complete call must exist.
+  // The stdin/inline ban applies to BOTH --input (the prepare response) AND --key (the private
+  // key): the key must be an opaque file path, never argv/stdin — so `--key -` is rejected too.
+  const x402Files = [pv, join(SKILLS_DIR, 'sohopay-x402/references/signer.md'), join(SKILLS_DIR, 'sohopay-x402/SKILL.md')];
+  const REQUIRED_FLAGS = ['--key', '--input', '--write-header'];
+  // `<flag> -` | `<flag>=-` | `<flag> "-"` | `<flag> /dev/stdin` | `<flag> {`/`"{` (inline JSON).
+  const stdinOrInline = (flag) =>
+    new RegExp(`${flag}(\\s+|=)(-(\\s|$|['"])|['"]-['"]|/dev/stdin|['"]?\\{)`);
+  let completeInvocation = false;
+  for (const f of x402Files) {
+    if (!existsSync(f)) continue;
+    const logical = readFileSync(f, 'utf8').replace(/\\\r?\n/g, ' ').split('\n');
+    for (const line of logical) {
+      if (!/\bvoucher sign\b/.test(line)) continue;
+      // Reject stdin/inline for EITHER sensitive input, a pipe that feeds voucher sign
+      // (through any leading tokens, e.g. `cat key | <signer> voucher sign`), or a here-string.
+      if (
+        stdinOrInline('--input').test(line) ||
+        stdinOrInline('--key').test(line) ||
+        /\|\s*(?:\S+\s+)*voucher sign/.test(line) ||
+        /<<</.test(line)
+      ) {
+        fail(`${f}: voucher sign must be file-based (no stdin, inline JSON, pipe or here-string): ${line.trim()}`);
+      }
+      if (/voucher sign --envelope/.test(line)) {
+        const missing = REQUIRED_FLAGS.filter((flag) => !line.includes(flag));
+        for (const flag of missing) fail(`${f}: 'voucher sign --envelope' line missing ${flag}: ${line.trim()}`);
+        if (missing.length === 0) completeInvocation = true;
+      }
+    }
+  }
+  if (!completeInvocation) fail('SP5: no complete voucher sign --envelope --key --input --write-header invocation found in x402 docs');
+}
+checkSp5Invariants();
 
 if (failed) process.exit(1);
 console.log('All skill validations passed.');

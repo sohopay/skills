@@ -8,7 +8,7 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 
 | Party | Holds | Must never |
 |-------|-------|------------|
-| Agent / borrower | Borrower JWT; **agent-held** Ed25519 workload key (V2); or custodial `intentSig` via MCP (V1) | Send borrower JWT or workload **private** key to the merchant / MCP |
+| Agent / borrower | Borrower JWT; **agent-held** workload key (V2); or custodial `intentSig` via MCP (V1) | Send borrower JWT or workload **private** key to the merchant / MCP |
 | Merchant | Merchant API key (`X-API-Key`) | Call borrower signing endpoints or learn signatures except inside a complete payment header |
 
 ### Agent flow (preferred)
@@ -52,13 +52,7 @@ Typical fields (use tool response, not this sketch, as source of truth):
     "nonce": "…",
     "deadline": "…"
   },
-  "signing": {
-    "algorithm": "Ed25519",
-    "domain_tag": "SohoPay:AgentPaymentVoucher:v2",
-    "canonicalization": "RFC8785",
-    "preimage": "utf8(domain_tag) || 0x00 || JCS(voucher)",
-    "signature_encoding": "base64url"
-  },
+  "signing": { "…": "signing scheme — the signer reads this from the input file" },
   "header_name": "PAYMENT-SIGNATURE",
   "envelope": {
     "x402Version": 2,
@@ -75,49 +69,27 @@ Typical fields (use tool response, not this sketch, as source of truth):
 | Field / action | Source |
 |----------------|--------|
 | Unsigned voucher | `voucher` (also echoed inside `envelope.paymentPayload.payload.voucher`) |
-| How to sign | `signing` — Ed25519 over preimage `utf8(domain_tag) + 0x00 + JCS(voucher)`; encode per `signature_encoding` |
-| Fill signature | Set `envelope.paymentPayload.payload.signature` (was `null`) |
-| Merchant header | Prefer `header_name` + `header_value` when present; else base64-encode the filled `envelope` as `PAYMENT-SIGNATURE` |
+| Sign + header | Route to the signer — see [references/signer.md](references/signer.md). The signer fills the signature and returns the `PAYMENT-SIGNATURE` header; the skill builds nothing. |
 
 Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `intentSig`.
 
-### Protocol V2 sign recipe (copy this — do not rediscover)
+### Protocol V2 sign — route to the signer
 
-**Workload key path (fixed):** look here first. Reuse only when **both** `borrower_id` (this borrower) **and** `jkt` / `agentKeyJkt` match. If the file is missing or `borrower_id` belongs to a different borrower, generate a fresh Ed25519 keypair for the current borrower — do not register another borrower's key.
+Do **not** hand-roll the signature or the header. Resolve a signer and run one call per
+[references/signer.md](references/signer.md):
 
-```text
-<Cursor AgentStores>/<this-or-known-store>/files/sohopay-agent-workload/secret.json
-```
-
-Canonical sticky copy when present:
-
-```text
-~/.agents/sohopay-agent-workload/secret.json
-```
-
-Shape:
-
-```json
-{
-  "borrower_id": "…",
-  "terminal_id": "mcp-staging",
-  "private_key_base64url": "…",
-  "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "…" },
-  "jkt": "…"
-}
-```
-
-**Sign steps:**
-
-1. Take `voucher` and `signing` from the prepare response (source of truth — do not re-fetch skills).
-2. `jcs = RFC8785/JCS(voucher)` (e.g. npm `canonicalize`).
-3. `preimage = utf8(signing.domain_tag) || 0x00 || utf8(jcs)`.
-4. Ed25519-sign `preimage` with `private_key_base64url` (e.g. `@noble/curves/ed25519`).
-5. Encode signature per `signing.signature_encoding` (usually `base64url`).
-6. Set `envelope.paymentPayload.payload.signature` (was `null`).
-7. Send `PAYMENT-SIGNATURE: <base64(JSON(envelope))>` (or use `header_value` if the tool already composed it). Prefer `header_name` from the response.
-
-Deps: prefer Node already on the machine (`@noble/curves` + `canonicalize` from a local SohoPay checkout). **Do not** WebSearch, GitHub-search, or `pip install` unless this recipe fails.
+- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer`);
+  none answers → `SIGNER_UNAVAILABLE`, stop (never hand-sign).
+- Write the full prepare response to a private temp file (`curl -fsS -o`), then
+  `voucher sign --envelope --key <secret.json path> --input <prepfile> --write-header <hdrfile>`.
+  `secret.json` is an **opaque** `--key` path — never read or parse it; the private key never
+  enters `argv`/`stdin`.
+- Assert `header_name === "PAYMENT-SIGNATURE"`; cross-check the signer's `payment_id` +
+  `agent_key_jkt` against the prepare `voucher.paymentId` + `voucher.agentKeyJkt` (mismatch →
+  stop, no retry). `header_value` is opaque; retry with `curl -fsS -H @<hdrfile>`.
+- Any nonzero exit / malformed output → surface the signer's code and stop before the retry.
+  On a lapsed voucher or terminal retry failure, **re-prepare** (new `payment_id`) — never
+  re-sign a stale envelope.
 
 ### Protocol V1 — `COMPLETED` (when V2 is off)
 
