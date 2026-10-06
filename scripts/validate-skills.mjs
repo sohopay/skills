@@ -303,7 +303,8 @@ function checkSp5Invariants() {
   }
 
   // #2 — no skill file links to the removed "Protocol V2 sign recipe" anchor.
-  const anchorRe = /#protocol-v2-sign-recipe[\w-]*/i;
+  // Also flag the prose phrase (the form that actually occurred), not just the anchor.
+  const anchorRe = /#protocol-v2-sign-recipe[\w-]*|Protocol V2 sign recipe/i;
   for (const dirName of dirs) {
     const dir = join(SKILLS_DIR, dirName);
     const files = [join(dir, 'SKILL.md')];
@@ -311,7 +312,7 @@ function checkSp5Invariants() {
     if (existsSync(refs)) for (const f of readdirSync(refs).filter((n) => n.endsWith('.md'))) files.push(join(refs, f));
     for (const f of files) {
       if (!existsSync(f)) continue;
-      if (anchorRe.test(readFileSync(f, 'utf8'))) fail(`${f} links to the removed "Protocol V2 sign recipe" anchor`);
+      if (anchorRe.test(readFileSync(f, 'utf8'))) fail(`${f} references the removed "Protocol V2 sign recipe" (anchor or prose)`);
     }
   }
 

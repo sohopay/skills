@@ -27,24 +27,28 @@ emits the curl-ready header line).
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
 
-### Sign the voucher (one call)
+### Sign the voucher
 
-Call `prepare_x402_payment` (carrying the borrower token and `Idempotency-Key` header; see
-the prepare recipe in `{SKILL:sohopay-x402}` for details), write its response to a
-private temp dir, then invoke the signer:
+First obtain the prepare response (below); then one signer invocation (the envelope-mode
+`voucher sign` call in the block below) produces the whole header.
+
+In the normal SohoPay flow, prepare is the **MCP `prepare_x402_payment` tool** (see the
+prepare recipe in `{SKILL:sohopay-x402}`). The response is already in context: write that
+JSON to `$dir/prep.json` with the host's file-write tool **byte-for-byte as received — no
+re-serialization**. Only a non-MCP host that calls prepare over raw HTTP uses the curl
+fallback shown below.
 
 ```
 dir=$(mktemp -d); chmod 700 "$dir"
 umask 077
-# prepare_x402_payment HTTP call itself, write response straight to disk byte-for-byte.
-curl -fsS … -o "$dir/prep.json" {MERCHANT_BASE_URL}/api/v1/prepare_x402_payment
+# MCP flow: write the prepare_x402_payment response to "$dir/prep.json" (file-write tool).
+# Raw-HTTP fallback only (non-MCP host), response straight to disk byte-for-byte:
+curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
 <signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt"
 ```
 
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
-  written byte-for-byte as received from the prepare call. If the host must use a file-write
-  tool instead of curl, it writes the response **byte-for-byte as received — no
-  re-serialization**. **Never** interpolate the JSON into a shell string (a quoted heredoc
+  written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string (a quoted heredoc
   `<<'SOHOPAY_EOF'` is a shell-only last resort).
 - `--key` is the **opaque** canonical key path onboarding wrote
   (`~/.agents/sohopay-agent-workload/secret.json`). The agent **MUST NOT** read, print,
