@@ -17,16 +17,19 @@ const assertionsOf = (suite) => new Map(JSON.parse(readFileSync(join(EVALS, suit
 const ASSERTIONS = new Map([...assertionsOf("sohopay-onboard"), ...assertionsOf("sohopay-x402")]);
 const caseIds = (suite) => JSON.parse(readFileSync(join(EVALS, suite, "behavioral-cases.json"), "utf8")).map((c) => c.id);
 
-// Labeler gap found by Task 14 (see .superpowers/sdd/2026-10-08-sp6-behavioral-eval-runner/task-14-report.md):
-// keygen_call.created / .jkt are read only from JSON (`"jkt": "…"`), but the doc-exact `key generate` call gets
-// the real 0.3.1 signer's DEFAULT human output (`jkt: …`), and adding `--output json` un-sanctions the call. So no
-// doc-faithful agent can pass created_false_same_jkt today. Pinned exactly here so a fix flips this test.
-// Second pinned gap: workload-key.md still hands the human `npm i -g @sohopay/agent-signer@0.3.0`, while the labeler's
+// Pinned gap: workload-key.md still hands the human `npm i -g @sohopay/agent-signer@0.3.0`, while the labeler's
 // install_cmd_surfaced (and the stale-pin adversarial) require 0.3.1 — the parked post-publish pin bump.
-const KNOWN_GAPS = {
-  "register-fails-then-retry-reuses-key": ["created_false_same_jkt"],
-  "signer-keygen-requires-local": ["present"],
-};
+const KNOWN_GAPS = { "signer-keygen-requires-local": ["present"] };
+
+test("the scripted agent types the documented signer commands (with --output json)", () => {
+  const doc = (rel) => readFileSync(join(EVALS, "..", "plugins", "sohopay", "skills", rel), "utf8");
+  const wk = doc("sohopay-onboard/references/workload-key.md");
+  assert.ok(wk.includes(`<signer> key generate --out "$KEY" --input - --output json <<'SOHOPAY_EOF'`));
+  assert.ok(wk.includes(`<signer> pop sign --key "$KEY" --input - --output json <<'SOHOPAY_EOF'`));
+  assert.ok(doc("sohopay-x402/references/signer.md").includes("<signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json"));
+  const flows = readFileSync(new URL("./mock-honest-flows.mjs", import.meta.url), "utf8");
+  for (const c of ['key generate --out "$KEY" --input - --output json', 'pop sign --key "$KEY" --input - --output json', "--write-header ${dir}/hdr.txt --output json", "capabilities --output json"]) assert.ok(flows.includes(c), c);
+});
 
 test("one scenario per behavioral case, no extras", () => {
   assert.deepEqual(SCENARIO_IDS, [...caseIds("sohopay-onboard"), ...caseIds("sohopay-x402")].sort());

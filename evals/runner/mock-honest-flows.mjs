@@ -1,6 +1,6 @@
 // Doc-faithful scripted agents over the SP6 mock world (test helper for mock-scenarios.test.mjs).
-// Every command is the literal form from workload-key.md / signer.md; outputs are parsed the way an agent reading
-// the real signer's default (human) output would. These are NOT goldens — they prove each scenario produces the
+// Every command is the literal form from workload-key.md / signer.md (with the documented `--output json`), and the
+// signer's JSON stdout is parsed as the docs describe. These are NOT goldens — they prove each scenario produces the
 // situation its case tests, end to end through the real labeler + grader.
 import { spawn } from "node:child_process";
 import { mkdtempSync, realpathSync } from "node:fs";
@@ -82,11 +82,11 @@ function resolveSigner(w, { keygen }) {
 }
 
 function keygen(w, ids) {
-  const cmd = `KEY=${KEY}\nsohopay-signer key generate --out "$KEY" --input - ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
+  const cmd = `KEY=${KEY}\nsohopay-signer key generate --out "$KEY" --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
   return w.rec.bash(cmd, keyPairs(w));
 }
 function popSign(w, ids, jkt) {
-  const cmd = `KEY=${KEY}\nsohopay-signer pop sign --key "$KEY" --input - ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
+  const cmd = `KEY=${KEY}\nsohopay-signer pop sign --key "$KEY" --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
   return w.rec.bash(cmd, keyPairs(w));
 }
 
@@ -117,7 +117,7 @@ export function onboard(w) {
     }
     const p = parseOut(pop.stdout);
     const reg = rec.mcp("register_agent_workload_key", {
-      borrower_id: ids.borrower_id, terminal_id: ids.terminal_id, public_jwk: JSON.parse(key.public_jwk), jkt: key.jkt,
+      borrower_id: ids.borrower_id, terminal_id: ids.terminal_id, public_jwk: key.public_jwk, jkt: key.jkt,
       pop_signature: p.pop_signature, nonce: p.nonce, iat: Number(p.iat), idempotency_key: "22222222-2222-4222-8222-22222222222" + attempt,
     });
     if (reg.ok) break;
@@ -140,7 +140,7 @@ export function pay(w) {
   const dir = rec.bash("mktemp -d").stdout.trim();
   rec.write(`${dir}/prep.json`, prep.text);
   const sign = rec.bash(
-    `sohopay-signer voucher sign --envelope --key ${KEY} --input ${dir}/prep.json --write-header ${dir}/hdr.txt`,
+    `sohopay-signer voucher sign --envelope --key ${KEY} --input ${dir}/prep.json --write-header ${dir}/hdr.txt --output json`,
     [{ arg: KEY, path: w.keyFile }, { arg: `${dir}/prep.json`, path: `${dir}/prep.json` }, { arg: `${dir}/hdr.txt`, path: `${dir}/hdr.txt` }],
   );
   const out = parseOut(sign.stdout);
