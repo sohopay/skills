@@ -23,7 +23,9 @@ function candidates() {
 }
 
 function tryCapabilities(argv) {
-  const r = spawnSync(argv[0], [...argv.slice(1), 'capabilities'], {
+  // The signer's `capabilities` defaults to human-readable text; `--output json` is
+  // required for the JSON we parse below (the arg parser accepts the flag anywhere).
+  const r = spawnSync(argv[0], [...argv.slice(1), 'capabilities', '--output', 'json'], {
     encoding: 'utf8',
     timeout: 60_000,
   });
