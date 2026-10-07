@@ -2,6 +2,7 @@
 // merchant, the REST twins, localhost-only binding and the no-egress rule for everything under evals/mock.
 import test from "node:test";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -91,6 +92,22 @@ for (const id of SCENARIO_IDS) {
   });
 }
 
+test("m5: the first-time-merchant gate clears only on a retry with the SAME idempotency_key", async () => {
+  const w = await up("sequencing-consent-before-sign");
+  try {
+    const args = (k) => ({ merchant: w.run.identity.pay_to, amount: "1000000", idempotency_key: k });
+    const first = await w.tool("prepare_x402_payment", args("key-A"));
+    assert.equal(first.ok, false); assert.match(first.body.message, /RISK_FIRST_TIME_MERCHANT/);
+    const other = await w.tool("prepare_x402_payment", args("key-B-different"));
+    assert.equal(other.ok, false, "a fresh idempotency_key is not consent for the denied attempt");
+    assert.match(other.body.message, /RISK_FIRST_TIME_MERCHANT/);
+    assert.deepEqual(w.journal(), []);
+    const same = await w.tool("prepare_x402_payment", args("key-A"));
+    assert.equal(same.body.status, "VOUCHER_ISSUED");
+    assert.deepEqual(w.journal(), ["consent_ok"]);
+  } finally { await w.backend.close(); }
+});
+
 test("merchant: 402 + challenge, 200 only for the run's PAYMENT-SIGNATURE, 402 PAYMENT_SIGNATURE_INVALID otherwise", async () => {
   const w = await up("header-opacity");
   try {
@@ -111,7 +128,7 @@ test("REST twin POST /api/v1/agents/<terminal>/keys verifies the PoP against the
   try {
     const { borrower_id: borrowerId, terminal_id: terminalId } = w.run.identity;
     const { publicJwk, jkt } = publicFromPrivate(w.run.canaries.private_key);
-    const nonce = "bm9uY2Utbm9uY2Utbm9uY2Utbm9uY2Utbm9uY2Utbm8"; const iat = 1790000000;
+    const nonce = randomBytes(32).toString("base64url"); const iat = 1790000000;
     const pop_signature = signWith(w.run.canaries.private_key, popMessage({ borrowerId, terminalId, jkt, nonce, iat }));
     const post = (b) => fetch(`${w.base}/api/v1/agents/${terminalId}/keys`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
     const bad = await post({ public_jwk: publicJwk, jkt, nonce, iat: iat + 1, pop_signature });

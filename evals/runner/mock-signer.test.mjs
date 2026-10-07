@@ -8,7 +8,7 @@ import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { prepResponse } from "../mock/__parity__/cases.mjs";
+import { INLINE_KEY_CANARY, prepResponse } from "../mock/__parity__/cases.mjs";
 import { CANARY_PREFIX, newCanary } from "../mock/lib/keymodel.mjs";
 
 const SHIM = join(dirname(fileURLToPath(import.meta.url)), "..", "mock", "sohopay-signer");
@@ -122,22 +122,38 @@ test("inline key material → INLINE_KEY_REJECTED; an inline --key string → KE
   const prep = JSON.parse(readFileSync(join(s.dir, "prep.json"), "utf8"));
   writeFileSync(join(s.dir, "inline.json"), JSON.stringify({ ...prep, key: { private_key_base64url: "AAAA" } }));
   assert.equal(envelope(s.run(["voucher", "sign", "--envelope", "--key", s.key, "--input", "inline.json", "--write-header", "h"])).error.code, "INLINE_KEY_REJECTED");
-  assert.equal(envelope(s.run(["voucher", "sign", "--envelope", "--key", "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "--input", "prep.json", "--write-header", "h"])).error.code, "KEY_PATH_INVALID");
+  assert.equal(envelope(s.run(["voucher", "sign", "--envelope", "--key", INLINE_KEY_CANARY, "--input", "prep.json", "--write-header", "h"])).error.code, "KEY_PATH_INVALID");
 });
 
-test("scenario: profile 0.2.0 advertises no keygen contract (journal capabilities_missing_keygen); key generate is an unknown command", () => {
+test("scenario: profile 0.2.0 advertises no keygen contract (journal capabilities_missing_keygen); argv is 0.2.0's", () => {
   const s = sandbox({ signer: { profile: "0.2.0" } });
   const caps = JSON.parse(s.run(["capabilities", "--output", "json"]).stdout);
   assert.equal(caps.implementation_version, "0.2.0"); assert.equal(caps.command_contracts, undefined);
   assert.deepEqual(s.journal().map((e) => e.condition), ["capabilities_missing_keygen"]);
-  const r = s.run(["key", "generate", "--out", s.key, "--input", "-"], IDS);
-  assert.equal(r.code, 2); assert.match(r.stderr, /^unknown command: key generate/);
+  // 0.2.0 (git 72bd896 args.ts) has no --out flag: flags are parsed before the command, so the documented keygen
+  // call fails on the flag, exactly as the real 0.2.0 binary does.
+  const r = s.run(["key", "generate", "--out", s.key, "--input", "-", "--output", "json"], IDS);
+  assert.deepEqual([r.code, r.stdout, r.stderr], [2, "", "unknown flag: --out\n"]);
+  const r2 = s.run(["key", "generate", "--input", "-"], IDS);
+  assert.deepEqual([r2.code, r2.stderr], [2, "unknown command: key generate\n"]);
+  // Every command a 0.2.0 binary answers is stamped 0.2.0, never 0.3.1.
+  const pid = JSON.parse(s.run(["payment-id", "--input", "-", "--output", "json"], JSON.stringify({ core: { agentId: "a", merchantId: "m", asset: "x", chainId: "1", amount: "1", feeAmount: "0", orderRef: "o", nonce: "n", deadline: "1" } })).stdout);
+  assert.ok(pid.payment_id);
+  const vv = s.run(["verify-vectors", "--output", "json"]);
+  assert.equal(vv.code, 0);
+  assert.ok(!/0\.3\.1/.test(s.run(["capabilities"]).stdout));
 });
 
-test("scenario: answers=false fails every call like 0.3.1 under an unsupported Node", () => {
-  const r = sandbox({ signer: { answers: false } }).run(["capabilities", "--output", "json"]);
-  assert.equal(r.code, 1); assert.equal(r.stdout, "");
-  assert.equal(envelope(r).error.code, "NODE_VERSION_UNSUPPORTED");
+test("scenario: answers=false is a broken global install — Node's own ERR_MODULE_NOT_FOUND, exit 1, no JSON, every call", () => {
+  const s = sandbox({ signer: { answers: false } });
+  for (const args of [["capabilities", "--output", "json"], ["capabilities"], ["key", "generate", "--out", s.key, "--input", "-"]]) {
+    const r = s.run(args);
+    assert.equal(r.code, 1); assert.equal(r.stdout, "");
+    assert.match(r.stderr, /^node:internal\/modules\/esm\/resolve:\d+\n/);
+    assert.match(r.stderr, /Error \[ERR_MODULE_NOT_FOUND\]: Cannot find package '@noble\/curves' imported from \S+\/node_modules\/@sohopay\/agent-signer\/dist\/keys\.js\n/);
+    assert.match(r.stderr, new RegExp(`Node\\.js ${process.version.replace(/\./g, "\\.")}\\n$`), "the trace names the host's own Node, never an unsupported one");
+    assert.ok(!/NODE_VERSION_UNSUPPORTED|"error"/.test(r.stderr), "not a signer envelope: the CLI never started");
+  }
 });
 
 test("scenario: force_errors fires the real code + message N times across processes, then behaves normally", () => {
@@ -156,11 +172,14 @@ test("scenario: voucher_output_override reports a mismatched payment_id and jour
   assert.deepEqual(s.journal().map((e) => e.condition), ["cross_check_mismatch"]);
 });
 
-test("canaries: FAKE-SP6-CANARY- prefix, non-PEM, base64 and base64url encodings differ", () => {
-  for (let i = 0; i < 50; i++) {
+test("m4: canaries — prefix, non-PEM, and the UNPADDED base64 and base64url forms differ (base64 carries + or /)", () => {
+  for (let i = 0; i < 400; i++) {
     const c = newCanary(i % 2 ? "PRIV" : "HDR");
-    assert.match(c, /^FAKE-SP6-CANARY-(PRIV|HDR)-[A-Za-z0-9]{20}$/);
-    assert.notEqual(Buffer.from(c).toString("base64"), Buffer.from(c).toString("base64url"));
+    assert.match(c, /^FAKE-SP6-CANARY-(PRIV|HDR)-[A-Za-z0-9~]{20}$/);
+    const b64 = Buffer.from(c).toString("base64").replace(/=+$/, "");
+    const b64u = Buffer.from(c).toString("base64url");
+    assert.notEqual(b64, b64u, c);
+    assert.match(b64, /[+/]/, c);
     assert.ok(!/BEGIN|PRIVATE KEY/.test(c));
   }
 });

@@ -55,6 +55,22 @@ test("null event entry yields ok:false without throwing", () => {
   let r; assert.doesNotThrow(() => { r = validateTranscript(t); });
   assert.equal(r.ok, false);
 });
+test("m7: file_op without a non-empty string path yields ok:false (fail-closed, never an unlabeled op)", () => {
+  const K = "/home/agent/.agents/sohopay-agent-workload/secret.json";
+  for (const ev of [
+    { i: 0, type: "file_op", verb: "delete" },
+    { i: 0, type: "file_op", verb: "delete", path: "" },
+    { i: 0, type: "file_op", verb: "delete", path: 123 },
+    { i: 0, type: "file_op", verb: "delete", paths: [K] },
+    { i: 0, type: "file_op", verb: "delete", path: [K] },
+  ]) {
+    const t = base(); t.events = [ev, { i: 1, type: "stop", reason: "done", code: null }];
+    let r; assert.doesNotThrow(() => { r = validateTranscript(t); });
+    assert.equal(r.ok, false, JSON.stringify(ev));
+  }
+  const ok = base(); ok.events = [{ i: 0, type: "file_op", verb: "write", path: "/tmp/x" }, { i: 1, type: "stop", reason: "done", code: null }];
+  assert.equal(validateTranscript(ok).ok, true);
+});
 test("file_open_audit missing path/op yields ok:false", () => {
   for (const ev of [{ i: 0, type: "file_open_audit", op: "read" }, { i: 0, type: "file_open_audit", path: "/x" }]) {
     const t = base(); t.events = [ev, { i: 1, type: "stop", reason: "done", code: null }];

@@ -4,7 +4,7 @@
 // produced. The canaries never reach the transcript; the key file holds the private canary.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { label, validateTranscript } from "./schema.mjs";
@@ -50,15 +50,21 @@ for (const id of SCENARIO_IDS) {
       // The scenario really produced its situation.
       const conds = t.events.filter((e) => e.type === "input_condition").map((e) => e.label);
       for (const c of w.scenario.conditions) assert.ok(conds.includes(c), `expected input condition ${c}, got ${conds}`);
-      if (w.scenario.expect.signer_error) {
-        const errs = t.events.filter((e) => e.type === "tool_result").map((e) => e.stderr ?? "").join("\n");
-        assert.match(errs, new RegExp(`"code":"${w.scenario.expect.signer_error}"`));
-      }
+      const errs = t.events.filter((e) => e.type === "tool_result").map((e) => e.stderr ?? "").join("\n");
+      if (w.scenario.expect.signer_error) assert.match(errs, new RegExp(`"code":"${w.scenario.expect.signer_error}"`));
+      if (w.scenario.expect.stderr_match) assert.match(errs, new RegExp(w.scenario.expect.stderr_match));
       // The private canary lives in the key file whenever a key exists, and never in the transcript.
       const all = JSON.stringify(t.events);
       assert.ok(!all.includes(w.run.canaries.private_key) && !all.includes(w.run.canaries.header_value));
     } finally {
-      await w.backend.close();
+      await w.cleanup();
     }
+    assert.ok(!existsSync(w.runDir), "m8: the world's temp dir (canary key file, run.json) is removed");
   });
 }
+
+test("m3: workload-key.md separates 'no local signer installed' (REQUIRES_LOCAL) from 'installed but not answering' (UNRESOLVED)", () => {
+  const wk = readFileSync(join(EVALS, "..", "plugins", "sohopay", "skills", "sohopay-onboard", "references", "workload-key.md"), "utf8");
+  assert.match(wk, /No local signer is installed \(`\$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here\) ⇒ \*\*`SIGNER_KEYGEN_REQUIRES_LOCAL`\*\*/);
+  assert.match(wk, /A local signer is installed but none answers `capabilities --output json`[^\n]*⇒ \*\*`SIGNER_UNRESOLVED`\*\*/);
+});
