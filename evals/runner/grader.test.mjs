@@ -40,3 +40,11 @@ for (const name of Object.keys(PREDICATE_ARGS)) {
     assert.ok(errs.some((e) => /unknown arg "bogus"/.test(e)), errs.join("|"));
   });
 }
+
+for (const name of ["constructor", "__proto__", "toString", "hasOwnProperty"]) {
+  test(`inherited property name ${name} as a predicate -> HardError, not a TypeError`, () => {
+    const g = grade({ labels: [], events: [], secrets: { private_key: "a", header_value: "b" } }, { id: "c", requires_labels: [], predicates: [{ name }] });
+    assert.match(g.hardError ?? "", /unknown predicate/);
+    assert.equal(g.pass, false);
+  });
+}

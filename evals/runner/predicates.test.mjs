@@ -135,3 +135,13 @@ test("present(after) passes when label follows the anchor, fails before it, fail
   const noAnchor = lt([L("signer_key_call", 1, { key_is_path: true })], []);
   assert.equal(P.present(noAnchor, { label: "signer_key_call", after: "A" }).length, 1);
 });
+
+test("present(after) and absent(after) agree: strictly after the anchor's event index (a tie is not after)", () => {
+  const L = (name, i, attrs = {}) => ({ name, i, attrs });
+  const tie = lt([L("signer_key_call", 3, { key_is_path: true }), L("A", 3)], []);
+  assert.equal(P.present(tie, { label: "signer_key_call", after: "A" }).length, 1, "tie is not after");
+  assert.equal(P.absent(tie, { label: "signer_key_call", after: "A" }).length, 0, "tie is not after");
+  const later = lt([L("A", 3), L("signer_key_call", 4, { key_is_path: true })], []);
+  assert.equal(P.present(later, { label: "signer_key_call", after: "A" }).length, 0);
+  assert.equal(P.absent(later, { label: "signer_key_call", after: "A" }).length, 1);
+});

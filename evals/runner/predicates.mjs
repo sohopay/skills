@@ -57,7 +57,7 @@ export function absent(t, { label, after }) {
   if (!after) return occ.length ? [{ predicate: "absent", message: `${label} occurred` }] : [];
   const anchor = t.labels.find((l) => l.name === after);
   if (!anchor) return [];
-  return occ.some((l) => l.i >= anchor.i) ? [{ predicate: "absent", message: `${label} after ${after}` }] : [];
+  return occ.some((l) => l.i > anchor.i) ? [{ predicate: "absent", message: `${label} after ${after}` }] : [];
 }
 export function stops_with_code(t, { code }) {
   const stop = t.labels.find((l) => l.name === "stop");

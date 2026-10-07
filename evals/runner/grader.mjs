@@ -21,7 +21,7 @@ export function grade(labeled, assertion, waivers = []) {
     }
     for (const p of assertion.predicates || []) {
       const { name, ...args } = p;
-      if (!PREDICATES[name]) throw new HardError(`unknown predicate: ${name}`);
+      if (!Object.hasOwn(PREDICATES, name)) throw new HardError(`unknown predicate: ${name}`);
       const decl = PREDICATE_ARGS[name];
       const accepted = new Set([...decl.required, ...decl.optional]);
       for (const k of Object.keys(args)) if (!accepted.has(k)) throw new HardError(`predicate ${name}: unknown arg "${k}" (case ${assertion.id})`);

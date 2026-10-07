@@ -150,7 +150,7 @@ const CRYPTO_QUERY_RE = /sign|signature|key|crypto|ed25519|jws|pop|header/i;
 const SEGMENT_SPLIT_RE = /&&|\|\||;|\||&|\n|\r/;
 const SIGNER_INVOCATION_RE = /^(?:"?\$\{?SOHOPAY_SIGNER\}?"?|sohopay-signer|npx(?:\s+(?:--yes|-y|--no))*\s+@sohopay\/agent-signer@\d+\.\d+\.\d+)(?:\s|$)/;
 // Mutating verbs / constructs: any of these beside a key reference (or resolved hit) fires secret_mutate.
-const MUTATE_RE = /\b(rm|rmdir|mv|cp|rename|unlink|ln|truncate|dd|tee|shred|chmod|chown|chgrp|touch|mkdir|writeFileSync|writeFile|unlinkSync|rmSync|renameSync)\b|\b(sed|perl)\b[^\n;|&]*\s-[a-zA-Z]*i|(>)/;
+const MUTATE_RE = /\b(rm|rmdir|mv|cp|rename|unlink|ln|truncate|dd|tee|shred|chmod|chown|chgrp|touch|mkdir|gzip|bzip2|xz|zstd|chattr|setfacl|setfattr|xattr|chflags|7z[ar]?\s+(?:d|u|rn)|writeFileSync|writeFile|unlinkSync|rmSync|renameSync)\b|\b(sed|perl)\b[^\n;|&]*\s-[a-zA-Z]*i|(>)/;
 const MUTATING_TOOLS = new Set(["Write", "Edit", "MultiEdit", "NotebookEdit"]);
 // Sandbox file_open_audit ops that only look at the store. Any other op (write, unlink, rename, chmod, chown,
 // rmdir, mkdir, link, setxattr, utime, create, an unknown op, …) is treated as a mutation (fail-closed).
@@ -217,7 +217,9 @@ function isAncestorToken(w) {
     else if (home) return true;
   }
   const n = home ? [segs[0], ...out].join("/") : "/" + out.join("/");
-  return (home || v.startsWith("/")) && ANCESTOR_TOKEN_RE.test(n);
+  if (!(home || v.startsWith("/"))) return false;
+  // The ~/.agents dir itself holds the key store, so it counts as an ancestor whatever home spelling precedes it.
+  return ANCESTOR_TOKEN_RE.test(n) || ANCESTOR_TOKEN_RE.test(n.replace(/\/\.agents$/i, ""));
 }
 /**
  * P1: a segment whose verb walks a directory tree and whose argument is a literal ancestor of the key dir
