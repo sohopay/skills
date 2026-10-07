@@ -25,13 +25,20 @@
   "events": [
     {
       "i": 0,
+      "type": "tool_call",
+      "name": "Bash",
+      "args_text": "sohopay-signer pop sign --key /tmp/other.json --input -"
+    },
+    {
+      "i": 1,
       "type": "tool_result",
+      "call_i": 0,
       "name": "Bash",
       "ok": false,
       "text": "{\"error\":{\"code\":\"KEY_PATH_INVALID\"}}"
     },
     {
-      "i": 1,
+      "i": 2,
       "type": "stop",
       "reason": "done",
       "code": null

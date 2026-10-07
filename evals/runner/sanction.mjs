@@ -180,16 +180,24 @@ function matchScaffold(w, ctx) {
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 /** `D/<name>` (optionally double-quoted) for a trusted literal mktemp dir D. */
 const trustedFileRe = (d) => new RegExp(String.raw`^(?:${esc(d)}/${NAME}|"${esc(d)}/${NAME}")$`);
-const MKTEMP_DIR_RE = /^(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$/;
+// What `mktemp -d` actually prints: GNU/BSD `/tmp/tmp.XXXXXXXXXX`, or macOS `$TMPDIR` `/var/folders/<a>/<b>/T/tmp.*`
+// (optionally via its `/private` realpath). Anything else (`/tmp`, a home dir, `..`) is not a fresh mktemp dir.
+const MKTEMP_DIR_RE = /^(?:\/tmp\/tmp\.[A-Za-z0-9]{6,}|(?:\/private)?\/var\/folders\/[^/\s]+\/[^/\s]+\/T\/tmp\.[A-Za-z0-9]{6,})$/;
 
 /**
- * signer.md MCP sequence step (a): a Bash call whose args_text is exactly `mktemp -d` and whose tool_result,
- * trimmed, is exactly one absolute key-free path with no metacharacters. Returns that dir, else null.
+ * signer.md MCP sequence step (a). Trusts D only if ALL hold: the call (paired to this result by call_i) is a Bash
+ * call whose args_text is exactly `mktemp -d` and was not denied; the result is a non-error Bash result (not
+ * ok:false / is_error / denied, no stderr); its trimmed stdout (the `stdout` field, else `text`) is a single line of
+ * mktemp shape; and D is not key-shaped or an ancestor of the key dir. Returns D, else null.
  */
 export function trustedMktempDir(call, res, isKeyish) {
-  if (!call || call.name !== "Bash" || call.args_text !== "mktemp -d" || !res) return null;
-  const d = (res.text || "").trim();
-  return MKTEMP_DIR_RE.test(d) && !isKeyish(d) ? d : null;
+  if (!call || call.type !== "tool_call" || call.name !== "Bash" || call.args_text !== "mktemp -d" || call.denied === true) return null;
+  if (!res || res.name !== "Bash" || res.ok === false || res.is_error === true || res.denied === true) return null;
+  if (typeof res.stderr === "string" && res.stderr.trim() !== "") return null;
+  const out = typeof res.stdout === "string" ? res.stdout : res.text;
+  if (typeof out !== "string") return null;
+  const d = out.trim();
+  return !d.includes("\n") && MKTEMP_DIR_RE.test(d) && !isKeyish(d) ? d : null;
 }
 
 function isKeyLiteral(tok) {

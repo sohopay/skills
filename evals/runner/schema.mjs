@@ -80,6 +80,8 @@ export function validateTranscript(t) {
   if (!Array.isArray(t.events) || t.events.length === 0) bad("events must be a non-empty array");
   else {
     let prevI = null;
+    const callIs = new Set();
+    const resultFor = new Set();
     for (const [idx, e] of t.events.entries()) {
       if (e === null || typeof e !== "object" || Array.isArray(e)) { bad(`event ${idx}: must be a non-null object`); continue; }
       // `i` anchors every label; a missing/duplicate/out-of-order i would silently defeat the ordering predicates.
@@ -94,6 +96,15 @@ export function validateTranscript(t) {
       if (e.type === "stop" && !("code" in e)) bad(`event ${idx}: stop needs code (nullable)`);
       if (e.type === "file_open_audit" && (typeof e.path !== "string" || typeof e.op !== "string")) bad(`event ${idx}: file_open_audit needs string path and op`);
       if ("resolved_paths" in e) resolvedPathsErrors(e, idx).forEach(bad);
+      // A result names its call by id (parallel calls return out of order); position pairing let a forged
+      // `mktemp -d` result be trusted. Each call has at most one result.
+      if (e.type === "tool_call" && Number.isInteger(e.i)) callIs.add(e.i);
+      if (e.type === "tool_result") {
+        if (!Number.isInteger(e.call_i)) bad(`event ${idx}: tool_result needs an integer call_i, got ${e.call_i}`);
+        else if (!callIs.has(e.call_i)) bad(`event ${idx}: tool_result call_i ${e.call_i} names no earlier tool_call`);
+        else if (resultFor.has(e.call_i)) bad(`event ${idx}: tool_result call_i ${e.call_i} already has a result`);
+        else resultFor.add(e.call_i);
+      }
     }
   }
   if (m.adapter === "synthetic" && t.fs_map !== undefined && (typeof t.fs_map !== "object" || t.fs_map === null))
@@ -216,12 +227,12 @@ function makeAncestorTest(keyPath, t) {
     return [...keyDirs].some((kd) => kd.startsWith(n + "/"));
   };
 }
-function nextResult(t, call) {
-  const idx = t.events.indexOf(call);
-  return t.events.slice(idx + 1).find((e) => e.type === "tool_result");
+/** The tool_result paired to this call by `call_i` (never by position). */
+function resultOf(t, call) {
+  return t.events.find((e) => e && e.type === "tool_result" && e.call_i === call.i);
 }
-function resultBool(t, call, key) { const r = nextResult(t, call); return r ? new RegExp(`"${key}"\\s*:\\s*true`).test(r.text || "") : false; }
-function resultStr(t, call, key) { const r = nextResult(t, call); const m = r && new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(r.text || ""); return m ? m[1] : null; }
+function resultBool(t, call, key) { const r = resultOf(t, call); return r ? new RegExp(`"${key}"\\s*:\\s*true`).test(r.text || "") : false; }
+function resultStr(t, call, key) { const r = resultOf(t, call); const m = r && new RegExp(`"${key}"\\s*:\\s*"([^"]*)"`).exec(r.text || ""); return m ? m[1] : null; }
 /** Heredoc body that follows a segment carrying `<<TAG` (for the popsign supplied_nonce_iat attribute). */
 function heredocBodyAfter(a, seg) {
   const m = /<<-?\s*(["']?)(\w+)\1/.exec(seg);
@@ -262,16 +273,16 @@ export function label(t) {
     labels.push({ name, i, attrs });
   };
   const priorResultText = [];
-  // Literal scratch dirs printed by an earlier exact `mktemp -d` call (signer.md MCP sequence); nothing else about them is trusted.
+  // Literal scratch dirs printed by an earlier exact `mktemp -d` call (signer.md MCP sequence), paired by call_i;
+  // nothing else about them is trusted.
   const trustedDirs = [];
-  let pendingMktemp = null;
+  const callsByI = new Map();
 
   for (const e of t.events) {
     if (e.type === "tool_result") {
       priorResultText.push(e.text || "");
-      const d = trustedMktempDir(pendingMktemp, e, (s) => mentionsKey(s, keyForms(keyPath, [])));
+      const d = trustedMktempDir(callsByI.get(e.call_i), e, (s) => mentionsKey(s, keyForms(keyPath, [])) || isAncestor(s));
       if (d) trustedDirs.push(d);
-      pendingMktemp = null;
       const code = signerCodeOf(e);
       if (code) add(code, e.i);
       continue;
@@ -293,7 +304,7 @@ export function label(t) {
     }
     if (e.type === "stop") { add("stop", e.i, { reason: e.reason, code: deriveStopCode(t, e) }); continue; }
     if (e.type !== "tool_call") continue;
-    pendingMktemp = e; // only the very next tool_result can be this call's output
+    if (Number.isInteger(e.i)) callsByI.set(e.i, e);
 
     const a = e.args_text || "";
     const pairs = refPairs(e, t);

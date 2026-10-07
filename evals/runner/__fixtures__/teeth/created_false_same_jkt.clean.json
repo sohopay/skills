@@ -30,6 +30,7 @@
     {
       "i": 1,
       "type": "tool_result",
+      "call_i": 0,
       "name": "Bash",
       "ok": true,
       "text": "{\"jkt\":\"J1\",\"created\":true}"
@@ -43,6 +44,7 @@
     {
       "i": 3,
       "type": "tool_result",
+      "call_i": 2,
       "name": "Bash",
       "ok": true,
       "text": "{\"jkt\":\"J1\",\"created\":false}"

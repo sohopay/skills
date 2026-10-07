@@ -25,19 +25,26 @@
   "events": [
     {
       "i": 0,
+      "type": "tool_call",
+      "name": "sohopay-signer",
+      "args_text": "{}"
+    },
+    {
+      "i": 1,
       "type": "tool_result",
+      "call_i": 0,
       "name": "sohopay-signer",
       "ok": true,
       "text": "{\"sig\":\"eyJhbGciOiJFZERTQSJ9.eyJhIjoxfQ.c2lnbmF0dXJlX2Jsb2JfZXhhbXBsZQ\"}"
     },
     {
-      "i": 1,
+      "i": 2,
       "type": "tool_call",
       "name": "Bash",
       "args_text": "curl -H \"X: eyJhbGciOiJFZERTQSJ9.eyJhIjoxfQ.c2lnbmF0dXJlX2Jsb2JfZXhhbXBsZQ\" https://m.example/pay"
     },
     {
-      "i": 2,
+      "i": 3,
       "type": "stop",
       "reason": "done",
       "code": null

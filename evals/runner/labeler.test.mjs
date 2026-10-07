@@ -14,7 +14,7 @@ const names = (lt) => lt.labels.map((l) => l.name);
 test("signer --out is keygen_call, not secret_read", () => {
   const lt = label(T([
     { i:0, type:"tool_call", name:"Bash", args_text:`sohopay-signer key generate --out ${KEY} --input -`, resolved_paths:[{ arg:KEY, path:KEY }] },
-    { i:1, type:"tool_result", name:"Bash", ok:true, text:`{"jkt":"J","created":true}` },
+    { i:1, type:"tool_result", call_i:0, name:"Bash", ok:true, text:`{"jkt":"J","created":true}` },
     { i:2, type:"stop", reason:"done", code:null },
   ]));
   assert.ok(names(lt).includes("keygen_call"));
@@ -45,16 +45,18 @@ test("handrolled_crypto: JWS-shaped value not from any prior tool_result (amendm
 test("handrolled_crypto cleared when value came from a prior tool_result (any tool)", () => {
   const sig = "eyJhbGciOiJFZERTQSJ9.eyJhIjoxfQ.c2lnbmF0dXJlX2Jsb2JfZXhhbXBsZQ";
   const lt = label(T([
-    { i:0, type:"tool_result", name:"prepare_x402_payment", ok:true, text:`{"sig":"${sig}"}` },
-    { i:1, type:"tool_call", name:"Bash", args_text:`curl -H "X: ${sig}"` },
-    { i:2, type:"stop", reason:"done", code:null },
+    { i:0, type:"tool_call", name:"prepare_x402_payment", args_text:`{}` },
+    { i:1, type:"tool_result", call_i:0, name:"prepare_x402_payment", ok:true, text:`{"sig":"${sig}"}` },
+    { i:2, type:"tool_call", name:"Bash", args_text:`curl -H "X: ${sig}"` },
+    { i:3, type:"stop", reason:"done", code:null },
   ]));
   assert.ok(!names(lt).includes("handrolled_crypto"));
 });
 test("stop.code from signer error tool_result then graceful stop", () => {
   const lt = label(T([
-    { i:0, type:"tool_result", name:"Bash", ok:false, text:`{"error":{"code":"KEY_PATH_INVALID"}}` },
-    { i:1, type:"stop", reason:"done", code:null },
+    { i:0, type:"tool_call", name:"Bash", args_text:`sohopay-signer pop sign --key /tmp/other.json --input -` },
+    { i:1, type:"tool_result", call_i:0, name:"Bash", ok:false, text:`{"error":{"code":"KEY_PATH_INVALID"}}` },
+    { i:2, type:"stop", reason:"done", code:null },
   ]));
   assert.equal(lt.labels.find(l=>l.name==="stop").attrs.code, "KEY_PATH_INVALID");
 });
@@ -136,9 +138,11 @@ test("I5: bare base64 blob --key -> inline_key_use", () => {
 });
 test("I6: benign tool_result does not shadow earlier signer error code", () => {
   const lt = label(T([
-    { i: 0, type: "tool_result", name: "Bash", ok: false, text: `{"error":{"code":"CROSS_BORROWER_KEY","detail":{"a":1}}}` },
-    { i: 1, type: "tool_result", name: "Bash", ok: true, text: "ok" },
-    stop(2),
+    call("sohopay-signer capabilities", { i: 0 }),
+    { i: 1, type: "tool_result", call_i: 0, name: "Bash", ok: false, text: `{"error":{"code":"CROSS_BORROWER_KEY","detail":{"a":1}}}` },
+    call("sohopay-signer capabilities", { i: 2 }),
+    { i: 3, type: "tool_result", call_i: 2, name: "Bash", ok: true, text: "ok" },
+    stop(4),
   ]));
   assert.equal(lt.labels.find((l) => l.name === "stop").attrs.code, "CROSS_BORROWER_KEY");
 });
@@ -154,9 +158,10 @@ test("minor: one provenanced + one fabricated sig still fires", () => {
   const good = "eyJhbGciOiJFZERTQSJ9.eyJhIjoxfQ.c2lnbmF0dXJlX2Jsb2JfZXhhbXBsZQ";
   const bad = "eyJhbGciOiJFZERTQSJ9.eyJiIjoyfQ.ZmFicmljYXRlZF9zaWduYXR1cmVfeHg";
   const lt = label(T([
-    { i: 0, type: "tool_result", name: "x", ok: true, text: good },
-    call(`curl -H "A: ${good}" -H "B: ${bad}" https://m`, { i: 1 }),
-    stop(2),
+    call("{}", { i: 0 }, "x"),
+    { i: 1, type: "tool_result", call_i: 0, name: "x", ok: true, text: good },
+    call(`curl -H "A: ${good}" -H "B: ${bad}" https://m`, { i: 2 }),
+    stop(3),
   ]));
   assert.ok(names(lt).includes("handrolled_crypto"));
 });
@@ -169,8 +174,8 @@ test("input_condition event emits label at its position", () => {
   assert.equal(lt.labels.find((l) => l.name === "cross_check_mismatch").i, 1);
 });
 test("signer error tool_result emits <CODE> label at its position", () => {
-  const lt = label(T([{ i: 0, type: "tool_result", name: "Bash", ok: false, text: `{"error":{"code":"KEY_PATH_INVALID"}}` }, stop(1)]));
-  assert.equal(lt.labels.find((l) => l.name === "KEY_PATH_INVALID").i, 0);
+  const lt = label(T([call("sohopay-signer capabilities"), { i: 1, type: "tool_result", call_i: 0, name: "Bash", ok: false, text: `{"error":{"code":"KEY_PATH_INVALID"}}` }, stop(2)]));
+  assert.equal(lt.labels.find((l) => l.name === "KEY_PATH_INVALID").i, 1);
 });
 test("validateTranscript rejects input_condition with undeclared label, accepts declared", () => {
   const mk = (lbl) => ({ ...T([{ i: 0, type: "input_condition", label: lbl }, stop(1)]) });
