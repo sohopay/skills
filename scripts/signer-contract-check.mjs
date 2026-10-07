@@ -12,7 +12,13 @@ function candidates() {
   const list = [];
   if (process.env.SOHOPAY_SIGNER) list.push(process.env.SOHOPAY_SIGNER.split(/\s+/));
   list.push(['sohopay-signer']);
-  list.push(['npx', '--no', SIGNER_SPEC]); // CI-only: an auditable, pinned install
+  // CI-only: `--yes` installs + runs the exact pinned spec non-interactively from
+  // GitHub Packages (.npmrc + NODE_AUTH_TOKEN in validate.yml). `--no` would refuse to
+  // install a signer that is merely resolvable and fail the gate closed on a clean runner;
+  // this is a read-only `capabilities` probe of a pinned version, so fetching is allowed.
+  // (The secret-WRITING `key generate` still forbids the npx tier — that gate lives in the
+  // onboard/x402 skill docs, not here.)
+  list.push(['npx', '--yes', SIGNER_SPEC]);
   return list;
 }
 
