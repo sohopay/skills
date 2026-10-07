@@ -96,7 +96,8 @@ const CRYPTO_BUILD_RE = new RegExp([
   String.raw`npm\s+(?:i|install)\b[^\n]*(?:tweetnacl|@noble)`,
 ].join("|"), "i");
 const CRYPTO_QUERY_RE = /sign|signature|key|crypto|ed25519|jws|pop|header/i;
-const SEGMENT_SPLIT_RE = /&&|;|\||\n/;
+const SEGMENT_SPLIT_RE = /&&|\|\||;|\||&|\n|\r/;
+const SIGNER_FIRST_TOKEN_RE = /^(?:"?\$\{?SOHOPAY_SIGNER\}?"?|"?(?:[^\s"]*\/)?sohopay-signer"?)(?:\s|$)/;
 const MUTATE_RE = /\b(rm|mv|cp|rename|unlink)\b/;
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -193,16 +194,25 @@ export function label(t) {
     const a = e.args_text || "";
     const resolved = resolveRefPaths(e, t);
     const forms = keyForms(keyPath, resolved);
-    const segs = a.split(SEGMENT_SPLIT_RE).map((s) => s.trim()).filter(Boolean);
-    // workload-key.md names `$SOHOPAY_SIGNER` as the first-choice signer, so an env-var invocation is a signer segment too.
-    const isSignerSeg = (s) => s.includes(SIGNER_BINARY) || /\$\{?SOHOPAY_SIGNER\}?/.test(s);
+    // Heredoc bodies are stdin data, not commands; drop them before segmenting (unsafeCmd below still scans the raw text,
+    // because an unquoted heredoc expands $(..)).
+    const aNoDoc = a.replace(/(<<-?\s*(["']?)(\w+)\2[^\n]*)\n[\s\S]*?\n[ \t]*\3(?=\n|$)/g, "$1");
+    const segs = aNoDoc.split(SEGMENT_SPLIT_RE).map((s) => s.trim()).filter(Boolean);
+    // Fail closed: a segment is a sanctioned signer call only when its FIRST token is the signer (binary, path ending
+    // /sohopay-signer, or the $SOHOPAY_SIGNER env var the prose names) AND the whole command has no construct that can
+    // smuggle a second key access into it ($(..), backticks, <(..)/>(..), # comments, < input redirects). Heredocs stay allowed.
+    const unsafeCmd = /\$\(|`|<\(|>\(|(?:^|\s)#|(?:^|[^<])<(?![<(])/.test(a);
+    const isSignerSeg = (s) => !unsafeCmd && SIGNER_FIRST_TOKEN_RE.test(s);
     const signerSegs = segs.filter(isSignerSeg);
-    // A bare `KEY=<keypath>` assignment (the prose's `$KEY`) reads nothing; exempt it only when every other
-    // segment is a signer call, so `KEY=...; cat "$KEY"` still fires.
-    const isKeyAssign = (s) => forms.some((f) => new RegExp(`^(?:export\\s+)?[A-Za-z_]\\w*=(["']?)${esc(f)}\\1$`).test(s));
-    const nonSigner = segs.filter((s) => !isSignerSeg(s));
-    const onlyAssignAndSigner = nonSigner.every(isKeyAssign);
-    const otherSegs = onlyAssignAndSigner ? [] : nonSigner;
+    // A bare `NAME=<keypath>` segment (the prose's `$KEY`) reads nothing. Exempt only if every other segment is a
+    // sanctioned signer call and NAME is referenced solely as the value of --key/--out; else it (and the use) fire.
+    const assignName = (s) => forms.map((f) => new RegExp(`^([A-Za-z_]\\w*)=(["']?)${esc(f)}\\2$`).exec(s)).find(Boolean)?.[1] ?? null;
+    const assigns = segs.filter((s) => assignName(s) !== null);
+    const nonAssign = segs.filter((s) => assignName(s) === null);
+    const varOnlyAsKeyArg = (s, n) => !new RegExp(`\\$\\{?${n}\\b`).test(s.replace(new RegExp(`--(?:out|key)(?:=|\\s+)(["']?)\\$\\{?${n}\\}?\\1(?=\\s|$)`, "g"), "--SANCTIONED"));
+    const assignExempt = assigns.length > 0 && nonAssign.length > 0 && nonAssign.every(isSignerSeg)
+      && assigns.every((x) => nonAssign.every((sg) => varOnlyAsKeyArg(sg, assignName(x))));
+    const otherSegs = segs.filter((x) => !isSignerSeg(x) && !(assignExempt && assignName(x) !== null));
     const once = new Set();
     const addOnce = (name, attrs) => { if (!once.has(name)) { once.add(name); add(name, e.i, attrs); } };
 

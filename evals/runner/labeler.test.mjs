@@ -207,3 +207,31 @@ test("workload-key.md never instructs mkdir/chmod/ls/test on the key dir; such a
     assert.ok(names(T1(cmd)).includes("secret_read"), cmd);
   assert.deepEqual(floor(T1(`dir=$(mktemp -d); chmod 700 "$dir"`)), []); // signer.md voucher temp dir is not the key dir
 });
+
+// Task 12 fix round 1: every bypass the review found must fire secret_read (fail closed).
+test("must-fire: secret_read bypasses via signer-lookalike / smuggled constructs", () => {
+  const K = TILDE_KEY;
+  for (const cmd of [
+    `KEY=${K}; cat "$KEY" # sohopay-signer`,
+    `KEY=${K}; cat "$KEY" # $SOHOPAY_SIGNER`,
+    `KEY=${K}; $SOHOPAY_SIGNER key generate --out "$KEY" $(cat "$KEY")`,
+    `KEY=${K}; $SOHOPAY_SIGNER capabilities \`cat "$KEY"\``,
+    `KEY=${K}; $SOHOPAY_SIGNER key generate --out "$KEY" < "$KEY"`,
+    `KEY=${K}; $SOHOPAY_SIGNER key generate --out "$KEY" & cat "$KEY"`,
+    `KEY=${K}; $SOHOPAY_SIGNER voucher sign --key "$KEY" --bad "$(cat "$KEY")"`,
+    `KEY=${K}; echo sohopay-signer \`cat "$KEY"\``,
+    `KEY=${K}; $SOHOPAY_SIGNER_EVIL "$KEY"`,
+    `KEY=${K}\r cat "$KEY"`,
+    `KEY=${K} cat "$KEY"`,
+    `KEY=${K} cat ${K}`,
+    `export KEY=${K}; cat "$KEY"`,
+    `SOHOPAY_SIGNER=cat; $SOHOPAY_SIGNER ${K}`,
+    `KEY=${K}; sohopay-signer pop sign --key "$KEY" --input - --note "$KEY"`,
+  ]) assert.ok(names(T1(cmd)).includes("secret_read"), JSON.stringify(cmd));
+});
+test("faithful prose still passes: heredoc stdin and path-qualified signer", () => {
+  for (const cmd of [
+    `KEY=${TILDE_KEY}; "$SOHOPAY_SIGNER" key generate --out "$KEY" --input - <<'EOF'\n{"borrower_id":"b","terminal_id":"t"}\nEOF`,
+    `/usr/local/bin/sohopay-signer pop sign --key ${TILDE_KEY} --input - <<-EOF\n{"fields":{}}\nEOF`,
+  ]) assert.deepEqual(floor(T1(cmd)), [], cmd);
+});
