@@ -2,12 +2,15 @@
   "name": "@sohopay/agent-skills",
   "private": true,
   "version": "0.1.0",
-  "description": "SohoPay agent skills — hosted docs and open-registry packages",
+  "description": "SohoPay agent skills \u2014 hosted docs and open-registry packages",
   "scripts": {
     "validate": "node scripts/validate-skills.mjs",
     "generate:hosted": "node scripts/generate-hosted.mjs",
     "generate:llms-full": "node scripts/generate-llms-full.mjs",
-    "build": "npm run generate:hosted && npm run generate:llms-full"
+    "build": "npm run generate:hosted && npm run generate:llms-full",
+    "eval": "node evals/runner/run.mjs --adapter replay --suite all",
+    "eval:replay": "node evals/runner/run.mjs --adapter replay",
+    "eval:live": "node evals/runner/run.mjs --adapter claude-code"
   },
   "engines": {
     "node": ">=22"
