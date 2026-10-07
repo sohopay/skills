@@ -6,7 +6,8 @@
 // the caller then treats every key-shaped token and every resolved hit on the key store as a read (fail closed).
 //
 // Template sources (keep this list and the report in sync):
-//   signer.md "Resolve a signer"         <tier> capabilities [--output json] · <tier> verify-vectors
+//   signer.md "Resolve a signer"         <tier> capabilities · <tier> verify-vectors
+//   every signer template               + optional `--output json` (exactly that pair, once, any flag position)
 //   signer.md "Sign the voucher" block   dir=$(mktemp -d); chmod 700 "$dir" · umask 077 · # comments ·
 //                                        curl -fsS … -o "$dir/<f>" <https URL>/api/v1/spend/x402/prepare ·
 //                                        <tier> voucher sign --envelope --key <KEYREF> --input <SCRATCH> --write-header <SCRATCH>
@@ -97,12 +98,24 @@ function segmentsOf(toks) {
   return segs;
 }
 
-/** Parse a closed flag set (any order, each exactly once). Returns consumed key tokens or null. */
-function parseFlags(tokens, spec, ctx) {
-  const seen = new Set();
+// The documented output mode (Task 14 ruling): `--output json`, at most once per call, as an optional flag. Only the
+// exact two-token pair; `--output=json`, `--output human` or any other value is not documented, so not sanctioned.
+const OUTPUT_FLAG = "--output";
+
+/**
+ * Parse a closed flag set (any order, each exactly once). Every `spec` flag is required; `--output json` is accepted
+ * once, unless `outputTaken` (already consumed before the subcommand). Returns consumed key tokens or null.
+ */
+function parseFlags(tokens, spec, ctx, outputTaken = false) {
+  const seen = new Set(outputTaken ? [OUTPUT_FLAG] : []);
   const keyToks = [];
   for (let i = 0; i < tokens.length; i++) {
     const f = tokens[i];
+    if (f === OUTPUT_FLAG) {
+      if (seen.has(f) || tokens[i + 1] !== "json") return null;
+      seen.add(f); i++;
+      continue;
+    }
     if (!Object.hasOwn(spec, f) || seen.has(f)) return null;
     seen.add(f);
     const kind = spec[f];
@@ -128,15 +141,19 @@ function matchSigner(w, ctx) {
     if (!NPX_PIN_RE.test(w[i] ?? "")) return null;
     i++; npx = true;
   } else return null;
-  const rest = w.slice(i);
-  if (eq(rest, ["capabilities"]) || eq(rest, ["capabilities", "--output", "json"]) || eq(rest, ["verify-vectors"]))
-    return { keyToks: [], keyed: false };
+  let rest = w.slice(i);
+  // The CLI parses flags anywhere, so `--output json` may also precede the subcommand; it is still consumed once.
+  const lead = rest[0] === OUTPUT_FLAG && rest[1] === "json";
+  if (lead) rest = rest.slice(2);
+  for (const cmd of ["capabilities", "verify-vectors"]) {
+    if (rest[0] === cmd && parseFlags(rest.slice(1), {}, ctx, lead)) return { keyToks: [], keyed: false };
+  }
   const sub = rest.slice(0, 2).join(" ");
   const args = rest.slice(2);
   let keyToks = null;
-  if (sub === "voucher sign") keyToks = parseFlags(args, { "--envelope": null, "--key": "keyref", "--input": "scratch", "--write-header": "scratch" }, ctx);
-  else if (sub === "pop sign") keyToks = parseFlags(args, { "--key": "keyref", "--input": "input" }, ctx);
-  else if (sub === "key generate" && !npx) keyToks = parseFlags(args, { "--out": "keyref", "--input": "stdin" }, ctx);
+  if (sub === "voucher sign") keyToks = parseFlags(args, { "--envelope": null, "--key": "keyref", "--input": "scratch", "--write-header": "scratch" }, ctx, lead);
+  else if (sub === "pop sign") keyToks = parseFlags(args, { "--key": "keyref", "--input": "input" }, ctx, lead);
+  else if (sub === "key generate" && !npx) keyToks = parseFlags(args, { "--out": "keyref", "--input": "stdin" }, ctx, lead);
   return keyToks ? { keyToks, keyed: true } : null;
 }
 
