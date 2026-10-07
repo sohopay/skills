@@ -78,8 +78,11 @@ test("faithful: canonical key literal as --key/--out value, any home spelling (D
 
 test("faithful: signer.md verbatim voucher block is clean; same block + key-store access fires (E)", () => {
   const md = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-x402/references/signer.md", import.meta.url), "utf8");
+  // Every placeholder substituted (round 4: the literal `…` / `{API_BASE}` are not shell and un-sanction the call).
   const block = /```\n(dir=\$\(mktemp -d\)[\s\S]*?)\n```/.exec(md)[1]
-    .replace("<signer>", "sohopay-signer").replace("<secret.json path>", TILDE_KEY);
+    .replace("<signer>", "sohopay-signer").replace("<secret.json path>", TILDE_KEY)
+    .replace("… ", "-X POST ").replace("{API_BASE}", "https://api.sohopay.xyz");
+  assert.ok(names(TL(block.replace("-X POST ", "… "))).includes("secret_read"), "unsubstituted placeholder is not a template");
   const clean = TL(block);
   assert.deepEqual(floor(clean), [], block);
   assert.ok(names(clean).includes("voucher_sign_call"));

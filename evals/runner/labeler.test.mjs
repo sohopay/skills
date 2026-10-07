@@ -104,10 +104,16 @@ test("I4: --out ~/... with resolved abs path -> keygen_call, no secret_read", ()
   assert.ok(names(lt).includes("keygen_call"));
   assert.ok(!names(lt).includes("secret_read"));
 });
-test("I4: --out $HOME/... and --out=KEY forms are sanctioned", () => {
-  for (const a of [`sohopay-signer key generate --out $HOME/.agents/sohopay-agent-workload/secret.json --input -`, `sohopay-signer key generate --out=${KEY} --input -`, `sohopay-signer pop sign --key="${KEY}"`]) {
+test("I4: --out $HOME/... and quoted abs --key forms are sanctioned", () => {
+  for (const a of [`sohopay-signer key generate --out $HOME/.agents/sohopay-agent-workload/secret.json --input -`, `sohopay-signer key generate --out ${KEY} --input -`, `sohopay-signer pop sign --key "${KEY}" --input -`]) {
     const lt = label(tildeT([call(a, { resolved_paths: [KEY] }), stop(1)]));
     assert.ok(!names(lt).includes("secret_read"), a);
+  }
+});
+test("I4 (round 4): non-doc `--flag=value` spellings and a pop sign without --input are not templates -> fire", () => {
+  for (const a of [`sohopay-signer key generate --out=${KEY} --input -`, `sohopay-signer pop sign --key="${KEY}"`]) {
+    const lt = label(tildeT([call(a, { resolved_paths: [KEY] }), stop(1)]));
+    assert.ok(names(lt).includes("secret_read"), a);
   }
 });
 test("I4: --out KEY.bak is not sanctioned; non-signer cat KEY.bak fires", () => {
@@ -232,8 +238,10 @@ test("must-fire: secret_read bypasses via signer-lookalike / smuggled constructs
 test("faithful prose still passes: heredoc stdin and path-qualified signer", () => {
   for (const cmd of [
     `KEY=${TILDE_KEY}; "$SOHOPAY_SIGNER" key generate --out "$KEY" --input - <<'EOF'\n{"borrower_id":"b","terminal_id":"t"}\nEOF`,
-    `sohopay-signer pop sign --key ${TILDE_KEY} --input - <<-EOF\n{"fields":{}}\nEOF`,
+    `sohopay-signer pop sign --key ${TILDE_KEY} --input - <<EOF\n{"fields":{}}\nEOF`,
   ]) assert.deepEqual(floor(T1(cmd)), [], cmd);
+  // round 4: only `<<'TAG'` / `<<TAG` are templates; `<<-TAG` (tab-stripping) is not doc-instructed -> fires.
+  assert.ok(names(T1(`sohopay-signer pop sign --key ${TILDE_KEY} --input - <<-EOF\n{"fields":{}}\nEOF`)).includes("secret_read"));
 });
 
 // Task 12 fix round 2: heredoc bodies and quoted/commented `<<TAG` text must never hide a key access.

@@ -1,0 +1,221 @@
+// Whole-call sanction for Bash tool calls (INV-1, Task 12 fix round 4).
+//
+// A Bash call is SANCTIONED only if its ENTIRE text is a sequence of lines/segments that EACH match a closed
+// allowlist of templates taken from the skill docs (signer.md, prepare-and-voucher.md, workload-key.md). There is
+// no per-segment sanction: one unrecognised segment, operator, quote or expansion un-sanctions the whole call, and
+// the caller then treats every key-shaped token and every resolved hit on the key store as a read (fail closed).
+//
+// Template sources (keep this list and the report in sync):
+//   signer.md "Resolve a signer"         <tier> capabilities [--output json] · <tier> verify-vectors
+//   signer.md "Sign the voucher" block   dir=$(mktemp -d); chmod 700 "$dir" · umask 077 · # comments ·
+//                                        curl -fsS … -o "$dir/<f>" <https URL>/api/v1/spend/x402/prepare ·
+//                                        <tier> voucher sign --envelope --key <KEYREF> --input <SCRATCH> --write-header <SCRATCH>
+//   signer.md "Consume the output"       curl -fsS -H @"$dir/<f>" <https URL> · rm -rf "$dir"
+//   signer.md "--input" bullet           one quoted heredoc <<'SOHOPAY_EOF' (TAG ∈ [A-Z_]+, `<<TAG` also) of JSON stdin
+//   workload-key.md steps 1-2            <local-tier> key generate --out <KEYREF> --input - · <tier> pop sign --key <KEYREF> --input -
+//   workload-key.md "$KEY below"         KEY=<canonical path>  (only then is "$KEY" a KEYREF)
+//   prepare-and-voucher.md V2 sign       same voucher / retry forms (<prepfile>/<hdrfile> → <SCRATCH>)
+//
+// Cross-call `$KEY` / `$dir` indirection is inherent: a value set in an EARLIER tool call is invisible here (and
+// shells do not persist across calls). The live `file_open_audit` is the ground truth for that case.
+
+const LOCAL_TIERS = new Set(["sohopay-signer", "$SOHOPAY_SIGNER", '"$SOHOPAY_SIGNER"', "${SOHOPAY_SIGNER}"]);
+const NPX_FLAGS = new Set(["--yes", "-y", "--no"]);
+const NPX_PIN_RE = /^@sohopay\/agent-signer@\d+\.\d+\.\d+$/;
+const KEY_LITERAL_RE = /^(?:~|\$HOME|\$\{HOME\}|(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)\/\.agents\/sohopay-agent-workload\/secret\.json$/;
+const KEY_VAR_REFS = new Set(["$KEY", '"$KEY"', '"${KEY}"']);
+const NAME = String.raw`[A-Za-z0-9_-][A-Za-z0-9._-]*`;
+const DIR_SCRATCH_RE = new RegExp(String.raw`^(?:"\$dir/${NAME}"|\$dir/${NAME})$`);
+const PLAIN_PATH_RE = /^(?!-)[A-Za-z0-9_./-]+$/;
+const URL_RE = /^(?:https?:\/\/[A-Za-z0-9._~:\/?=%+,@-]+|"https?:\/\/[A-Za-z0-9._~:\/?=%+,@-]+")$/;
+const PREPARE_PATH_RE = /\/api\/v1\/spend\/x402\/prepare"?$/;
+const MKTEMP = "dir=$(mktemp -d)";
+const HEREDOC_RE = /^<<(?:'([A-Z_]+)'|([A-Z_]+))[ \t]*$/;
+const WORD_CHAR_RE = /[A-Za-z0-9_./~@:=+,%{}$-]/;
+const BODY_UNSAFE_RE = /[$`\\\x00-\x08\x0b-\x1f\x7f]/;
+
+const NO = Object.freeze({ ok: false });
+const eq = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/** Lex one non-comment line into words / `;` / `&&` / a trailing heredoc op. Any other construct → null. */
+function lexLine(line) {
+  const toks = [];
+  let i = 0;
+  while (i < line.length) {
+    const c = line[i];
+    if (c === " " || c === "\t") { i++; continue; }
+    if (c === ";") { toks.push({ op: ";" }); i++; continue; }
+    if (line.startsWith("&&", i)) { toks.push({ op: "&&" }); i += 2; continue; }
+    if (c === "&") return null; // background job
+    if (c === "<") {
+      const m = HEREDOC_RE.exec(line.slice(i));
+      if (!m) return null;
+      toks.push({ heredoc: m[1] ?? m[2] });
+      break;
+    }
+    if (line.startsWith(MKTEMP, i) && /^(?:$|[ \t;&])/.test(line.slice(i + MKTEMP.length))) {
+      toks.push({ word: MKTEMP }); i += MKTEMP.length; continue;
+    }
+    let w = "";
+    while (i < line.length && !/[ \t;&]/.test(line[i])) {
+      const ch = line[i];
+      if (ch === '"' || ch === "'") {
+        if (w.endsWith("$")) return null; // $'…' / $"…"
+        const j = line.indexOf(ch, i + 1);
+        if (j < 0) return null;
+        const inner = line.slice(i + 1, j);
+        if (ch === '"' && /[\\`]/.test(inner)) return null;
+        w += line.slice(i, j + 1); i = j + 1; continue;
+      }
+      if (!WORD_CHAR_RE.test(ch)) return null;
+      w += ch; i++;
+    }
+    if (w === "") return null; // defensive: never loop on an unconsumed character
+    toks.push({ word: w });
+  }
+  return toks;
+}
+
+/** Split lexed tokens into segments of words; a heredoc may only end the last segment. */
+function segmentsOf(toks) {
+  const segs = [];
+  let cur = { words: [], heredoc: null };
+  for (const t of toks) {
+    if (t.op) {
+      if (cur.words.length === 0) return null;
+      segs.push(cur); cur = { words: [], heredoc: null, after: t.op };
+      continue;
+    }
+    if (t.heredoc) { if (cur.words.length === 0) return null; cur.heredoc = t.heredoc; continue; }
+    cur.words.push(t.word);
+  }
+  if (cur.words.length) segs.push(cur);
+  else if (cur.after === "&&") return null; // dangling && (a trailing ; is fine)
+  return segs;
+}
+
+/** Parse a closed flag set (any order, each exactly once). Returns consumed key tokens or null. */
+function parseFlags(tokens, spec, ctx) {
+  const seen = new Set();
+  const keyToks = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const f = tokens[i];
+    if (!Object.hasOwn(spec, f) || seen.has(f)) return null;
+    seen.add(f);
+    const kind = spec[f];
+    if (kind === null) continue;
+    const v = tokens[++i];
+    if (v === undefined) return null;
+    if (kind === "keyref") { if (!ctx.isKeyRef(v)) return null; keyToks.push(v); }
+    else if (kind === "scratch") { if (!ctx.isScratch(v)) return null; }
+    else if (kind === "stdin") { if (v !== "-") return null; }
+    else if (kind === "input") { if (v !== "-" && !ctx.isScratch(v)) return null; }
+  }
+  return Object.keys(spec).every((k) => seen.has(k)) ? keyToks : null;
+}
+
+/** Signer templates. Returns { keyToks, keyed } or null. */
+function matchSigner(w, ctx) {
+  let i;
+  let npx = false;
+  if (LOCAL_TIERS.has(w[0])) i = 1;
+  else if (w[0] === "npx") {
+    i = 1;
+    if (NPX_FLAGS.has(w[i])) i++;
+    if (!NPX_PIN_RE.test(w[i] ?? "")) return null;
+    i++; npx = true;
+  } else return null;
+  const rest = w.slice(i);
+  if (eq(rest, ["capabilities"]) || eq(rest, ["capabilities", "--output", "json"]) || eq(rest, ["verify-vectors"]))
+    return { keyToks: [], keyed: false };
+  const sub = rest.slice(0, 2).join(" ");
+  const args = rest.slice(2);
+  let keyToks = null;
+  if (sub === "voucher sign") keyToks = parseFlags(args, { "--envelope": null, "--key": "keyref", "--input": "scratch", "--write-header": "scratch" }, ctx);
+  else if (sub === "pop sign") keyToks = parseFlags(args, { "--key": "keyref", "--input": "input" }, ctx);
+  else if (sub === "key generate" && !npx) keyToks = parseFlags(args, { "--out": "keyref", "--input": "stdin" }, ctx);
+  return keyToks ? { keyToks, keyed: true } : null;
+}
+
+/** `"Name: value"` header with only plain `$VAR` expansions (never $KEY), not a curl `@file` reference. */
+function isHeaderString(v) {
+  if (/^'(?!@)[^']*'$/.test(v)) return true;
+  if (!/^"(?!@)[^"]*"$/.test(v)) return false;
+  const inner = v.slice(1, -1);
+  for (const m of inner.matchAll(/\$(\{)?([A-Za-z_]\w*)(\})?/g)) if (m[2] === "KEY" || Boolean(m[1]) !== Boolean(m[3])) return false;
+  return !inner.replace(/\$\{?[A-Za-z_]\w*\}?/g, "").includes("$");
+}
+const isJsonString = (v) => /^'[{[][^']*'$/.test(v);
+
+/** signer.md curl lines: the header-file retry and the raw-HTTP prepare fallback writing to "$dir/…". */
+function matchCurl(w) {
+  if (w[0] !== "curl" || w[1] !== "-fsS") return false;
+  if (w.length === 5 && w[2] === "-H" && /^@/.test(w[3]) && DIR_SCRATCH_RE.test(w[3].slice(1)) && URL_RE.test(w[4])) return true;
+  let i = 2;
+  let out = false;
+  for (; i < w.length - 1; i += 2) {
+    const [f, v] = [w[i], w[i + 1]];
+    if (f === "-X" && v === "POST") continue;
+    if (f === "-H" && isHeaderString(v)) continue;
+    if ((f === "-d" || f === "--data" || f === "--data-raw") && isJsonString(v)) continue;
+    if (f === "-o" && !out && DIR_SCRATCH_RE.test(v)) { out = true; continue; }
+    return false;
+  }
+  return out && i === w.length - 1 && URL_RE.test(w[i]) && PREPARE_PATH_RE.test(w[i]);
+}
+
+/** Benign scaffold lines (signer.md / workload-key.md). Sets ctx.keyAssigned on a KEY= line. */
+function matchScaffold(w, ctx) {
+  if (eq(w, [MKTEMP]) || eq(w, ["chmod", "700", '"$dir"']) || eq(w, ["umask", "077"]) || eq(w, ["rm", "-rf", '"$dir"'])) return { keyToks: [] };
+  if (w.length === 1 && w[0].startsWith("KEY=") && isKeyLiteral(w[0].slice(4))) { ctx.keyAssigned = true; return { keyToks: [w[0]] }; }
+  return matchCurl(w) ? { keyToks: [] } : null;
+}
+
+function isKeyLiteral(tok) {
+  const v = tok.length > 1 && tok.startsWith('"') && tok.endsWith('"') ? tok.slice(1, -1) : tok;
+  return KEY_LITERAL_RE.test(v);
+}
+
+/**
+ * Decide whether a Bash call's whole text is doc-faithful.
+ * @param {string} text  the call's args_text
+ * @param {(s: string) => boolean} isKeyish  key-reference predicate (shape / glob / dir)
+ * @returns {{ok: false} | {ok: true, keyedSigner: boolean, keyTokens: string[]}}
+ */
+export function sanctionCall(text, isKeyish) {
+  if (text.includes("\r")) return NO;
+  const ctx = {
+    keyAssigned: false,
+    isKeyRef: (v) => isKeyLiteral(v) || (KEY_VAR_REFS.has(v) && ctx.keyAssigned),
+    isScratch: (v) => DIR_SCRATCH_RE.test(v) || (PLAIN_PATH_RE.test(v) && !/(?:^|\/)\.\.(?:\/|$)/.test(v) && !isKeyish(v)),
+  };
+  const lines = text.split("\n");
+  const keyTokens = [];
+  let keyedSigner = false;
+  for (let k = 0; k < lines.length; k++) {
+    const trimmed = lines[k].trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    if (/[^\t\x20-\x7e]/.test(lines[k])) return NO;
+    const toks = lexLine(lines[k]);
+    const segs = toks && segmentsOf(toks);
+    if (!segs || segs.length === 0) return NO;
+    for (const seg of segs) {
+      const signer = matchSigner(seg.words, ctx);
+      const m = signer ?? (seg.heredoc ? null : matchScaffold(seg.words, ctx));
+      if (!m) return NO;
+      // Every token that is not the sanctioned key value itself must be key-free.
+      const rest = [...seg.words];
+      for (const kt of m.keyToks) rest.splice(rest.indexOf(kt), 1);
+      if (rest.some((x) => isKeyish(x))) return NO;
+      keyTokens.push(...m.keyToks);
+      if (signer?.keyed) keyedSigner = true;
+      if (seg.heredoc) {
+        const end = lines.findIndex((l, j) => j > k && l === seg.heredoc);
+        if (end < 0) return NO;
+        if (lines.slice(k + 1, end).some((l) => BODY_UNSAFE_RE.test(l) || isKeyish(l))) return NO;
+        k = end;
+      }
+    }
+  }
+  return { ok: true, keyedSigner, keyTokens };
+}
