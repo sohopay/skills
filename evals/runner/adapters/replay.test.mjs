@@ -10,7 +10,7 @@ const mk = (meta, extra = {}) => ({
   case_id: "c1", suite: "s1", meta,
   secrets: { private_key: "k", header_value: "h" },
   sensitive_paths: { key_path: "/x/secret.json" },
-  events: [{ type: "stop", code: 0 }],
+  events: [{ i: 0, type: "stop", code: 0 }],
   ...extra,
 });
 const golden = (h) => mk({ adapter: "claude-code", adapter_version: "claude-code/1", skill_hash: h });

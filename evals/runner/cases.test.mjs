@@ -40,3 +40,13 @@ test("after/not_before anchors must be in requires_labels", () => {
   has(validateJoin(caseMap("a"), asMap(mk("a", { predicates: [{ name: "absent", label: "secret_read", after: "keygen_call" }] }))), /keygen_call/);
   has(validateJoin(caseMap("a"), asMap(mk("a", { predicates: [{ name: "not_before", a: "secret_read", b: "keygen_call" }] }))), /keygen_call/);
 });
+
+test("bare predicate with missing required args reported", () => {
+  has(validateJoin(caseMap("a"), asMap(mk("a", { predicates: [{ name: "absent" }] }))), /absent.*label/);
+  has(validateJoin(caseMap("a"), asMap(mk("a", { predicates: [{ name: "not_before", a: "keygen_call" }] }))), /not_before.*\bb\b/);
+});
+test("prototype-key predicate name and label are rejected", () => {
+  has(validateJoin(caseMap("a"), asMap(mk("a", { predicates: [{ name: "toString" }] }))), /unknown predicate/);
+  has(validateJoin(caseMap("a"), asMap(mk("a", { predicates: [{ name: "absent", label: "constructor" }] }))), /constructor/);
+  has(validateJoin(caseMap("a"), asMap(mk("a", { requires_labels: ["toString"] }))), /toString/);
+});

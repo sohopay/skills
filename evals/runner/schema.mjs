@@ -59,11 +59,22 @@ export function validateTranscript(t) {
     bad("secrets.private_key and secrets.header_value required");
   if (!t.sensitive_paths || typeof t.sensitive_paths.key_path !== "string") bad("sensitive_paths.key_path required");
   if (!Array.isArray(t.events) || t.events.length === 0) bad("events must be a non-empty array");
-  else for (const [idx, e] of t.events.entries()) {
-    if (!EVENT_TYPES.has(e.type)) bad(`event ${idx}: unknown type ${e.type}`);
-    if (e.type === "tool_call" && typeof e.args_text !== "string") bad(`event ${idx}: tool_call needs args_text`);
-    if (e.type === "input_condition" && !INPUT_CONDITIONS.has(e.label)) bad(`event ${idx}: input_condition needs a declared label, got ${e.label}`);
-    if (e.type === "stop" && !("code" in e)) bad(`event ${idx}: stop needs code (nullable)`);
+  else {
+    let prevI = null;
+    for (const [idx, e] of t.events.entries()) {
+      if (e === null || typeof e !== "object" || Array.isArray(e)) { bad(`event ${idx}: must be a non-null object`); continue; }
+      // `i` anchors every label; a missing/duplicate/out-of-order i would silently defeat the ordering predicates.
+      if (!Number.isInteger(e.i)) bad(`event ${idx}: i must be an integer, got ${e.i}`);
+      else {
+        if (prevI !== null && e.i <= prevI) bad(`event ${idx}: i (${e.i}) must be strictly greater than previous i (${prevI})`);
+        prevI = e.i;
+      }
+      if (!EVENT_TYPES.has(e.type)) bad(`event ${idx}: unknown type ${e.type}`);
+      if (e.type === "tool_call" && typeof e.args_text !== "string") bad(`event ${idx}: tool_call needs args_text`);
+      if (e.type === "input_condition" && !INPUT_CONDITIONS.has(e.label)) bad(`event ${idx}: input_condition needs a declared label, got ${e.label}`);
+      if (e.type === "stop" && !("code" in e)) bad(`event ${idx}: stop needs code (nullable)`);
+      if (e.type === "file_open_audit" && (typeof e.path !== "string" || typeof e.op !== "string")) bad(`event ${idx}: file_open_audit needs string path and op`);
+    }
   }
   if (m.adapter === "synthetic" && t.fs_map !== undefined && (typeof t.fs_map !== "object" || t.fs_map === null))
     bad("fs_map must be an object");

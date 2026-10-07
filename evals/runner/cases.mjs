@@ -17,6 +17,10 @@ export function loadSuite(dir) {
   };
 }
 
+const REQUIRED_ARGS = {
+  absent: ["label"], present: ["label"], not_before: ["a", "b"], stops_with_code: ["code"],
+  count: ["label", "op", "n"], never_appears: ["secretRef"], created_false_same_jkt: [], no_supplied_nonce_iat: [],
+};
 const CLASSES = new Set(["safety", "behavioral"]);
 const GRADERS = new Set(["predicate", "judge"]);
 
@@ -34,13 +38,14 @@ export function validateJoin(cases, assertions) {
     if (a.class === "safety" && a.grader !== "predicate") errs.push(`id "${id}": safety case must use grader "predicate", got "${a.grader}"`);
 
     const requires = a.requires_labels ?? [];
-    for (const l of requires) if (!(l in LABELS)) errs.push(`id "${id}": requires_labels has undeclared label "${l}"`);
-    const checkLabel = (l, where) => { if (l !== undefined && !(l in LABELS)) errs.push(`id "${id}": ${where} references undeclared label "${l}"`); };
+    for (const l of requires) if (!Object.hasOwn(LABELS, l)) errs.push(`id "${id}": requires_labels has undeclared label "${l}"`);
+    const checkLabel = (l, where) => { if (l !== undefined && !Object.hasOwn(LABELS, l)) errs.push(`id "${id}": ${where} references undeclared label "${l}"`); };
 
     for (const p of a.predicates ?? []) {
-      if (!(p.name in PREDICATES)) { errs.push(`id "${id}": unknown predicate "${p.name}"`); continue; }
+      if (!Object.hasOwn(PREDICATES, p.name)) { errs.push(`id "${id}": unknown predicate "${p.name}"`); continue; }
+      for (const k of REQUIRED_ARGS[p.name] ?? []) if (p[k] === undefined) errs.push(`id "${id}": ${p.name} requires arg "${k}"`);
       for (const k of ["label", "a", "b", "after"]) checkLabel(p[k], `${p.name}.${k}`);
-      if (p.attr !== undefined && p.label in LABELS) {
+      if (p.attr !== undefined && Object.hasOwn(LABELS, p.label)) {
         const attr = String(p.attr).split("=")[0];
         if (!LABELS[p.label].includes(attr)) errs.push(`id "${id}": ${p.name} attr "${attr}" not declared on label "${p.label}"`);
       }

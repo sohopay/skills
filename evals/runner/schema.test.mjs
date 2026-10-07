@@ -31,3 +31,34 @@ test("LABELS declares key labels with their attributes", () => {
   assert.deepEqual(LABELS.keygen_call, ["out_is_file", "created", "jkt"]);
   assert.deepEqual(LABELS.merchant_retry, ["uses_header_file"]);
 });
+
+test("rejects an event missing i (silent false-pass guard)", () => {
+  const t = base(); delete t.events[0].i;
+  const r = validateTranscript(t);
+  assert.equal(r.ok, false);
+  assert.match(r.errors.join(";"), /\bi\b/);
+});
+test("rejects non-monotonic i", () => {
+  const t = base(); t.events = [{ i: 2, type: "model_text", text: "a" }, { i: 1, type: "stop", reason: "done", code: null }];
+  assert.equal(validateTranscript(t).ok, false);
+});
+test("rejects duplicate i (strictly increasing)", () => {
+  const t = base(); t.events = [{ i: 1, type: "model_text", text: "a" }, { i: 1, type: "stop", reason: "done", code: null }];
+  assert.equal(validateTranscript(t).ok, false);
+});
+test("rejects non-integer i", () => {
+  const t = base(); t.events[0].i = "0";
+  assert.equal(validateTranscript(t).ok, false);
+});
+test("null event entry yields ok:false without throwing", () => {
+  const t = base(); t.events = [null, ...t.events];
+  let r; assert.doesNotThrow(() => { r = validateTranscript(t); });
+  assert.equal(r.ok, false);
+});
+test("file_open_audit missing path/op yields ok:false", () => {
+  for (const ev of [{ i: 0, type: "file_open_audit", op: "read" }, { i: 0, type: "file_open_audit", path: "/x" }]) {
+    const t = base(); t.events = [ev, { i: 1, type: "stop", reason: "done", code: null }];
+    let r; assert.doesNotThrow(() => { r = validateTranscript(t); });
+    assert.equal(r.ok, false);
+  }
+});
