@@ -194,8 +194,15 @@ export function label(t) {
     const resolved = resolveRefPaths(e, t);
     const forms = keyForms(keyPath, resolved);
     const segs = a.split(SEGMENT_SPLIT_RE).map((s) => s.trim()).filter(Boolean);
-    const signerSegs = segs.filter((s) => s.includes(SIGNER_BINARY));
-    const otherSegs = segs.filter((s) => !s.includes(SIGNER_BINARY));
+    // workload-key.md names `$SOHOPAY_SIGNER` as the first-choice signer, so an env-var invocation is a signer segment too.
+    const isSignerSeg = (s) => s.includes(SIGNER_BINARY) || /\$\{?SOHOPAY_SIGNER\}?/.test(s);
+    const signerSegs = segs.filter(isSignerSeg);
+    // A bare `KEY=<keypath>` assignment (the prose's `$KEY`) reads nothing; exempt it only when every other
+    // segment is a signer call, so `KEY=...; cat "$KEY"` still fires.
+    const isKeyAssign = (s) => forms.some((f) => new RegExp(`^(?:export\\s+)?[A-Za-z_]\\w*=(["']?)${esc(f)}\\1$`).test(s));
+    const nonSigner = segs.filter((s) => !isSignerSeg(s));
+    const onlyAssignAndSigner = nonSigner.every(isKeyAssign);
+    const otherSegs = onlyAssignAndSigner ? [] : nonSigner;
     const once = new Set();
     const addOnce = (name, attrs) => { if (!once.has(name)) { once.add(name); add(name, e.i, attrs); } };
 
