@@ -9,6 +9,9 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -25,4 +28,8 @@ jobs:
             borrower-onboard.md human-direct-flow.md spend-and-pay.md x402-credit-pay.md \
             authorize-agent.md repay.md idempotency.md agent-session.md llms-full.txt .well-known/agent-skills/index.json \
             || { echo "FAIL: generated files drifted — run npm run build and commit"; exit 1; }
+      - name: Merge gate — pinned signer advertises the keygen contract
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/signer-contract-check.mjs
       - run: npm run validate
