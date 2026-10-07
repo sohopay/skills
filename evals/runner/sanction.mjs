@@ -174,9 +174,14 @@ function matchScaffold(w, ctx) {
   if (eq(w, [MKTEMP])) { ctx.dirMade = true; return { keyToks: [], kind: "prep" }; }
   if (eq(w, ["umask", "077"])) return { keyToks: [], kind: "prep" };
   if (ctx.dirMade && eq(w, ["chmod", "700", '"$dir"'])) return { keyToks: [], kind: "prep" };
-  if (ctx.dirMade && eq(w, ["rm", "-rf", '"$dir"'])) return { keyToks: [], kind: "remove" };
+  if (w[0] === "rm" && w[1] === "-rf") {
+    // `rm -rf [--] <dir>`; one trailing slash on the dir is the same dir. Anything else (extra args, `..`, other dirs) is not scaffold.
+    const rest = w.slice(2);
+    if (rest[0] === "--") rest.shift();
+    const tgt = rest.length === 1 ? rest[0].replace(/\/("?)$/, "$1") : null;
+    if (tgt !== null && ((ctx.dirMade && tgt === '"$dir"') || ctx.isTrustedDir(tgt))) return { keyToks: [], kind: "remove" };
+  }
   if (w.length === 3 && eq(w.slice(0, 2), ["chmod", "700"]) && ctx.isTrustedDir(w[2])) return { keyToks: [], kind: "prep" };
-  if (w.length === 3 && eq(w.slice(0, 2), ["rm", "-rf"]) && ctx.isTrustedDir(w[2])) return { keyToks: [], kind: "remove" };
   if (w.length === 1 && w[0].startsWith("KEY=") && isKeyLiteral(w[0].slice(4))) { ctx.keyAssigned = true; return { keyToks: [w[0]], kind: "key" }; }
   return matchCurl(w, ctx) ? { keyToks: [], kind: "curl" } : null;
 }

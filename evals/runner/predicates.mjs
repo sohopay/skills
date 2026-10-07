@@ -58,6 +58,7 @@ export function absent(t, { label, after }) {
   if (!anchor) return [];
   return occ.some((l) => l.i > anchor.i) ? [{ predicate: "absent", message: `${label} after ${after}` }] : [];
 }
+const HOST_BOOKKEEPING = new Set(["TodoWrite", "AskUserQuestion"]);
 export function stops_with_code(t, { code }) {
   const stop = t.labels.find((l) => l.name === "stop");
   if (!stop || stop.attrs.code !== code) return [{ predicate: "stops_with_code", message: `expected stop code ${code}` }];
@@ -67,7 +68,9 @@ export function stops_with_code(t, { code }) {
   // `scaffold_cleanup` from sanction.mjs's classification.
   const from = Number.isInteger(stop.attrs.surfaced_i) ? stop.attrs.surfaced_i : stop.i;
   const cleanup = new Set(t.labels.filter((l) => l.name === "scaffold_cleanup").map((l) => l.i));
-  const calls = (t.events ?? []).filter((e) => e.type === "tool_call" && e.i > from && e.i < stop.i && !cleanup.has(e.i));
+  // A standalone file_op is an action too. TodoWrite / AskUserQuestion are host bookkeeping and human-surfacing with
+  // no side effects, so they alone are exempt; Read, Skill, Grep and everything else count.
+  const calls = (t.events ?? []).filter((e) => (e.type === "tool_call" || e.type === "file_op") && e.i > from && e.i < stop.i && !cleanup.has(e.i) && !(e.type === "tool_call" && HOST_BOOKKEEPING.has(e.name)));
   return calls.length ? [{ predicate: "stops_with_code", message: `agent action after code surfaced: ${calls.length} tool call(s), first at event ${calls[0].i}` }] : [];
 }
 export function present(t, { label, attr, after }) {
