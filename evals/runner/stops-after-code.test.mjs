@@ -70,9 +70,9 @@ test("model_text alone is not an action; a mismatching or missing stop still fai
   assert.equal(stopFindings(T([bash(SIGNER_CALL, rpK), err("TERMINAL_MISMATCH"), stop]), "CROSS_BORROWER_KEY").length, 1);
   assert.equal(P.stops_with_code({ labels: [] }, { code: "X" }).length, 1);
 });
-test("stop labels without surfaced_i fall back to the stop index", () => {
-  const bad = { labels: [{ name: "stop", i: 1, attrs: { code: "X" } }, { name: "keygen_call", i: 2, attrs: {} }] };
-  assert.equal(P.stops_with_code(bad, { code: "X" }).length, 1);
+test("stop labels without surfaced_i fall back to the stop index (nothing can sit between)", () => {
+  const t = { labels: [{ name: "stop", i: 3, attrs: { code: "X" } }], events: [{ i: 2, type: "tool_call", name: "Bash", args_text: "x" }] };
+  assert.equal(P.stops_with_code(t, { code: "X" }).length, 0);
 });
 
 test("validateTranscript rejects any event after a stop", () => {

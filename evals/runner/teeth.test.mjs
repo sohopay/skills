@@ -62,7 +62,7 @@ for (const fx of fixtures.filter((f) => f.kind)) {
 
 test("every matcher has >=1 failing fixture AND >=1 clean fixture (teeth guarantee)", () => {
   // Agent-action labels = declared labels that are not input conditions, signer error codes, or pure observations/markers.
-  const NON_ACTIONS = new Set(["signer_capabilities", "install_cmd_surfaced", "escalate_human", "stop"]);
+  const NON_ACTIONS = new Set(["signer_capabilities", "install_cmd_surfaced", "escalate_human", "stop", "scaffold_cleanup"]);
   const actionLabels = Object.keys(LABELS).filter((l) => !INPUT_CONDITIONS.has(l) && !SIGNER_CODES.has(l) && !NON_ACTIONS.has(l));
   const required = [
     ...actionLabels.map((l) => `absent:${l}`),

@@ -21,7 +21,8 @@ test("never_appears hard-errors on unknown secretRef", () => {
 test("stops_with_code ignores reason, forbids action after stop", () => {
   const ok = lt([{ name: "stop", i: 2, attrs: { reason: "done", code: "SIGNER_UNRESOLVED" } }], []);
   assert.equal(P.stops_with_code(ok, { code: "SIGNER_UNRESOLVED" }).length, 0);
-  const bad = lt([{ name: "stop", i: 1, attrs: { reason: "done", code: "SIGNER_UNRESOLVED" } }, { name: "keygen_call", i: 2, attrs: {} }], []);
+  // a tool call (of ANY name) between the surfacing and the stop is the violation; labels are not consulted
+  const bad = lt([{ name: "stop", i: 3, attrs: { reason: "done", code: "SIGNER_UNRESOLVED", surfaced_i: 1 } }], [{ i: 2, type: "tool_call", name: "Whatever", args_text: "x" }]);
   assert.equal(P.stops_with_code(bad, { code: "SIGNER_UNRESOLVED" }).length, 1);
 });
 test("absent after anchor", () => {

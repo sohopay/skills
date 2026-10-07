@@ -169,12 +169,16 @@ function matchCurl(w, ctx) {
 
 /** Benign scaffold lines (signer.md / workload-key.md). Sets ctx.keyAssigned on a KEY= line. */
 function matchScaffold(w, ctx) {
-  if (eq(w, [MKTEMP])) { ctx.dirMade = true; return { keyToks: [] }; }
-  if (eq(w, ["umask", "077"])) return { keyToks: [] };
-  if (ctx.dirMade && (eq(w, ["chmod", "700", '"$dir"']) || eq(w, ["rm", "-rf", '"$dir"']))) return { keyToks: [] };
-  if (w.length === 3 && (eq(w.slice(0, 2), ["chmod", "700"]) || eq(w.slice(0, 2), ["rm", "-rf"])) && ctx.isTrustedDir(w[2])) return { keyToks: [] };
-  if (w.length === 1 && w[0].startsWith("KEY=") && isKeyLiteral(w[0].slice(4))) { ctx.keyAssigned = true; return { keyToks: [w[0]] }; }
-  return matchCurl(w, ctx) ? { keyToks: [] } : null;
+  // `kind` feeds sanctionCall's `cleanup` flag: prep (mktemp / umask / chmod), remove (recursive removal of the
+  // scratch dir), key (KEY= line), curl.
+  if (eq(w, [MKTEMP])) { ctx.dirMade = true; return { keyToks: [], kind: "prep" }; }
+  if (eq(w, ["umask", "077"])) return { keyToks: [], kind: "prep" };
+  if (ctx.dirMade && eq(w, ["chmod", "700", '"$dir"'])) return { keyToks: [], kind: "prep" };
+  if (ctx.dirMade && eq(w, ["rm", "-rf", '"$dir"'])) return { keyToks: [], kind: "remove" };
+  if (w.length === 3 && eq(w.slice(0, 2), ["chmod", "700"]) && ctx.isTrustedDir(w[2])) return { keyToks: [], kind: "prep" };
+  if (w.length === 3 && eq(w.slice(0, 2), ["rm", "-rf"]) && ctx.isTrustedDir(w[2])) return { keyToks: [], kind: "remove" };
+  if (w.length === 1 && w[0].startsWith("KEY=") && isKeyLiteral(w[0].slice(4))) { ctx.keyAssigned = true; return { keyToks: [w[0]], kind: "key" }; }
+  return matchCurl(w, ctx) ? { keyToks: [], kind: "curl" } : null;
 }
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -210,7 +214,7 @@ function isKeyLiteral(tok) {
  * @param {string} text  the call's args_text
  * @param {(s: string) => boolean} isKeyish  key-reference predicate (shape / glob / dir)
  * @param {string[]} trustedDirs  literal dirs printed by an EARLIER exact `mktemp -d` call (see trustedMktempDir)
- * @returns {{ok: false} | {ok: true, keyedSigner: boolean, keyTokens: string[]}}
+ * @returns {{ok: false} | {ok: true, keyedSigner: boolean, keyTokens: string[], cleanup: boolean}}
  */
 export function sanctionCall(text, isKeyish, trustedDirs = []) {
   if (text.includes("\r")) return NO;
@@ -225,6 +229,7 @@ export function sanctionCall(text, isKeyish, trustedDirs = []) {
   const keyTokens = [];
   let keyedSigner = false;
   let segCount = 0;
+  const kinds = [];
   for (let k = 0; k < lines.length; k++) {
     // ASCII/control check BEFORE the comment skip: shells do not treat \v \f NBSP U+2028 BOM as blanks, so a
     // `<\v>#; cat …` line is a command, not a comment (JS trim() would have hidden it).
@@ -243,6 +248,7 @@ export function sanctionCall(text, isKeyish, trustedDirs = []) {
       if (rest.some((x) => isKeyish(x))) return NO;
       keyTokens.push(...m.keyToks);
       segCount++;
+      kinds.push(signer ? "signer" : m.kind);
       if (signer?.keyed) keyedSigner = true;
       if (seg.heredoc) {
         const end = lines.findIndex((l, j) => j > k && l === seg.heredoc);
@@ -253,5 +259,8 @@ export function sanctionCall(text, isKeyish, trustedDirs = []) {
     }
   }
   if (segCount === 0) return NO; // a call of only comments / blank lines sanctions nothing
-  return { ok: true, keyedSigner, keyTokens };
+  // `cleanup`: pure scratch scaffolding (mktemp / umask / chmod) with at least one recursive removal of the trusted
+  // scratch dir and nothing else: no signer, no curl, no KEY= line.
+  const cleanup = !keyedSigner && kinds.length > 0 && kinds.every((x) => x === "prep" || x === "remove") && kinds.includes("remove");
+  return { ok: true, keyedSigner, keyTokens, cleanup };
 }
