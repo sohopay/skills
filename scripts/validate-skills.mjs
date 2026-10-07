@@ -573,6 +573,12 @@ function checkSp6Suite(name) {
       }
     } catch { fail(`INV-sp6-transcripts-present ${name}/${id}: invalid JSON`); }
   }
+  // Teeth: every case must carry >=1 adversarial transcript (<caseId>.*.json), same stem convention as run.mjs.
+  const advDir = join(dir, 'transcripts', 'adversarial');
+  const advFiles = existsSync(advDir) ? readdirSync(advDir).filter((f) => f.endsWith('.json')) : [];
+  for (const id of suite.assertions.keys()) {
+    if (!advFiles.some((f) => f.startsWith(`${id}.`))) fail(`INV-sp6-transcripts-present ${name}: case "${id}" has no adversarial transcript`);
+  }
   if (failed === before) pass(`INV-sp6 suite ${name}`);
   return suite;
 }
