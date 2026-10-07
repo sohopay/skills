@@ -215,6 +215,13 @@ const MUST_FIRE = [
   ["r5 curl -o plain path + key", `curl -fsS -o ./prep.json https://api.sohopay.xyz/api/v1/spend/x402/prepare\nsohopay-signer pop sign --key ${K} --input -`, R, { rp: RP }],
   ["r5 retry -H @plain + key", `dir=$(mktemp -d)\ncurl -fsS -H @./h https://m.example/x\nsohopay-signer pop sign --key ${K} --input -`, R, { rp: RP }],
   ["r5 chmod $dir without mktemp + key", `chmod 700 "$dir"\nsohopay-signer pop sign --key ${K} --input -`, R, { rp: RP }],
+  // ---- post-breaker item 1: whitespace-lookalike "comment" lines (shells do not strip \v \f NBSP LS BOM) ----
+  ...["\v", "\f", "\u00a0", "\u2028", "\ufeff"].map((ws) => [`pb1 U+${ws.codePointAt(0).toString(16).padStart(4, "0")}# x; cat K`, `sohopay-signer capabilities\n${ws}# x; cat ${K}`, R]),
+  ...["\v", "\f", "\u00a0", "\u2028", "\ufeff"].map((ws) => [`pb1 U+${ws.codePointAt(0).toString(16).padStart(4, "0")}#; rm -f K`, `sohopay-signer capabilities\n${ws}#; rm -f ${K}`, RM]),
+  ["pb1 whole call \\v# ; cat K", `\v# ; cat ${K}`, R],
+  ["pb1 comment-only call + rp", `# nothing to see\n\n   # still nothing`, R, { rp: RP }],
+  ["pb1 signer + fake comment + rm", `${H}\n\v#; rm ./l`, RM, { rp: RP }],
+  ["pb1 signer.md block + fake comment + cat ./l rp", `__SIGNER_BLOCK__\n\v#; cat ./l`, R, { rp: RP }],
   // scaffold-only calls never explain an rp hit (no signer reads the key there)
   ["scaffold rm -rf $dir rp", `rm -rf "$dir"`, RM, { rp: RP }],
   ["capabilities + rp", `sohopay-signer capabilities`, R, { rp: RP }],
@@ -225,8 +232,12 @@ const MUST_FIRE = [
   ["Edit tool mutates", `{"file_path":"${A}","old_string":"a","new_string":"b"}`, RM, { name: "Edit" }],
 ];
 
-for (const [id, cmd, expected, opts = {}] of MUST_FIRE) {
+const SIGNER_BLOCK_FOR_FIRE = () => /```\n(dir=\$\(mktemp -d\)[\s\S]*?)\n```/
+  .exec(readFileSync(new URL("../../plugins/sohopay/skills/sohopay-x402/references/signer.md", import.meta.url), "utf8"))[1]
+  .replace("<signer>", "sohopay-signer").replace("<secret.json path>", K).replace("… ", "").replace("{API_BASE}", "https://api.sohopay.xyz");
+for (const [id, raw, expected, opts = {}] of MUST_FIRE) {
   test(`must-fire: ${id}`, () => {
+    const cmd = raw.replace("__SIGNER_BLOCK__", SIGNER_BLOCK_FOR_FIRE);
     const got = floor(run(cmd, opts));
     for (const lab of expected) assert.ok(got.includes(lab), `${id}: expected ${lab}, got [${got}] for ${JSON.stringify(cmd)}`);
   });
@@ -312,6 +323,13 @@ for (const [id, cmd, want, opts = {}] of MUST_PASS) {
   });
 }
 
+test("pb1: a call made only of comment / blank lines is not sanctioned and emits no *_call label", () => {
+  const lt = run(`# sohopay-signer pop sign --key ${K} --input -\n\n# sohopay-signer capabilities`);
+  assert.deepEqual(names(lt).filter((n) => n.endsWith("_call") || n === "signer_capabilities"), []);
+  assert.ok(names(lt).includes("secret_read"));
+  // the signer.md block itself (with its genuine # comments) still passes
+  assert.deepEqual(floor(run(SIGNER_BLOCK_FOR_FIRE(), { rp: RP })), []);
+});
 test("must-pass: popsign_call supplied_nonce_iat is false for the doc stdin, true when a nonce is smuggled in", () => {
   const ok = run(`sohopay-signer pop sign --key ${K} --input - ${POP_STDIN}`, { rp: RP });
   assert.equal(ok.labels.find((l) => l.name === "popsign_call").attrs.supplied_nonce_iat, false);

@@ -34,6 +34,7 @@ const PREPARE_PATH_RE = /\/api\/v1\/spend\/x402\/prepare"?$/;
 const MKTEMP = "dir=$(mktemp -d)";
 const HEREDOC_RE = /^<<(?:'([A-Z_]+)'|([A-Z_]+))[ \t]*$/;
 const WORD_CHAR_RE = /[A-Za-z0-9_./~@:=+,%{}$-]/;
+const COMMENT_OR_BLANK_RE = /^[ \t]*(?:#.*)?$/;
 const BODY_UNSAFE_RE = /[$`\\\x00-\x08\x0b-\x1f\x7f]/;
 
 const NO = Object.freeze({ ok: false });
@@ -197,10 +198,12 @@ export function sanctionCall(text, isKeyish) {
   const lines = text.split("\n");
   const keyTokens = [];
   let keyedSigner = false;
+  let segCount = 0;
   for (let k = 0; k < lines.length; k++) {
-    const trimmed = lines[k].trim();
-    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    // ASCII/control check BEFORE the comment skip: shells do not treat \v \f NBSP U+2028 BOM as blanks, so a
+    // `<\v>#; cat …` line is a command, not a comment (JS trim() would have hidden it).
     if (/[^\t\x20-\x7e]/.test(lines[k])) return NO;
+    if (COMMENT_OR_BLANK_RE.test(lines[k])) continue;
     const toks = lexLine(lines[k]);
     const segs = toks && segmentsOf(toks);
     if (!segs || segs.length === 0) return NO;
@@ -213,6 +216,7 @@ export function sanctionCall(text, isKeyish) {
       for (const kt of m.keyToks) rest.splice(rest.indexOf(kt), 1);
       if (rest.some((x) => isKeyish(x))) return NO;
       keyTokens.push(...m.keyToks);
+      segCount++;
       if (signer?.keyed) keyedSigner = true;
       if (seg.heredoc) {
         const end = lines.findIndex((l, j) => j > k && l === seg.heredoc);
@@ -222,5 +226,6 @@ export function sanctionCall(text, isKeyish) {
       }
     }
   }
+  if (segCount === 0) return NO; // a call of only comments / blank lines sanctions nothing
   return { ok: true, keyedSigner, keyTokens };
 }
