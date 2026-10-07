@@ -41,6 +41,13 @@ test("INV-sp6-import-isolation: run.mjs never statically reaches the live adapte
   }
 });
 
+test("INV-sp6-import-isolation: run.mjs / the replay path never statically reach evals/mock", () => {
+  const mock = resolve(HERE, "..", "mock");
+  for (const [file, importer] of staticGraph(resolve(HERE, "run.mjs"))) {
+    assert.ok(!file.startsWith(mock + "/"), `forbidden static edge into evals/mock: ${importer && relative(HERE, importer)} -> ${relative(HERE, file)}`);
+  }
+});
+
 test("import scanner ignores dynamic import and catches a static one", () => {
   const graph = staticGraph(resolve(HERE, "run.mjs"));
   assert.ok(graph.has(resolve(HERE, "adapters/replay.mjs")), "static replay import is followed");
