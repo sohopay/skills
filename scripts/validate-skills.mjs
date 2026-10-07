@@ -3,7 +3,11 @@
  * Validates registry SKILL.md folders and generated hosted markdown.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+import { loadSuite, validateJoin } from '../evals/runner/cases.mjs';
+import { closureFiles, skillHash } from '../evals/runner/hashes.mjs';
+import { validateTranscript } from '../evals/runner/schema.mjs';
+import { validateWaivers } from '../evals/runner/waivers.mjs';
 import {
   HOSTED_BASE,
   HOSTED_SKILL_DIRS,
@@ -503,6 +507,90 @@ function checkSp5CompleteInvariants() {
   }
 }
 checkSp5CompleteInvariants();
+
+// ── SP6 invariants: behavioral eval runner (evals/runner) ────────────────────
+const SP6_SUITES = ['sohopay-onboard', 'sohopay-x402'];
+
+function checkSp6Waivers(knownIds) {
+  const f = join(ROOT, 'evals/floor-waivers.json');
+  if (!existsSync(f)) { fail('evals/floor-waivers.json missing'); return; }
+  let doc;
+  try { doc = JSON.parse(readFileSync(f, 'utf8')); } catch { fail('evals/floor-waivers.json is not valid JSON'); return; }
+  const errs = validateWaivers(doc, knownIds);
+  for (const e of errs) fail(`INV-sp6-floor-waivers: ${e}`);
+  if (!errs.length) pass(`INV-sp6-floor-waivers (${doc.waivers.length} waivers)`);
+}
+
+/**
+ * evals/ must contribute nothing to the published surface. Deterministic static check:
+ * generator sources never name evals/, and every artifact they emit (index.json,
+ * llms-full.txt, each hosted .md) contains no evals/ path.
+ */
+function checkSp6PublishIsolation() {
+  const before = failed;
+  const sources = ['scripts/generate-hosted.mjs', 'scripts/generate-llms-full.mjs', 'scripts/lib/skills.mjs'];
+  for (const rel of sources) {
+    const f = join(ROOT, rel);
+    if (existsSync(f) && /\bevals\b/.test(readFileSync(f, 'utf8'))) fail(`INV-sp6-publish-isolation: ${rel} references evals/`);
+  }
+  const outputs = [join(ROOT, 'llms-full.txt'), join(ROOT, '.well-known/agent-skills/index.json')];
+  const idx = outputs[1];
+  if (existsSync(idx)) {
+    try {
+      for (const s of JSON.parse(readFileSync(idx, 'utf8')).skills ?? []) outputs.push(join(ROOT, `${s.name}.md`));
+    } catch { fail('INV-sp6-publish-isolation: index.json is not valid JSON'); }
+  }
+  for (const f of outputs) {
+    if (existsSync(f) && /(^|[^A-Za-z0-9_-])evals\//.test(readFileSync(f, 'utf8'))) {
+      fail(`INV-sp6-publish-isolation: published artifact ${f} references an evals/ path`);
+    }
+  }
+  if (failed === before) pass('INV-sp6-publish-isolation');
+}
+
+function checkSp6Suite(name) {
+  const dir = join(ROOT, 'evals', name);
+  if (!existsSync(join(dir, 'assertions.json'))) return null; // Phase A: no real suite yet
+  const before = failed;
+  let suite;
+  try { suite = loadSuite(dir); } catch (e) { fail(`INV-sp6 ${name}: cannot load suite: ${e.message}`); return null; }
+  for (const e of validateJoin(suite.cases, suite.assertions)) fail(`INV-sp6 ${name}: ${e}`);
+
+  const skillMd = join(SKILLS_DIR, name, 'SKILL.md');
+  const closure = existsSync(skillMd) ? closureFiles(skillMd, SKILLS_DIR) : [];
+  if (!closure.includes(resolve(skillMd))) fail(`INV-sp6-skill-hash-closure ${name}: closure missing SKILL.md`);
+  const hash = closure.length ? skillHash(skillMd, SKILLS_DIR) : null;
+
+  for (const id of suite.assertions.keys()) {
+    const f = join(dir, 'transcripts', `${id}.json`);
+    if (!existsSync(f)) { fail(`INV-sp6-transcripts-present ${name}: no golden for case "${id}"`); continue; }
+    try {
+      const t = JSON.parse(readFileSync(f, 'utf8'));
+      const v = validateTranscript(t);
+      if (!v.ok) fail(`INV-sp6-transcripts-present ${name}/${id}: ${v.errors.join('; ')}`);
+      else if (t.meta.adapter === 'claude-code' && hash && t.meta.skill_hash !== hash) {
+        fail(`INV-sp6-transcripts-present ${name}/${id}: stale skill_hash (re-record)`);
+      }
+    } catch { fail(`INV-sp6-transcripts-present ${name}/${id}: invalid JSON`); }
+  }
+  if (failed === before) pass(`INV-sp6 suite ${name}`);
+  return suite;
+}
+
+function checkSp6Invariants() {
+  const knownIds = new Set();
+  let anySuite = false;
+  for (const name of SP6_SUITES) {
+    const suite = checkSp6Suite(name);
+    if (!suite) continue;
+    anySuite = true;
+    for (const id of suite.assertions.keys()) knownIds.add(id);
+  }
+  // Only cross-check waiver case ids once real suites exist; the synthetic fixture is never scanned.
+  checkSp6Waivers(anySuite ? knownIds : undefined);
+  checkSp6PublishIsolation();
+}
+checkSp6Invariants();
 
 if (failed) process.exit(1);
 console.log('All skill validations passed.');
