@@ -2,6 +2,6 @@
 
 This skill references other modules and skills.
 
-See references/a.md for module A and references/b.md for base module B.
+See references/a.md for module details.
 
 Related skills: {SKILL:other}
