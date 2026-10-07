@@ -1,3 +1,6 @@
+# SohoPay agent skills — require platform team review
+* @sohopay/platform
+
 # SP6 eval runner — maintainer review required
 /evals/runner/            @sohopay/maintainers
 /evals/mock/              @sohopay/maintainers
