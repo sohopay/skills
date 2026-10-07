@@ -28,7 +28,7 @@ Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat h
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
-Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key ~/.agents/sohopay-agent-workload/secret.json; use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
+Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key (canonical path in references/signer.md); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent
@@ -295,7 +295,7 @@ Try these in order; use the first that **answers**:
 
 1. `$SOHOPAY_SIGNER` (explicit command/path override)
 2. `sohopay-signer` on `PATH`
-3. `npx --no @sohopay/agent-signer`
+3. `npx --no @sohopay/agent-signer@0.3.0` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
 
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities` exits 0, its
@@ -307,6 +307,8 @@ emits the curl-ready header line).
 
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
+
+**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.0` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
 
 ### Sign the voucher
 
@@ -331,10 +333,11 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
   written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string (a quoted heredoc
   `<<'SOHOPAY_EOF'` is a shell-only last resort).
-- `--key` is the **opaque** canonical key path onboarding wrote
-  (`~/.agents/sohopay-agent-workload/secret.json`). The agent **MUST NOT** read, print,
-  parse, copy, or summarize it; the private key **MUST NOT** appear in `argv`, `stdin`, or
-  any tool input.
+- `--key` is the **canonical key path** — the single source of this literal across all skills:
+  `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILLS_BASE}/borrower-onboard.md`)
+  writes the key here via `key generate --out`, and the voucher path reads it via
+  `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
+  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input.
 - `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
 
 ### Consume the output and retry
