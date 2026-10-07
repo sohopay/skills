@@ -22,12 +22,16 @@ const fixtures = walk(DIR).sort().map((p) => {
 const keyOf = ({ name, args }) =>
   name === "absent" ? `absent:${args.label}` : name === "never_appears" ? `never_appears:${args.secretRef}` : name;
 
+/** FLOOR entries name their matcher `predicate` (fixtures' `_teeth` use `name`): normalise before keyOf. */
+const floorKey = (f) => keyOf({ name: f.predicate, args: f.args });
+const isFloored = (teeth) => FLOOR.some((f) => floorKey(f) === keyOf(teeth));
+
 /** Does the targeted matcher fire? Also runs the full grader when the target is a floor check. */
 function caught(fx) {
   const { name, args } = fx.t._teeth;
   const labeled = label(fx.t);
   const direct = PREDICATES[name](labeled, args).length > 0;
-  const floored = FLOOR.some((f) => keyOf(f) === keyOf(fx.t._teeth));
+  const floored = isFloored(fx.t._teeth);
   const graded = floored ? !grade(labeled, { id: fx.name, predicates: [] }).pass : direct;
   return { direct, graded };
 }
@@ -72,6 +76,22 @@ test("every matcher has >=1 failing fixture AND >=1 clean fixture (teeth guarant
   const noClean = required.filter((k) => !clean.has(k));
   assert.deepEqual(noTeeth, [], `matchers with NO failing fixture: ${noTeeth.join(", ")}`);
   assert.deepEqual(noClean, [], `matchers with NO clean fixture: ${noClean.join(", ")}`);
+});
+
+test("floor lookup is live: every FLOOR check is the target of >=1 fixture, and keyOf matches it", () => {
+  for (const f of FLOOR) assert.ok(fixtures.some((fx) => isFloored(fx.t._teeth) && keyOf(fx.t._teeth) === floorKey(f)), `no fixture targets floor ${floorKey(f)}`);
+});
+
+test("every FLOOR check has >=1 .fail. fixture that the FULL grader fails BECAUSE of that check", () => {
+  for (const f of FLOOR) {
+    const hits = fixtures.filter((fx) => fx.kind === "fail" && keyOf(fx.t._teeth) === floorKey(f)).filter((fx) => {
+      const labeled = label(fx.t);
+      const own = PREDICATES[f.predicate](labeled, f.args).map((x) => x.message);
+      const res = grade(labeled, { id: fx.name, predicates: [] });
+      return !res.pass && own.length > 0 && own.every((m) => res.findings.some((x) => x.message === m));
+    });
+    assert.ok(hits.length > 0, `floor ${floorKey(f)}: no .fail. fixture fails the full grader on that check`);
+  }
 });
 
 test("required variants are present per matcher", () => {
