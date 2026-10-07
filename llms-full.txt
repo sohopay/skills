@@ -445,7 +445,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 2. Wallet proof — skip if `wallet_proof_verified` is already true. Otherwise `request_signature_challenge` → borrower signs EIP-712 off-device in this same turn → `submit_signature`. Never fabricate a signature, and do not insert a yes/no chat question before the challenge
 3. `get_borrower_status`
 4. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**, `handle:claim`. Store `token_requested_at` + `expires_in`. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
-5. Protocol V2 workload key — [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
+5. Protocol V2 workload key — **route keygen + PoP to the signer**, never hand-roll crypto: [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay
 6. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
 7. `POST /api/v1/auth/authorization-context` before privileged tools
 8. Handle (**required gate**) — only **after** steps 4–6 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
@@ -653,42 +653,78 @@ Ungated scopes are **dropped, not fatal**. Re-request after wallet proof or KYC 
 
 Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). Without a registered key, prepare returns `X402_AGENT_KEY_NOT_REGISTERED`. Tool ships with MCP catalog **v5** ([sohopay-mcp-server#94](https://github.com/sohopay/sohopay-mcp-server/issues/94)); backend alignment [sohopay-backend#1144](https://github.com/sohopay/sohopay-backend/issues/1144).
 
-**Key ownership:** the **agent** (client runtime) generates and holds the Ed25519 workload keypair. SohoPay / MCP never see the private key. Do **not** ask the MCP host to keygen or store the private key. Lifecycle alias: `onboard_sohopay_agent` → tool name `register_agent_workload_key`.
+**Key ownership:** the **agent** (client runtime) holds the Ed25519 workload keypair; SohoPay / MCP never see the private key. The agent does **not** generate, read, or sign with the key itself — a runtime **signer** owns generation, persistence, and signing. The agent only passes a key **path** and relays the signer's public output. Lifecycle alias: `onboard_sohopay_agent` → tool name `register_agent_workload_key`.
 
-**Fixed local path** (look here first on pay — do not grep all AgentStores / other chats):
+**Route to the signer — never hand-roll crypto.** The agent never generates a keypair, builds a JWK, computes a thumbprint, or signs a proof-of-possession in prose. It resolves the signer and calls it. If no conformant signer with the keygen contract is present, **fail closed** — do not improvise, do not fall back to in-prose crypto.
 
-```text
-~/.agents/sohopay-agent-workload/secret.json
-```
+### Resolve the signer (keygen rules)
 
-or Cursor agent-store: `<store>/files/sohopay-agent-workload/secret.json` with `{ private_key_base64url, public_jwk, jkt, terminal_id, borrower_id }`. Reuse only when **both** `borrower_id` (this borrower) **and** `jkt` / `voucher.agentKeyJkt` match. If the file is missing or `borrower_id` belongs to a different borrower, generate a fresh Ed25519 keypair for the current borrower — do not register another borrower's key. Signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md` § Route signing to the signer.
+Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two keygen-specific gates on top of the shared resolver:
 
-**Prerequisite:** step 1 (`register_borrower`) must have created this host's terminal. Sign PoP over the **resolved** `terminal_id` from that call (or `SOHO_TERMINAL_ID` / host default). Registering a key against an unregistered or guessed terminal returns `TERMINAL_NOT_OWNED`.
+1. **The npx tier is disallowed for `key generate`.** A secret-writing command runs only on a locally-installed signer: `$SOHOPAY_SIGNER`, then `sohopay-signer` on `PATH`. `$SOHOPAY_SIGNER` comes from the operator's environment — the agent **never** sets it inline.
+2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
 
-### Steps (once per terminal)
+- No local signer resolves (npx disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
 
-1. Generate an Ed25519 keypair locally. Persist the private key only at the fixed path above.
-2. Build a public JWK `{ kty: "OKP", crv: "Ed25519", x }` — **never** include private material (`d` is rejected).
-3. Compute `jkt` (RFC 7638 JWK thumbprint of `public_jwk`).
-4. Create a single-use `nonce` and `iat` (unix seconds).
-5. Sign PoP over canonicalize(`{ borrowerId, terminalId, jkt, nonce, iat }`) with the workload private key → `pop_signature`.
-6. Call `register_agent_workload_key` → `POST /api/v1/agents/{terminal_id}/keys`.
+  ```text
+  npm i -g @sohopay/agent-signer@0.3.0
+  ```
+
+  The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably.
+- A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
+- Resolution yields no answering candidate at all ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
+
+### Generate + register (once per terminal)
+
+Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path.
+
+1. **Generate (signer owns it):**
+
+   ```text
+   <signer> key generate --out "$KEY" --input -
+   ```
+
+   stdin is the non-secret `{ "borrower_id": "…", "terminal_id": "…" }`. Capture the signer's stdout `{ public_jwk, jkt, borrower_id, terminal_id, created }`. **The agent never reads `secret.json`** — the signer writes and owns it. `created: false` means the key already existed for this borrower+terminal and was reused (a retry after a partial failure is safe — never regenerate).
+
+2. **Proof-of-possession (signer owns it):**
+
+   ```text
+   <signer> pop sign --key "$KEY" --input -
+   ```
+
+   stdin is exactly `{ "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }` (the `jkt` from step 1). The signer mints its own `nonce` + `iat` — **never** supply them (a client-supplied `nonce`/`iat` is rejected `MALFORMED_INPUT`). Capture `{ pop_signature, nonce, iat }`.
+
+3. **Register:** call `register_agent_workload_key` → `POST /api/v1/agents/{terminal_id}/keys` with the captured public material + `pop_signature` + `nonce` + `iat`.
 
 | Field | Detail |
 |-------|--------|
 | `borrower_id` | Canonical borrower UUID (`whoami.borrower_id ?? whoami.principal_id`) |
-| `terminal_id` | Must match the terminal from `register_borrower`. Omit to use `SOHO_TERMINAL_ID` or the host default — then sign PoP over that same resolved value |
-| `public_jwk` | `{ kty: "OKP", crv: "Ed25519", x }` only — no `d` |
-| `jkt` | RFC 7638 thumbprint; gateway recomputes and must match |
-| `nonce` | Single-use PoP nonce (agent-generated) |
-| `iat` | Unix seconds; gateway enforces skew |
-| `pop_signature` | Ed25519 signature over the PoP payload |
+| `terminal_id` | Must match the terminal from `register_borrower`. Omit to use `SOHO_TERMINAL_ID` or the host default — then pass that same resolved value as the signer's PoP `fields.terminalId` |
+| `public_jwk` | From the signer's `key generate` output — `{ kty, crv, x }` only; the agent never adds or inspects fields |
+| `jkt` | From the signer; gateway recomputes and must match |
+| `nonce` | From the signer's `pop sign` output (signer-generated) |
+| `iat` | From the signer's `pop sign` output |
+| `pop_signature` | From the signer's `pop sign` output |
 | Scope | `borrower:token` |
 | Idempotent | Yes — pass `idempotency_key` when the harness cannot set headers |
 
-Register once per terminal during onboarding (step 5). On later pays, reuse the same key only when `borrower_id` and `jkt` match. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
+**Prerequisite:** step 1 (`register_borrower`) must have created this host's terminal. Pass the **resolved** `terminal_id` from that call (or `SOHO_TERMINAL_ID` / host default) as the signer's `fields.terminalId`. Registering against an unregistered or guessed terminal returns `TERMINAL_NOT_OWNED`.
 
-Registering the key does **not** authorize spending. Immediately follow `{SKILLS_BASE}/authorize-agent.md` — do not wait for a payRequest or a `prepare_x402_payment` 403. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only.
+### If the signer refuses (stop; never "fix" the key store)
+
+Surface the signer's error **code** and stop. Never delete, move, rename, or edit `secret.json`; never edit the signer config or set `SOHOPAY_SIGNER_KEY_ROOTS`.
+
+| Code | Action |
+|------|--------|
+| `CROSS_BORROWER_KEY` | A key for a different borrower exists at the path. Stop and surface — never delete/move/rename the key file |
+| `TERMINAL_MISMATCH` | The key is bound to another terminal. Stop and surface — no destructive "fix" |
+| `KEY_INTEGRITY_FAILED` | Stored public ≠ derived. Stop and **escalate to the human as possible tampering** |
+| `KEY_PATH_INVALID` | Stop and surface — never edit the signer config (`~/.config/sohopay-signer/config.json`) and never set `SOHOPAY_SIGNER_KEY_ROOTS` to widen roots |
+| `KEY_PERSIST_FAILED` | Surface the I/O failure; do not retry blindly |
+| `MALFORMED_INPUT` | Fix the call shape (e.g. a wrongly client-supplied `nonce`/`iat`) and retry correctly |
+| `INLINE_KEY_REJECTED` | Switch to `--key "$KEY"`; **never** retry with an inline key |
+
+Registering the key does **not** authorize spending. Immediately follow `{SKILLS_BASE}/authorize-agent.md` — do not wait for a payRequest or a `prepare_x402_payment` 403. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only. Voucher signing after `VOUCHER_ISSUED`: `{SKILLS_BASE}/x402-credit-pay.md`.
 
 
 
@@ -1037,7 +1073,7 @@ Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat h
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
-Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key ~/.agents/sohopay-agent-workload/secret.json; use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
+Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key (canonical path in references/signer.md); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent
@@ -1304,7 +1340,7 @@ Try these in order; use the first that **answers**:
 
 1. `$SOHOPAY_SIGNER` (explicit command/path override)
 2. `sohopay-signer` on `PATH`
-3. `npx --no @sohopay/agent-signer`
+3. `npx --no @sohopay/agent-signer@0.3.0` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
 
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities` exits 0, its
@@ -1316,6 +1352,8 @@ emits the curl-ready header line).
 
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
+
+**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.0` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
 
 ### Sign the voucher
 
@@ -1340,10 +1378,11 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
   written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string (a quoted heredoc
   `<<'SOHOPAY_EOF'` is a shell-only last resort).
-- `--key` is the **opaque** canonical key path onboarding wrote
-  (`~/.agents/sohopay-agent-workload/secret.json`). The agent **MUST NOT** read, print,
-  parse, copy, or summarize it; the private key **MUST NOT** appear in `argv`, `stdin`, or
-  any tool input.
+- `--key` is the **canonical key path** — the single source of this literal across all skills:
+  `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILLS_BASE}/borrower-onboard.md`)
+  writes the key here via `key generate --out`, and the voucher path reads it via
+  `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
+  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input.
 - `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
 
 ### Consume the output and retry
