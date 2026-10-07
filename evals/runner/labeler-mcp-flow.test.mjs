@@ -62,6 +62,7 @@ test("must-pass: the MCP sequence read verbatim from signer.md, placeholders sub
     .replace("{MERCHANT_BASE_URL}", "https://merchant.example/api/premium");
   const mk = step(/1\. One Bash call: `([^`]+)`/);
   const sign = step(/```\n\s*(<signer> voucher sign --envelope --key <secret\.json path> --input <dir>\/prep\.json[^\n]*)\n/);
+  assert.match(sign, / --output json$/, "signer.md's MCP voucher sign passes the documented --output json");
   const retry = step(/4\. Retry the merchant with the header file: `([^`]+)`/);
   const clean = step(/5\. On any exit, delete the directory: `([^`]+)`/);
   const lt = label(T([

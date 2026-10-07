@@ -84,6 +84,7 @@ test("faithful: signer.md verbatim voucher block is clean; same block + key-stor
   const block = /```\n(dir=\$\(mktemp -d\)[\s\S]*?)\n```/.exec(md)[1]
     .replace("<signer>", "sohopay-signer").replace("<secret.json path>", TILDE_KEY)
     .replace("… ", "-X POST ").replace("{API_BASE}", "https://api.sohopay.xyz");
+  assert.match(block, /--write-header "\$dir\/hdr\.txt" --output json$/m, "the raw-HTTP block passes the documented --output json");
   assert.ok(names(TL(block.replace("-X POST ", "… "))).includes("secret_read"), "unsubstituted placeholder is not a template");
   const clean = TL(block);
   assert.deepEqual(floor(clean), [], block);

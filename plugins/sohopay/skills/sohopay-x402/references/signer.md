@@ -17,9 +17,9 @@ Try these in order; use the first that **answers**:
 3. `npx --no @sohopay/agent-signer@0.3.0` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
 
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
-next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities` exits 0, its
+next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities --output json` exits 0, its
 stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
-reports embedded vectors, run `<signer> verify-vectors` once and require exit 0 — a
+reports embedded vectors, run `<signer> verify-vectors --output json` once and require exit 0 — a
 **nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
 is `@sohopay/agent-signer`, also require `implementation_version >= 0.2.0` (the version that
 emits the curl-ready header line).
@@ -44,7 +44,7 @@ not survive between tool calls, so use the **literal** directory that `mktemp` p
 3. One Bash call:
 
    ```
-   <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt
+   <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json
    ```
 4. Retry the merchant with the header file: `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}`
    (see **Consume the output and retry** below).
@@ -58,7 +58,7 @@ dir=$(mktemp -d); chmod 700 "$dir"
 umask 077
 # Raw-HTTP fallback only (non-MCP host), response straight to disk byte-for-byte:
 curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
-<signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt"
+<signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt" --output json
 ```
 
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),

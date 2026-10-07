@@ -322,6 +322,7 @@ for (const tier of LOCAL_TIERS) {
 // signer.md verbatim voucher block, read from the file, every placeholder substituted.
 const SIGNER_MD = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-x402/references/signer.md", import.meta.url), "utf8");
 const RAW_BLOCK = /```\n(dir=\$\(mktemp -d\)[\s\S]*?)\n```/.exec(SIGNER_MD)[1];
+assert.match(RAW_BLOCK, / --output json$/, "signer.md raw-HTTP voucher sign passes the documented --output json");
 const RETRY = /```\n\s*(curl -fsS -H @"\$dir\/hdr\.txt" \{MERCHANT_BASE_URL\})\n/.exec(SIGNER_MD)[1];
 const PREP_ARGS = [
   "",
@@ -377,6 +378,7 @@ const WORKLOAD_MD = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-o
 const docBlock = (sub) => {
   const m = new RegExp("```text\\n\\s*(<signer> " + sub + " [^\\n]*<<'SOHOPAY_EOF'\\n[\\s\\S]*?\\n\\s*SOHOPAY_EOF)\\n\\s*```").exec(WORKLOAD_MD);
   assert.ok(m, `workload-key.md has no single-quoted-heredoc block for ${sub}`);
+  assert.match(m[1], / --input - --output json <<'SOHOPAY_EOF'/, `workload-key.md ${sub} passes the documented --output json`);
   return m[1].split("\n").map((l) => l.replace(/^ {3}/, "")).join("\n");
 };
 for (const [sub, lab] of [["key generate", "keygen_call"], ["pop sign", "popsign_call"]])

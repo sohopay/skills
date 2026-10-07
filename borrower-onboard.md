@@ -239,7 +239,7 @@ Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). 
 Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two keygen-specific gates on top of the shared resolver:
 
 1. **The npx tier is disallowed for `key generate`.** A secret-writing command runs only on a locally-installed signer: `$SOHOPAY_SIGNER`, then `sohopay-signer` on `PATH`. `$SOHOPAY_SIGNER` comes from the operator's environment — the agent **never** sets it inline.
-2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
+2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities --output json`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
 
 - No local signer resolves (npx disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
 
@@ -260,7 +260,7 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
 1. **Generate (signer owns it):**
 
    ```text
-   <signer> key generate --out "$KEY" --input - <<'SOHOPAY_EOF'
+   <signer> key generate --out "$KEY" --input - --output json <<'SOHOPAY_EOF'
    { "borrower_id": "…", "terminal_id": "…" }
    SOHOPAY_EOF
    ```
@@ -270,7 +270,7 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
 2. **Proof-of-possession (signer owns it):**
 
    ```text
-   <signer> pop sign --key "$KEY" --input - <<'SOHOPAY_EOF'
+   <signer> pop sign --key "$KEY" --input - --output json <<'SOHOPAY_EOF'
    { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
    SOHOPAY_EOF
    ```

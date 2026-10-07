@@ -83,7 +83,7 @@ Do **not** hand-roll the signature or the header. Resolve a signer and run one c
 - Follow the MCP sequence in [references/signer.md](references/signer.md): one Bash call
   `mktemp -d` (note the printed `<dir>`), write the prepare response byte-for-byte to
   `<dir>/prep.json` with the file-write tool, then one Bash call
-  `voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt`.
+  `voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json`.
   `secret.json` is an **opaque** `--key` path — never read or parse it; the private key never
   enters `argv`/`stdin`.
 - Assert `header_name === "PAYMENT-SIGNATURE"`; cross-check the signer's `payment_id` +
