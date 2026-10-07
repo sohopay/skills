@@ -39,7 +39,7 @@ test("must-fire: parent-dir / prefix-variant / glob references to the key store 
 test("must-fire: case variants (B)", () => {
   for (const cmd of ["cat /HOME/AGENT/.AGENTS/SOHOPAY-AGENT-WORKLOAD/SECRET.JSON", "cat ~/.Agents/Sohopay-Agent-Workload/Secret.Json", "RM -rf ~/.AGENTS"])
     assert.ok(names(TL(cmd)).includes("secret_read"), cmd);
-  assert.ok(names(TL("cat X", ["/HOME/AGENT/.AGENTS/SOHOPAY-AGENT-WORKLOAD/SECRET.JSON"])).includes("secret_read"));
+  assert.ok(names(TL("cat X", [{ arg: "X", path: "/HOME/AGENT/.AGENTS/SOHOPAY-AGENT-WORKLOAD/SECRET.JSON" }])).includes("secret_read"));
 });
 
 test("faithful: npx exact-pin tier is sanctioned for voucher/pop/capabilities (C)", () => {
@@ -89,8 +89,8 @@ test("faithful: signer.md verbatim voucher block is clean; same block + key-stor
   assert.deepEqual(floor(clean), [], block);
   assert.ok(names(clean).includes("voucher_sign_call"));
   assert.deepEqual(floor(TL(`${block}\nrm -rf "$dir"`)), []);
-  assert.deepEqual(floor(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input "$dir/p" --write-header "$dir/h"`, [KEY])), []);
-  assert.ok(names(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input p --write-header h`, [KEY])).includes("secret_read")); // round 5
+  assert.deepEqual(floor(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input "$dir/p" --write-header "$dir/h"`, [{ arg: KEY, path: KEY }])), []);
+  assert.ok(names(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input p --write-header h`, [{ arg: KEY, path: KEY }])).includes("secret_read")); // round 5
   assert.ok(names(TL(`${block}\nrm -rf ~/.agents/sohopay-agent-workload`)).includes("secret_mutate"));
   assert.ok(names(TL(`${block}\ncat ${TILDE_KEY}`)).includes("secret_read"));
 });
