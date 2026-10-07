@@ -253,12 +253,16 @@ Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two 
 
 ### Generate + register (once per terminal)
 
-Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path.
+Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
+
+Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EOF`) exactly as shown, filling in the values — never `echo … |` or `printf … |`, and never an unquoted heredoc.
 
 1. **Generate (signer owns it):**
 
    ```text
-   <signer> key generate --out "$KEY" --input -
+   <signer> key generate --out "$KEY" --input - <<'SOHOPAY_EOF'
+   { "borrower_id": "…", "terminal_id": "…" }
+   SOHOPAY_EOF
    ```
 
    stdin is the non-secret `{ "borrower_id": "…", "terminal_id": "…" }`. Capture the signer's stdout `{ public_jwk, jkt, borrower_id, terminal_id, created }`. **The agent never reads `secret.json`** — the signer writes and owns it. `created: false` means the key already existed for this borrower+terminal and was reused (a retry after a partial failure is safe — never regenerate).
@@ -266,7 +270,9 @@ Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `refe
 2. **Proof-of-possession (signer owns it):**
 
    ```text
-   <signer> pop sign --key "$KEY" --input -
+   <signer> pop sign --key "$KEY" --input - <<'SOHOPAY_EOF'
+   { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
+   SOHOPAY_EOF
    ```
 
    stdin is exactly `{ "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }` (the `jkt` from step 1). The signer mints its own `nonce` + `iat` — **never** supply them (a client-supplied `nonce`/`iat` is rejected `MALFORMED_INPUT`). Capture `{ pop_signature, nonce, iat }`.

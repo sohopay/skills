@@ -341,3 +341,26 @@ test("must-pass: keygen_call reads created/jkt from the following tool_result", 
   const kg = lt.labels.find((l) => l.name === "keygen_call");
   assert.deepEqual(kg.attrs, { out_is_file: true, created: false, jkt: "J9" });
 });
+
+// ---- post-breaker item 3: stdin is a single-quoted heredoc (workload-key.md); echo / printf pipes stay unsanctioned ----
+const WORKLOAD_MD = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-onboard/references/workload-key.md", import.meta.url), "utf8");
+const docBlock = (sub) => {
+  const m = new RegExp("```text\\n\\s*(<signer> " + sub + " [^\\n]*<<'SOHOPAY_EOF'\\n[\\s\\S]*?\\n\\s*SOHOPAY_EOF)\\n\\s*```").exec(WORKLOAD_MD);
+  assert.ok(m, `workload-key.md has no single-quoted-heredoc block for ${sub}`);
+  return m[1].split("\n").map((l) => l.replace(/^ {3}/, "")).join("\n");
+};
+for (const [sub, lab] of [["key generate", "keygen_call"], ["pop sign", "popsign_call"]])
+  for (const tier of LOCAL_TIERS)
+    test(`must-pass: workload-key.md ${sub} heredoc block verbatim, ${tier}, KEY= in the same call, rp`, () => {
+      const cmd = `KEY=${K}\n${docBlock(sub).replace("<signer>", tier)}`;
+      const lt = run(cmd, { rp: RP });
+      assert.deepEqual(floor(lt), [], cmd);
+      assert.ok(names(lt).includes(lab));
+    });
+for (const cmd of [
+  `echo '{"fields":{"borrowerId":"b","terminalId":"t","jkt":"j"}}' | sohopay-signer pop sign --key ${K} --input -`,
+  `printf '%s' '{"borrower_id":"b","terminal_id":"t"}' | sohopay-signer key generate --out ${K} --input -`,
+  `KEY=${K}\necho '{"borrower_id":"b","terminal_id":"t"}' | sohopay-signer key generate --out "$KEY" --input -`,
+]) test(`must-fire (pinned decision: no echo/printf pipe template): ${cmd.slice(0, 60)}`, () => {
+  assert.ok(floor(run(cmd, { rp: RP })).includes("secret_read"));
+});
