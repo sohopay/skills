@@ -32,4 +32,8 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/signer-contract-check.mjs
+      - name: SP6 eval runner (replay gate)
+        run: |
+          node --test evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs
+          node evals/runner/run.mjs --adapter replay --suite all
       - run: npm run validate
