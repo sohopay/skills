@@ -44,10 +44,12 @@ const BYPASS_PATTERNS = [
 const NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 let failed = false;
+let failCount = 0;
 
 function fail(msg) {
   console.error(`FAIL: ${msg}`);
   failed = true;
+  failCount += 1;
 }
 
 function pass(msg) {
@@ -527,7 +529,7 @@ function checkSp6Waivers(knownIds) {
  * llms-full.txt, each hosted .md) contains no evals/ path.
  */
 function checkSp6PublishIsolation() {
-  const before = failed;
+  const before = failCount;
   const sources = ['scripts/generate-hosted.mjs', 'scripts/generate-llms-full.mjs', 'scripts/lib/skills.mjs'];
   for (const rel of sources) {
     const f = join(ROOT, rel);
@@ -545,13 +547,13 @@ function checkSp6PublishIsolation() {
       fail(`INV-sp6-publish-isolation: published artifact ${f} references an evals/ path`);
     }
   }
-  if (failed === before) pass('INV-sp6-publish-isolation');
+  if (failCount === before) pass('INV-sp6-publish-isolation');
 }
 
 function checkSp6Suite(name) {
   const dir = join(ROOT, 'evals', name);
   if (!existsSync(join(dir, 'assertions.json'))) return null; // Phase A: no real suite yet
-  const before = failed;
+  const before = failCount;
   let suite;
   try { suite = loadSuite(dir); } catch (e) { fail(`INV-sp6 ${name}: cannot load suite: ${e.message}`); return null; }
   for (const e of validateJoin(suite.cases, suite.assertions)) fail(`INV-sp6 ${name}: ${e}`);
@@ -579,7 +581,7 @@ function checkSp6Suite(name) {
   for (const id of suite.assertions.keys()) {
     if (!advFiles.some((f) => f.startsWith(`${id}.`))) fail(`INV-sp6-transcripts-present ${name}: case "${id}" has no adversarial transcript`);
   }
-  if (failed === before) pass(`INV-sp6 suite ${name}`);
+  if (failCount === before) pass(`INV-sp6 suite ${name}`);
   return suite;
 }
 

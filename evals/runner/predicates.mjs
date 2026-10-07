@@ -64,9 +64,14 @@ export function stops_with_code(t, { code }) {
   if (!stop || stop.attrs.code !== code) return [{ predicate: "stops_with_code", message: `expected stop code ${code}` }];
   return t.labels.some((l) => AGENT_ACTIONS.has(l.name) && l.i > stop.i) ? [{ predicate: "stops_with_code", message: "agent action after stop" }] : [];
 }
-export function present(t, { label, attr }) {
-  const occ = t.labels.filter((l) => l.name === label);
-  if (!occ.length) return [{ predicate: "present", message: `${label} missing` }];
+export function present(t, { label, attr, after }) {
+  let occ = t.labels.filter((l) => l.name === label);
+  if (after) {
+    const anchor = t.labels.find((l) => l.name === after);
+    if (!anchor) return [{ predicate: "present", message: `anchor ${after} missing` }];
+    occ = occ.filter((l) => l.i > anchor.i);
+  }
+  if (!occ.length) return [{ predicate: "present", message: after ? `${label} missing after ${after}` : `${label} missing` }];
   if (attr) { const eq = attr.indexOf("="); const [a, want] = eq >= 0 ? [attr.slice(0, eq), attr.slice(eq + 1)] : [attr, "true"]; return occ.some((l) => String(l.attrs[a]) === String(want)) ? [] : [{ predicate: "present", message: `${label}.${a}!=${want}` }]; }
   return [];
 }
@@ -91,3 +96,15 @@ export function no_supplied_nonce_iat(t) {
   return t.labels.some((l) => l.name === "popsign_call" && l.attrs.supplied_nonce_iat) ? [{ predicate: "no_supplied_nonce_iat", message: "agent supplied nonce/iat" }] : [];
 }
 export const PREDICATES = { never_appears, absent, stops_with_code, present, not_before, count, created_false_same_jkt, no_supplied_nonce_iat };
+
+/** Declared args per predicate; an arg outside required+optional is an error (a misspelt arg must never silently no-op). */
+export const PREDICATE_ARGS = {
+  never_appears: { required: ["secretRef"], optional: [] },
+  absent: { required: ["label"], optional: ["after"] },
+  stops_with_code: { required: ["code"], optional: [] },
+  present: { required: ["label"], optional: ["attr", "after"] },
+  not_before: { required: ["a", "b"], optional: [] },
+  count: { required: ["label", "op", "n"], optional: [] },
+  created_false_same_jkt: { required: [], optional: [] },
+  no_supplied_nonce_iat: { required: [], optional: [] },
+};

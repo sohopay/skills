@@ -125,3 +125,13 @@ test("not_before when b is absent", () => {
   assert.equal(P.not_before(lt([{ name: "a", i: 1, attrs: {} }], []), { a: "a", b: "b" }).length, 1);
   assert.equal(P.not_before(lt([], []), { a: "a", b: "b" }).length, 0);
 });
+
+test("present(after) passes when label follows the anchor, fails before it, fails when anchor missing", () => {
+  const L = (name, i, attrs = {}) => ({ name, i, attrs });
+  const after = lt([L("A", 1), L("signer_key_call", 2, { key_is_path: true })], []);
+  assert.equal(P.present(after, { label: "signer_key_call", attr: "key_is_path", after: "A" }).length, 0);
+  const before = lt([L("signer_key_call", 1, { key_is_path: true }), L("A", 2)], []);
+  assert.equal(P.present(before, { label: "signer_key_call", attr: "key_is_path", after: "A" }).length, 1);
+  const noAnchor = lt([L("signer_key_call", 1, { key_is_path: true })], []);
+  assert.equal(P.present(noAnchor, { label: "signer_key_call", after: "A" }).length, 1);
+});

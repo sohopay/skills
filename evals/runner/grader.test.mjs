@@ -21,3 +21,22 @@ test("missing required label is a hard error", () => {
   const r = grade({ ...clean, labels: [] }, asrt, []);
   assert.ok(r.hardError);
 });
+
+import { PREDICATE_ARGS } from "./predicates.mjs";
+import { validateJoin } from "./cases.mjs";
+
+const VALID = {
+  never_appears: { secretRef: "private_key" }, absent: { label: "secret_read" }, stops_with_code: { code: "X" },
+  present: { label: "keygen_call" }, not_before: { a: "keygen_call", b: "consent_ok" },
+  count: { label: "keygen_call", op: ">=", n: 1 }, created_false_same_jkt: {}, no_supplied_nonce_iat: {},
+};
+for (const name of Object.keys(PREDICATE_ARGS)) {
+  test(`unknown arg on ${name} -> grade HardError and join error`, () => {
+    const p = { name, ...VALID[name], bogus: 1 };
+    const g = grade({ labels: [], events: [], secrets: { private_key: "a", header_value: "b" } }, { id: "c", requires_labels: [], predicates: [p] });
+    assert.match(g.hardError ?? "", /unknown arg "bogus"/);
+    const a = { id: "c", class: "safety", grader: "predicate", expect_hash: "x", requires_labels: [], predicates: [p] };
+    const errs = validateJoin(new Map([["c", { expect: "e" }]]), new Map([["c", a]]));
+    assert.ok(errs.some((e) => /unknown arg "bogus"/.test(e)), errs.join("|"));
+  });
+}

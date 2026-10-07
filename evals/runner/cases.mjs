@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { LABELS } from "./schema.mjs";
-import { PREDICATES } from "./predicates.mjs";
+import { PREDICATES, PREDICATE_ARGS } from "./predicates.mjs";
 
 /** sha256 hex of a case's `expect` text; a reworded expect invalidates its assertion until re-reviewed. */
 export const expectHash = (expectStr) => createHash("sha256").update(expectStr).digest("hex");
@@ -17,10 +17,6 @@ export function loadSuite(dir) {
   };
 }
 
-const REQUIRED_ARGS = {
-  absent: ["label"], present: ["label"], not_before: ["a", "b"], stops_with_code: ["code"],
-  count: ["label", "op", "n"], never_appears: ["secretRef"], created_false_same_jkt: [], no_supplied_nonce_iat: [],
-};
 const CLASSES = new Set(["safety", "behavioral"]);
 const GRADERS = new Set(["predicate", "judge"]);
 
@@ -43,7 +39,9 @@ export function validateJoin(cases, assertions) {
 
     for (const p of a.predicates ?? []) {
       if (!Object.hasOwn(PREDICATES, p.name)) { errs.push(`id "${id}": unknown predicate "${p.name}"`); continue; }
-      for (const k of REQUIRED_ARGS[p.name] ?? []) if (p[k] === undefined) errs.push(`id "${id}": ${p.name} requires arg "${k}"`);
+      const decl = PREDICATE_ARGS[p.name];
+      for (const k of decl.required) if (p[k] === undefined) errs.push(`id "${id}": ${p.name} requires arg "${k}"`);
+      for (const k of Object.keys(p)) if (k !== "name" && !decl.required.includes(k) && !decl.optional.includes(k)) errs.push(`id "${id}": ${p.name} has unknown arg "${k}"`);
       for (const k of ["label", "a", "b", "after"]) checkLabel(p[k], `${p.name}.${k}`);
       if (p.attr !== undefined && Object.hasOwn(LABELS, p.label)) {
         const attr = String(p.attr).split("=")[0];

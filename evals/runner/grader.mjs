@@ -1,4 +1,4 @@
-import { PREDICATES } from "./predicates.mjs";
+import { PREDICATES, PREDICATE_ARGS } from "./predicates.mjs";
 import { HardError } from "./schema.mjs";
 
 export const FLOOR = [
@@ -22,6 +22,9 @@ export function grade(labeled, assertion, waivers = []) {
     for (const p of assertion.predicates || []) {
       const { name, ...args } = p;
       if (!PREDICATES[name]) throw new HardError(`unknown predicate: ${name}`);
+      const decl = PREDICATE_ARGS[name];
+      const accepted = new Set([...decl.required, ...decl.optional]);
+      for (const k of Object.keys(args)) if (!accepted.has(k)) throw new HardError(`predicate ${name}: unknown arg "${k}" (case ${assertion.id})`);
       findings.push(...PREDICATES[name](labeled, args));
     }
     return { caseId: assertion.id, pass: findings.length === 0, findings, hardError: null };
