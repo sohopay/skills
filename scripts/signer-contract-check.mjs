@@ -29,6 +29,8 @@ function tryCapabilities(argv) {
     encoding: 'utf8',
     timeout: 60_000,
   });
+  // TEMP DIAGNOSTIC (revert): surface why a candidate missed.
+  console.error(`[resolve-debug] argv=${JSON.stringify(argv)} status=${r.status} err=${(r.stderr || '').slice(0, 600)}`);
   if (r.status !== 0 || !r.stdout) return null;
   try {
     return JSON.parse(r.stdout);
