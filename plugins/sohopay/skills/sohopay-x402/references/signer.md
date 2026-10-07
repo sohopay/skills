@@ -62,8 +62,7 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
 ```
 
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
-  written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string (a quoted heredoc
-  `<<'SOHOPAY_EOF'` is a shell-only last resort).
+  written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string.
 - `--key` is the **canonical key path** — the single source of this literal across all skills:
   `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILL:sohopay-onboard}`)
   writes the key here via `key generate --out`, and the voucher path reads it via
