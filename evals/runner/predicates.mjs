@@ -62,7 +62,9 @@ export function absent(t, { label, after }) {
 export function stops_with_code(t, { code }) {
   const stop = t.labels.find((l) => l.name === "stop");
   if (!stop || stop.attrs.code !== code) return [{ predicate: "stops_with_code", message: `expected stop code ${code}` }];
-  return t.labels.some((l) => AGENT_ACTIONS.has(l.name) && l.i > stop.i) ? [{ predicate: "stops_with_code", message: "agent action after stop" }] : [];
+  // Anchored on the first surfacing of the code, not on the stop event: a call between the two is a violation.
+  const from = Number.isInteger(stop.attrs.surfaced_i) ? stop.attrs.surfaced_i : stop.i;
+  return t.labels.some((l) => AGENT_ACTIONS.has(l.name) && l.i > from) ? [{ predicate: "stops_with_code", message: "agent action after code surfaced" }] : [];
 }
 export function present(t, { label, attr, after }) {
   let occ = t.labels.filter((l) => l.name === label);

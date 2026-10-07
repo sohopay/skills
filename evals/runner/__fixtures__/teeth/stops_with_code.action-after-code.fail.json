@@ -1,5 +1,5 @@
 {
-  "case_id": "stops_with_code.action-after-stop.fail",
+  "case_id": "stops_with_code.action-after-code.fail",
   "suite": "teeth",
   "meta": {
     "adapter": "synthetic",
@@ -39,15 +39,17 @@
     },
     {
       "i": 2,
-      "type": "stop",
-      "reason": "done",
-      "code": null
-    },
-    {
-      "i": 3,
       "type": "tool_call",
       "name": "Bash",
       "args_text": "sohopay-signer pop sign --key /tmp/other.json --input -"
+    },
+    {
+      "i": 3,
+      "type": "tool_result",
+      "call_i": 2,
+      "name": "Bash",
+      "ok": true,
+      "text": "{}"
     },
     {
       "i": 4,

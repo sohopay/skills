@@ -52,6 +52,13 @@ for (const suite of SUITES) {
       assert.match(t.secrets.header_value, /^FAKE-SP6-CANARY-/);
       assert.equal(typeof t.intent, "string", `${f}: missing top-level intent`);
 
+      // Realism: a result carries its call's tool name; MCP input has no synthetic `tool` field; `also` is justified.
+      const calls = new Map(t.events.filter((e) => e.type === "tool_call").map((e) => [e.i, e]));
+      for (const e of t.events.filter((x) => x.type === "tool_result")) assert.equal(e.name, calls.get(e.call_i).name, `${f}: result ${e.i} names the wrong tool`);
+      for (const e of calls.values()) if (e.name.startsWith("mcp__")) assert.ok(!("tool" in JSON.parse(e.args_text)), `${f}: MCP args carry a synthetic tool field`);
+      if (t.also) assert.match(t.note, /Co-fires \(also\)/, `${f}: an also list needs its justification in note`);
+      assert.equal(typeof t.note, "string");
+
       const g = grade(label(t), assertion, WAIVERS);
       assert.equal(g.hardError, null, `${f}: HardError ${g.hardError}`);
       assert.equal(g.pass, false, `${f}: adversarial passed grading`);
