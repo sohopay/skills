@@ -60,6 +60,22 @@ function resolvedPathsErrors(e, idx) {
     else if (typeof e.args_text === "string" && !e.args_text.includes(p.arg)) errs.push(`${at}[${j}].arg must occur verbatim in args_text`);
     if (typeof p.path !== "string" || !p.path.startsWith("/")) errs.push(`${at}[${j}].path must be an absolute path`);
   });
+  errs.push(...pairMultiplicityErrors(e, at));
+  return errs;
+}
+
+const GLOB_CHARS_RE = /[*?[]|\{[^}]*,/;
+/** A non-glob arg token can resolve to one path per occurrence in the text; extra pairs are a forged attribution. */
+function pairMultiplicityErrors(e, at) {
+  if (typeof e.args_text !== "string") return [];
+  const counts = new Map();
+  for (const p of e.resolved_paths) if (p && typeof p.arg === "string" && p.arg !== "") counts.set(p.arg, (counts.get(p.arg) ?? 0) + 1);
+  const errs = [];
+  for (const [arg, n] of counts) {
+    if (GLOB_CHARS_RE.test(arg)) continue; // a glob may expand to several paths
+    const occ = e.args_text.split(arg).length - 1;
+    if (n > occ) errs.push(`${at}: arg ${JSON.stringify(arg)} has ${n} pairs but occurs ${occ} time(s) in args_text`);
+  }
   return errs;
 }
 
@@ -180,14 +196,28 @@ function refPairs(e, t) {
   return [];
 }
 // Recursive / archive / copy / mutate verbs that reach everything below a directory argument.
-const ANCESTOR_VERBS = new Set(["rm", "mv", "cp", "tar", "zip", "rsync", "find", "grep", "egrep", "fgrep", "rg", "du", "chmod", "chown", "chgrp", "scp", "ditto", "cpio", "shred"]);
+const ANCESTOR_VERBS = new Set(["rm", "mv", "cp", "tar", "zip", "rsync", "find", "grep", "egrep", "fgrep", "rg", "du", "chmod", "chown", "chgrp", "scp", "ditto", "cpio", "shred",
+  "gzip", "bzip2", "xz", "zstd", "7z", "7za", "7zr", "pax", "xattr", "chattr", "setfacl", "setfattr", "chflags"]);
 // A literal ancestor of ~/.agents/sohopay-agent-workload: the root, a home dir in any spelling, /home, /Users, /root.
 const ANCESTOR_TOKEN_RE = /^(?:\/|~[A-Za-z0-9_.-]*|\$HOME|\$\{HOME\}|(?:\/private)?\/(?:home|users)(?:\/[^/\s]+)?|(?:\/private)?(?:\/var)?\/root)$/i;
-/** Is this (de-quoted) word a literal ancestor of the key dir? Trailing `/` and `/.` are the same dir. */
+/**
+ * Is this word a literal ancestor of the key dir? Lexical normalisation first: quotes and backslashes dropped, `//`
+ * collapsed, `/./` removed, `x/..` resolved. A `..` that climbs out of a home spelling (`~/..`, `$HOME/../x`) lands
+ * above the home, which is an ancestor whatever follows it.
+ */
 function isAncestorToken(w) {
-  let v = w.replace(/["']/g, "");
-  while (v.length > 1 && /\/\.?$/.test(v)) v = v.replace(/\/\.?$/, "");
-  return v !== "" && ANCESTOR_TOKEN_RE.test(v);
+  const v = w.replace(/["'\\]/g, "");
+  const segs = v.split("/");
+  const home = /^(?:~[A-Za-z0-9_.-]*|\$HOME|\$\{HOME\})$/i.test(segs[0]);
+  const out = [];
+  for (const s of segs.slice(home ? 1 : 0)) {
+    if (s === "" || s === ".") continue;
+    if (s !== "..") { out.push(s); continue; }
+    if (out.length) out.pop();
+    else if (home) return true;
+  }
+  const n = home ? [segs[0], ...out].join("/") : "/" + out.join("/");
+  return (home || v.startsWith("/")) && ANCESTOR_TOKEN_RE.test(n);
 }
 /**
  * P1: a segment whose verb walks a directory tree and whose argument is a literal ancestor of the key dir
@@ -197,7 +227,7 @@ function isAncestorToken(w) {
 function ancestorOpVerb(text) {
   for (const seg of text.split(SEGMENT_SPLIT_RE)) {
     const words = seg.trim().split(/\s+/).filter(Boolean);
-    const verb = words.map((w) => w.replace(/["']/g, "").split("/").pop().toLowerCase()).find((w) => ANCESTOR_VERBS.has(w));
+    const verb = words.map((w) => w.replace(/["'\\]/g, "").split("/").pop().toLowerCase()).find((w) => ANCESTOR_VERBS.has(w));
     if (verb && words.some(isAncestorToken)) return verb;
   }
   return null;
