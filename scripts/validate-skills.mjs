@@ -13,6 +13,7 @@ import {
   ROOT,
   SKILLS_DIR,
 } from './lib/skills.mjs';
+import { SIGNER_SPEC } from './signer-pin.mjs';
 
 const ENV_PRESET_STUBS = {
   'setup-staging.md': 'setup.md',
@@ -351,6 +352,157 @@ function checkSp5Invariants() {
   if (!completeInvocation) fail('SP5: no complete voucher sign --envelope --key --input --write-header invocation found in x402 docs');
 }
 checkSp5Invariants();
+
+// ── SP5-complete invariants: onboarding routes keygen + PoP to the signer ────
+function checkSp5CompleteInvariants() {
+  const ONBOARD = join(SKILLS_DIR, 'sohopay-onboard');
+  const SIGNER_MD = join(SKILLS_DIR, 'sohopay-x402/references/signer.md');
+  const BEHAVIORAL = join(ROOT, 'evals/sohopay-onboard/behavioral-cases.json');
+  const REGISTRY = join(ROOT, 'evals/sohopay-onboard/error-codes.json');
+  const KEY_PATH_LITERAL = '~/.agents/sohopay-agent-workload/secret.json';
+
+  // Collect every markdown file in a skill dir (SKILL.md + references/*.md).
+  const skillFiles = (dir) => {
+    const files = [];
+    const skillMd = join(dir, 'SKILL.md');
+    if (existsSync(skillMd)) files.push(skillMd);
+    const refs = join(dir, 'references');
+    if (existsSync(refs)) for (const f of readdirSync(refs).filter((n) => n.endsWith('.md'))) files.push(join(refs, f));
+    return files;
+  };
+  const read = (f) => readFileSync(f, 'utf8');
+
+  // INV-onboard-no-crypto — recipe PHRASES forbidden across the whole onboard dir.
+  const RECIPE_PHRASES = [
+    /generate (an?|a fresh) ed25519/i,
+    /ed25519 keypair/i,
+    /compute (the )?(jkt|thumbprint)/i,
+    /\bRFC\s?7638\b/i,
+    /JWK thumbprint/i,
+    /SHA-256 of the JWK/i,
+    /sign (the )?pop\b/i,          // the recipe verb, not the `pop sign` tool
+    /\bcanonicalize\b/i,
+    /@noble/i,
+    /\bJCS\b/,
+    /\bprivate_key\b/,             // underscore form only (not the spaced reassurance prose)
+  ];
+  for (const f of skillFiles(ONBOARD)) {
+    const raw = read(f);
+    for (const re of RECIPE_PHRASES) {
+      if (re.test(raw)) fail(`INV-onboard-no-crypto: ${f} contains forbidden recipe phrase ${re} (route to the signer)`);
+    }
+  }
+
+  // INV-onboard-routes — workload-key.md routes key generate + pop sign, file-based.
+  const wk = join(ONBOARD, 'references/workload-key.md');
+  if (!existsSync(wk)) {
+    fail('INV-onboard-routes: sohopay-onboard/references/workload-key.md missing');
+  } else {
+    const wkRaw = read(wk);
+    if (!/\bkey generate\b/.test(wkRaw)) fail('INV-onboard-routes: no `key generate` routing in workload-key.md');
+    if (!/\bpop sign\b/.test(wkRaw)) fail('INV-onboard-routes: no `pop sign` routing in workload-key.md');
+    if (!/key generate .*--out\b/.test(wkRaw)) fail('INV-onboard-routes: `key generate` must use file-based --out');
+    if (!/pop sign .*--key\b/.test(wkRaw)) fail('INV-onboard-routes: `pop sign` must use file-based --key');
+    // No stdin/inline key material into either call.
+    for (const line of wkRaw.replace(/\\\r?\n/g, ' ').split('\n')) {
+      if (/\b(key generate|pop sign)\b/.test(line) && /--key(\s+|=)(-(\s|$|['"])|\/dev\/stdin)/.test(line)) {
+        fail(`INV-onboard-routes: key must be a file path, never stdin: ${line.trim()}`);
+      }
+    }
+  }
+
+  // INV-path-single-source — the key-path literal appears in exactly one file (signer.md).
+  const pathHolders = [];
+  for (const dirName of dirs) {
+    for (const f of skillFiles(join(SKILLS_DIR, dirName))) {
+      if (read(f).includes(KEY_PATH_LITERAL)) pathHolders.push(f);
+    }
+  }
+  if (pathHolders.length !== 1 || pathHolders[0] !== SIGNER_MD) {
+    fail(`INV-path-single-source: the key-path literal must appear only in signer.md; found in: ${pathHolders.join(', ') || '(none)'}`);
+  }
+
+  // INV-no-secret-access — `secret.json` never adjacent to read/copy/destroy verbs, and the
+  // signer config / roots env never adjacent to a write verb — in INSTRUCTION prose. Prohibition
+  // lines ("never read secret.json", "never set SOHOPAY_SIGNER_KEY_ROOTS") are the desired content,
+  // not a violation, so skip any line carrying a negation marker. signer.md (the single-source
+  // key-path definition) is additionally exempt from the secret-verb check.
+  const PROHIBITION = /\b(never|must not|must never|do not|don't|cannot|no longer)\b/i;
+  const SECRET_VERB = /(?:\b(cat|less|head|tail|cp|mv|rm|open|read|print|echo|summariz|delete|rename)\w*\b[^\n]{0,20}secret\.json|secret\.json[^\n]{0,20}\b(cat|less|head|tail|cp|mv|rm|open|read|print|echo|summariz|delete|rename)\w*\b)/i;
+  const CONFIG_WIDEN = /(?:\b(edit|set|export|write|add|append)\w*\b[^\n]{0,24}(SOHOPAY_SIGNER_KEY_ROOTS|sohopay-signer\/config\.json)|(SOHOPAY_SIGNER_KEY_ROOTS|sohopay-signer\/config\.json)[^\n]{0,24}\b(edit|set|export|write|add|append)\w*\b)/i;
+  for (const dirName of dirs) {
+    for (const f of skillFiles(join(SKILLS_DIR, dirName))) {
+      const raw = read(f);
+      for (const line of raw.split('\n')) {
+        if (PROHIBITION.test(line)) continue; // prohibition prose is the desired content
+        if (f !== SIGNER_MD && SECRET_VERB.test(line)) fail(`INV-no-secret-access: ${f} puts secret.json adjacent to an access/destroy verb: ${line.trim()}`);
+        if (CONFIG_WIDEN.test(line)) fail(`INV-no-secret-access: ${f} puts the signer config / roots env adjacent to a write verb: ${line.trim()}`);
+      }
+    }
+  }
+
+  // INV-no-inline-key — no skill passes private_key_base64url (or any key field) in a stdin example.
+  for (const dirName of dirs) {
+    for (const f of skillFiles(join(SKILLS_DIR, dirName))) {
+      if (/private_key_base64url/.test(read(f))) fail(`INV-no-inline-key: ${f} references private_key_base64url (keys enter only via --key <path>)`);
+    }
+  }
+
+  // INV-negative — the five excluded skills contain no agent-signing phrases and no signer routing.
+  const EXCLUDED = ['sohopay-authorize-agent', 'sohopay-repay', 'sohopay-human-direct', 'sohopay-integrate', 'sohopay-setup'];
+  const ROUTING_TOKENS = [
+    /\bkey generate\b/, /\bpop sign\b/, /\bvoucher sign\b/,
+    /sohopay-signer\b/, /@sohopay\/agent-signer\b/, /\bSOHOPAY_SIGNER\b/,
+  ];
+  for (const dirName of EXCLUDED) {
+    for (const f of skillFiles(join(SKILLS_DIR, dirName))) {
+      const raw = read(f);
+      for (const re of RECIPE_PHRASES) {
+        if (re.test(raw)) fail(`INV-negative: excluded skill ${f} contains agent-signing phrase ${re}`);
+      }
+      for (const re of ROUTING_TOKENS) {
+        if (re.test(raw)) fail(`INV-negative: excluded skill ${f} contains signer-routing token ${re}`);
+      }
+    }
+  }
+
+  // INV-pin-sync — the pin in signer.md and the fail-closed install command equal SIGNER_SPEC.
+  const signerRaw = existsSync(SIGNER_MD) ? read(SIGNER_MD) : '';
+  if (!signerRaw.includes(SIGNER_SPEC)) fail(`INV-pin-sync: signer.md must contain the pin ${SIGNER_SPEC}`);
+  if (existsSync(wk) && !read(wk).includes(SIGNER_SPEC)) fail(`INV-pin-sync: the workload-key.md install command must pin ${SIGNER_SPEC}`);
+
+  // INV-no-placeholder — no <x.y.z>/<version>/@latest placeholder in signer.md or workload-key.md.
+  const PLACEHOLDER = /<x\.y\.z>|<version>|<x\.y>|@latest\b/;
+  for (const f of [SIGNER_MD, wk]) {
+    if (existsSync(f) && PLACEHOLDER.test(read(f))) fail(`INV-no-placeholder: ${f} still has a version placeholder`);
+  }
+
+  // INV-codes-registered (onboard surface) — every code token in the onboard docs + behavioral
+  // cases is registered, and every registered code appears in that surface (no orphan).
+  if (!existsSync(REGISTRY)) {
+    fail('INV-codes-registered: evals/sohopay-onboard/error-codes.json missing');
+  } else {
+    const registered = new Set(JSON.parse(read(REGISTRY)).codes.map((c) => c.code));
+    const CODE_RE = /\b(?:SIGNER_[A-Z_]+|KEY_[A-Z_]+|CROSS_BORROWER_KEY|TERMINAL_MISMATCH|MALFORMED_INPUT|INLINE_KEY_REJECTED)\b/g;
+    // Shape-matching tokens that are NOT signer error codes — do not require registration.
+    const NON_CODES = new Set(['KEY_NOT_REGISTERED', 'TERMINAL_NOT_OWNED', 'X402_AGENT_KEY_NOT_REGISTERED', 'SOHOPAY_SIGNER_KEY_ROOTS']);
+    const surfaceFiles = [...skillFiles(ONBOARD)];
+    if (existsSync(BEHAVIORAL)) surfaceFiles.push(BEHAVIORAL);
+    const used = new Set();
+    for (const f of surfaceFiles) {
+      for (const m of read(f).matchAll(CODE_RE)) {
+        const code = m[0];
+        if (NON_CODES.has(code)) continue;
+        used.add(code);
+        if (!registered.has(code)) fail(`INV-codes-registered: ${f} uses unregistered code ${code}`);
+      }
+    }
+    for (const code of registered) {
+      if (!used.has(code)) fail(`INV-codes-registered: registered code ${code} is orphaned (used nowhere in the onboard surface)`);
+    }
+  }
+}
+checkSp5CompleteInvariants();
 
 if (failed) process.exit(1);
 console.log('All skill validations passed.');
