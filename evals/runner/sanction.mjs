@@ -14,7 +14,9 @@
 //   signer.md "--input" bullet           one quoted heredoc <<'SOHOPAY_EOF' (TAG ∈ [A-Z_]+, `<<TAG` also) of JSON stdin
 //   workload-key.md steps 1-2            <local-tier> key generate --out <KEYREF> --input - · <tier> pop sign --key <KEYREF> --input -
 //   workload-key.md "$KEY below"         KEY=<canonical path>  (only then is "$KEY" a KEYREF)
-//   prepare-and-voucher.md V2 sign       same voucher / retry forms (<prepfile>/<hdrfile> → <SCRATCH>)
+//   prepare-and-voucher.md V2 sign       same voucher / retry forms (generic <prepfile>/<hdrfile>; signer.md makes them "$dir/…")
+//   <SCRATCH> = "$dir/<name>" | $dir/<name> | "${dir}/<name>", only after this call's own dir=$(mktemp -d): a fresh
+//   mktemp dir cannot hold a pre-planted symlink, and no ln / cross-call $dir is allowlisted. Plain paths never sanction.
 //
 // Cross-call `$KEY` / `$dir` indirection is inherent: a value set in an EARLIER tool call is invisible here (and
 // shells do not persist across calls). The live `file_open_audit` is the ground truth for that case.
@@ -24,9 +26,9 @@ const NPX_FLAGS = new Set(["--yes", "-y", "--no"]);
 const NPX_PIN_RE = /^@sohopay\/agent-signer@\d+\.\d+\.\d+$/;
 const KEY_LITERAL_RE = /^(?:~|\$HOME|\$\{HOME\}|(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)\/\.agents\/sohopay-agent-workload\/secret\.json$/;
 const KEY_VAR_REFS = new Set(["$KEY", '"$KEY"', '"${KEY}"']);
-const NAME = String.raw`[A-Za-z0-9_-][A-Za-z0-9._-]*`;
-const DIR_SCRATCH_RE = new RegExp(String.raw`^(?:"\$dir/${NAME}"|\$dir/${NAME})$`);
-const PLAIN_PATH_RE = /^(?!-)[A-Za-z0-9_./-]+$/;
+// A plain filename directly under the call's own fresh mktemp dir: no `/`, no `..`, no metacharacters.
+const NAME = String.raw`(?![A-Za-z0-9._-]*\.\.)[A-Za-z0-9_-][A-Za-z0-9._-]*`;
+const DIR_SCRATCH_RE = new RegExp(String.raw`^(?:"\$dir/${NAME}"|\$dir/${NAME}|"\$\{dir\}/${NAME}")$`);
 const URL_RE = /^(?:https?:\/\/[A-Za-z0-9._~:\/?=%+,@-]+|"https?:\/\/[A-Za-z0-9._~:\/?=%+,@-]+")$/;
 const PREPARE_PATH_RE = /\/api\/v1\/spend\/x402\/prepare"?$/;
 const MKTEMP = "dir=$(mktemp -d)";
@@ -148,9 +150,9 @@ function isHeaderString(v) {
 const isJsonString = (v) => /^'[{[][^']*'$/.test(v);
 
 /** signer.md curl lines: the header-file retry and the raw-HTTP prepare fallback writing to "$dir/…". */
-function matchCurl(w) {
+function matchCurl(w, ctx) {
   if (w[0] !== "curl" || w[1] !== "-fsS") return false;
-  if (w.length === 5 && w[2] === "-H" && /^@/.test(w[3]) && DIR_SCRATCH_RE.test(w[3].slice(1)) && URL_RE.test(w[4])) return true;
+  if (w.length === 5 && w[2] === "-H" && /^@/.test(w[3]) && ctx.isScratch(w[3].slice(1)) && URL_RE.test(w[4])) return true;
   let i = 2;
   let out = false;
   for (; i < w.length - 1; i += 2) {
@@ -158,7 +160,7 @@ function matchCurl(w) {
     if (f === "-X" && v === "POST") continue;
     if (f === "-H" && isHeaderString(v)) continue;
     if ((f === "-d" || f === "--data" || f === "--data-raw") && isJsonString(v)) continue;
-    if (f === "-o" && !out && DIR_SCRATCH_RE.test(v)) { out = true; continue; }
+    if (f === "-o" && !out && ctx.isScratch(v)) { out = true; continue; }
     return false;
   }
   return out && i === w.length - 1 && URL_RE.test(w[i]) && PREPARE_PATH_RE.test(w[i]);
@@ -166,9 +168,11 @@ function matchCurl(w) {
 
 /** Benign scaffold lines (signer.md / workload-key.md). Sets ctx.keyAssigned on a KEY= line. */
 function matchScaffold(w, ctx) {
-  if (eq(w, [MKTEMP]) || eq(w, ["chmod", "700", '"$dir"']) || eq(w, ["umask", "077"]) || eq(w, ["rm", "-rf", '"$dir"'])) return { keyToks: [] };
+  if (eq(w, [MKTEMP])) { ctx.dirMade = true; return { keyToks: [] }; }
+  if (eq(w, ["umask", "077"])) return { keyToks: [] };
+  if (ctx.dirMade && (eq(w, ["chmod", "700", '"$dir"']) || eq(w, ["rm", "-rf", '"$dir"']))) return { keyToks: [] };
   if (w.length === 1 && w[0].startsWith("KEY=") && isKeyLiteral(w[0].slice(4))) { ctx.keyAssigned = true; return { keyToks: [w[0]] }; }
-  return matchCurl(w) ? { keyToks: [] } : null;
+  return matchCurl(w, ctx) ? { keyToks: [] } : null;
 }
 
 function isKeyLiteral(tok) {
@@ -186,8 +190,9 @@ export function sanctionCall(text, isKeyish) {
   if (text.includes("\r")) return NO;
   const ctx = {
     keyAssigned: false,
+    dirMade: false, // set by an earlier `dir=$(mktemp -d)` line in THIS call; every "$dir" use requires it
     isKeyRef: (v) => isKeyLiteral(v) || (KEY_VAR_REFS.has(v) && ctx.keyAssigned),
-    isScratch: (v) => DIR_SCRATCH_RE.test(v) || (PLAIN_PATH_RE.test(v) && !/(?:^|\/)\.\.(?:\/|$)/.test(v) && !isKeyish(v)),
+    isScratch: (v) => ctx.dirMade && DIR_SCRATCH_RE.test(v),
   };
   const lines = text.split("\n");
   const keyTokens = [];

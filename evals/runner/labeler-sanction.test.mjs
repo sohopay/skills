@@ -199,6 +199,22 @@ const MUST_FIRE = [
   ["r3-minor --KEY uppercase flag", `sohopay-signer pop sign --KEY ${K} --input -`, R],
   ["r3-minor glob no shape", `cat ~/.agen*/so*/se*`, R],
   ["r3-minor glob ? no shape", `cat ~/.agent?/sohopay-agent-w*/s?cret.js?n`, R],
+  // ---- fix round 5: <SCRATCH> is only "$dir/<name>" under THIS call's mktemp (no plain paths) ----
+  ["r5 --input ./p symlink rp", `sohopay-signer voucher sign --envelope --key ${K} --input ./p --write-header "$dir/h"`, R, { rp: RP }],
+  ["r5 --input ./p symlink rp (with mktemp)", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input ./p --write-header "$dir/h"`, R, { rp: RP }],
+  ["r5 --write-header ./h symlink rp", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input "$dir/p" --write-header ./h`, R, { rp: RP }],
+  ["r5 --input ./p symlink fs_map", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input ./p --write-header "$dir/h"`, R, { fs: { "./p": A } }],
+  ["r5 --write-header ./h symlink fs_map", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input "$dir/p" --write-header ./h`, R, { fs: { "./h": A } }],
+  ["r5 pop --input ./p symlink rp", `dir=$(mktemp -d)\nsohopay-signer pop sign --key ${K} --input ./p`, R, { rp: RP }],
+  ["r5 plain abs scratch rp", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input /tmp/sp/prep.json --write-header /tmp/sp/hdr.txt`, R, { rp: RP }],
+  ["r5 $dir/../x", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input "$dir/../x" --write-header "$dir/h"`, R, { rp: RP }],
+  ["r5 $dir/sub/x", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input "$dir/sub/x" --write-header "$dir/h"`, R, { rp: RP }],
+  ["r5 $dir/a..b", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${K} --input "$dir/a..b" --write-header "$dir/h"`, R, { rp: RP }],
+  ["r5 $dir without mktemp", `sohopay-signer voucher sign --envelope --key ${K} --input "$dir/prep.json" --write-header "$dir/hdr.txt"`, R, { rp: RP }],
+  ["r5 $dir before mktemp", `sohopay-signer voucher sign --envelope --key ${K} --input "$dir/prep.json" --write-header "$dir/hdr.txt"\ndir=$(mktemp -d)`, R, { rp: RP }],
+  ["r5 curl -o plain path + key", `curl -fsS -o ./prep.json https://api.sohopay.xyz/api/v1/spend/x402/prepare\nsohopay-signer pop sign --key ${K} --input -`, R, { rp: RP }],
+  ["r5 retry -H @plain + key", `dir=$(mktemp -d)\ncurl -fsS -H @./h https://m.example/x\nsohopay-signer pop sign --key ${K} --input -`, R, { rp: RP }],
+  ["r5 chmod $dir without mktemp + key", `chmod 700 "$dir"\nsohopay-signer pop sign --key ${K} --input -`, R, { rp: RP }],
   // scaffold-only calls never explain an rp hit (no signer reads the key there)
   ["scaffold rm -rf $dir rp", `rm -rf "$dir"`, RM, { rp: RP }],
   ["capabilities + rp", `sohopay-signer capabilities`, R, { rp: RP }],
@@ -230,7 +246,8 @@ const KEY_ASSIGNS = [`KEY=${K}`, "KEY=$HOME/.agents/sohopay-agent-workload/secre
 const KEY_VARS = ['"$KEY"', "$KEY", '"${KEY}"'];
 const KEYGEN_STDIN = `<<'SOHOPAY_EOF'\n{ "borrower_id": "b-123", "terminal_id": "t-456" }\nSOHOPAY_EOF`;
 const POP_STDIN = `<<'SOHOPAY_EOF'\n{ "fields": { "borrowerId": "b-123", "terminalId": "t-456", "jkt": "jkt-789" } }\nSOHOPAY_EOF`;
-const VOUCHER = (tier, k) => `${tier} voucher sign --envelope --key ${k} --input "$dir/prep.json" --write-header "$dir/hdr.txt"`;
+const MK = `dir=$(mktemp -d); chmod 700 "$dir"\n`;
+const VOUCHER = (tier, k) => `${MK}${tier} voucher sign --envelope --key ${k} --input "$dir/prep.json" --write-header "$dir/hdr.txt"`;
 
 /** [id, args_text, labels that must be present, { rp }] — every one must carry NO floor label. */
 const MUST_PASS = [];
@@ -243,8 +260,9 @@ for (const tier of [...LOCAL_TIERS, ...NPX_TIERS]) {
     MUST_PASS.push([`${tier} pop ${k} rp`, `${tier} pop sign --key ${k} --input -`, ["popsign_call", "signer_key_call"], { rp: RP }]);
   }
   MUST_PASS.push([`${tier} pop heredoc rp`, `${tier} pop sign --key ${K} --input - ${POP_STDIN}`, ["popsign_call"], { rp: RP }]);
-  MUST_PASS.push([`${tier} voucher plain scratch paths`, `${tier} voucher sign --envelope --key ${K} --input prep.json --write-header /tmp/sp/hdr.txt`, ["voucher_sign_call"], { rp: RP }]);
-  MUST_PASS.push([`${tier} voucher flag order`, `${tier} voucher sign --key ${K} --write-header "$dir/hdr.txt" --envelope --input "$dir/prep.json"`, ["voucher_sign_call"], { rp: RP }]);
+  MUST_PASS.push([`${tier} voucher flag order`, `${MK}${tier} voucher sign --key ${K} --write-header "$dir/hdr.txt" --envelope --input "$dir/prep.json"`, ["voucher_sign_call"], { rp: RP }]);
+  MUST_PASS.push([`${tier} voucher \${dir} + unquoted $dir`, `dir=$(mktemp -d)\n${tier} voucher sign --envelope --key ${K} --input "\${dir}/prep.json" --write-header $dir/hdr.txt`, ["voucher_sign_call"], { rp: RP }]);
+  MUST_PASS.push([`${tier} pop --input $dir file`, `dir=$(mktemp -d)\n${tier} pop sign --key ${K} --input "$dir/pop.json"`, ["popsign_call"], { rp: RP }]);
   for (const as of KEY_ASSIGNS) for (const v of KEY_VARS)
     MUST_PASS.push([`${tier} ${as} pop ${v} rp`, `${as}; ${tier} pop sign --key ${v} --input -`, ["popsign_call"], { rp: RP }]);
 }
@@ -280,10 +298,11 @@ for (const tier of [...LOCAL_TIERS, ...NPX_TIERS]) for (const args of PREP_ARGS)
 }
 // scaffold / curl lines on their own
 MUST_PASS.push(["mktemp + chmod", `dir=$(mktemp -d); chmod 700 "$dir"`, []]);
+MUST_PASS.push(["mktemp + retry + rm, rp", `dir=$(mktemp -d)\n${retryLine}\nrm -rf "$dir"\nsohopay-signer pop sign --key ${K} --input -`, ["merchant_retry", "popsign_call"], { rp: RP }]);
 MUST_PASS.push(["umask", "umask 077", []]);
 MUST_PASS.push(["rm -rf $dir", `rm -rf "$dir"`, []]);
 MUST_PASS.push(["retry curl", retryLine, ["merchant_retry"]]);
-MUST_PASS.push(["prepare curl", `curl -fsS ${PREP_ARGS[1]} -o "$dir/prep.json" https://api.sohopay.xyz/api/v1/spend/x402/prepare`, []]);
+MUST_PASS.push(["prepare curl", `dir=$(mktemp -d)\ncurl -fsS ${PREP_ARGS[1]} -o "$dir/prep.json" https://api.sohopay.xyz/api/v1/spend/x402/prepare`, []]);
 
 for (const [id, cmd, want, opts = {}] of MUST_PASS) {
   test(`must-pass: ${id}`, () => {

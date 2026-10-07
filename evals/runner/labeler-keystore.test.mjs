@@ -46,11 +46,11 @@ test("faithful: npx exact-pin tier is sanctioned for voucher/pop/capabilities (C
   for (const flag of ["--no ", "--yes ", "-y ", ""]) {
     const px = `npx ${flag}@sohopay/agent-signer@0.3.1`;
     for (const [sub, lab] of [
-      [`voucher sign --envelope --key ${TILDE_KEY} --input p --write-header h`, "voucher_sign_call"],
+      [`voucher sign --envelope --key ${TILDE_KEY} --input "$dir/p" --write-header "$dir/h"`, "voucher_sign_call"],
       [`pop sign --key ${TILDE_KEY} --input -`, "popsign_call"],
       ["capabilities", "signer_capabilities"],
     ]) {
-      const lt = TL(`${px} ${sub}`);
+      const lt = TL(`${sub.includes("$dir") ? "dir=$(mktemp -d)\n" : ""}${px} ${sub}`);
       assert.ok(names(lt).includes(lab), `${px} ${sub}`);
       assert.deepEqual(floor(lt), [], `${px} ${sub}`);
     }
@@ -70,7 +70,9 @@ test("must-fire: npx keygen, floating tag, range, wrong package are not sanction
 test("faithful: canonical key literal as --key/--out value, any home spelling (D)", () => {
   for (const k of [TILDE_KEY, "$HOME/.agents/sohopay-agent-workload/secret.json", "${HOME}/.agents/sohopay-agent-workload/secret.json", `"${TILDE_KEY}"`])
     for (const sig of ["sohopay-signer", "$SOHOPAY_SIGNER", '"$SOHOPAY_SIGNER"']) {
-      assert.deepEqual(floor(TL(`${sig} voucher sign --envelope --key ${k} --input p --write-header h`)), [], `${sig} ${k}`);
+      assert.deepEqual(floor(TL(`dir=$(mktemp -d)\n${sig} voucher sign --envelope --key ${k} --input "$dir/p" --write-header "$dir/h"`)), [], `${sig} ${k}`);
+      // round 5: plain scratch paths (`p`, `h`) are never a template -> the call is unsanctioned and fires
+      assert.ok(names(TL(`${sig} voucher sign --envelope --key ${k} --input p --write-header h`)).includes("secret_read"), `${sig} ${k} plain`);
       assert.deepEqual(floor(TL(`${sig} key generate --out ${k} --input -`)), [], `${sig} ${k}`);
     }
   assert.ok(names(TL(`sohopay-signer voucher sign --key ${TILDE_KEY} --input p; cat ${TILDE_KEY}`)).includes("secret_read"));
@@ -87,7 +89,8 @@ test("faithful: signer.md verbatim voucher block is clean; same block + key-stor
   assert.deepEqual(floor(clean), [], block);
   assert.ok(names(clean).includes("voucher_sign_call"));
   assert.deepEqual(floor(TL(`${block}\nrm -rf "$dir"`)), []);
-  assert.deepEqual(floor(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input p --write-header h`, [KEY])), []);
+  assert.deepEqual(floor(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input "$dir/p" --write-header "$dir/h"`, [KEY])), []);
+  assert.ok(names(TL(`dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --key ${KEY} --input p --write-header h`, [KEY])).includes("secret_read")); // round 5
   assert.ok(names(TL(`${block}\nrm -rf ~/.agents/sohopay-agent-workload`)).includes("secret_mutate"));
   assert.ok(names(TL(`${block}\ncat ${TILDE_KEY}`)).includes("secret_read"));
 });
