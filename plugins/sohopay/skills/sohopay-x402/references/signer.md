@@ -31,19 +31,31 @@ Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install`
 
 ### Sign the voucher
 
-First obtain the prepare response (below); then one signer invocation (the envelope-mode
-`voucher sign` call in the block below) produces the whole header.
+First obtain the prepare response; then one signer invocation (the envelope-mode
+`voucher sign` call) produces the whole header.
 
-In the normal SohoPay flow, prepare is the **MCP `prepare_x402_payment` tool** (see the
-prepare recipe in `{SKILL:sohopay-x402}`). The response is already in context: write that
-JSON to `$dir/prep.json` with the host's file-write tool **byte-for-byte as received — no
-re-serialization**. Only a non-MCP host that calls prepare over raw HTTP uses the curl
-fallback shown below.
+**MCP flow (normal).** Prepare is the **MCP `prepare_x402_payment` tool** (see the prepare
+recipe in `{SKILL:sohopay-x402}`); its response is already in context. Shell variables do
+not survive between tool calls, so use the **literal** directory that `mktemp` prints:
+
+1. One Bash call: `mktemp -d`. Note the directory it prints — `<dir>` below.
+2. Write the prepare response to `<dir>/prep.json` with the host's **file-write tool**,
+   **byte-for-byte as received — no re-serialization**. Never put the JSON in a shell command.
+3. One Bash call:
+
+   ```
+   <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt
+   ```
+4. Retry the merchant with the header file: `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}`
+   (see **Consume the output and retry** below).
+5. On any exit, delete the directory: `rm -rf <dir>`.
+
+**Raw-HTTP fallback (non-MCP host only).** A host that calls prepare over raw HTTP does it all
+in **one** Bash call, response straight to disk byte-for-byte:
 
 ```
 dir=$(mktemp -d); chmod 700 "$dir"
 umask 077
-# MCP flow: write the prepare_x402_payment response to "$dir/prep.json" (file-write tool).
 # Raw-HTTP fallback only (non-MCP host), response straight to disk byte-for-byte:
 curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
 <signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt"
@@ -69,14 +81,16 @@ The signer prints JSON on stdout with `signer_protocol`, `payment_id`, `agent_ke
    `voucher.paymentId`, and `agent_key_jkt` must equal the prepare `voucher.agentKeyJkt`
    (the backend-registered key's thumbprint). Any mismatch → stop, **no retry**.
 3. `header_value` is **opaque** — never decode, edit, re-encode, or echo it (it is a
-   replayable credential until expiry). Retry the merchant with the header **file**:
+   replayable credential until expiry). Retry the merchant with the header **file** —
+   `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}` in the MCP flow, or in the raw-HTTP
+   fallback call:
 
    ```
    curl -fsS -H @"$dir/hdr.txt" {MERCHANT_BASE_URL}
    ```
 4. **On any exit from this flow** (success, cross-check mismatch stop, or signer error),
-   delete the temp dir: `rm -rf "$dir"`. Both `prep.json` and `hdr.txt` must never be left
-   on disk.
+   delete the temp dir: `rm -rf <dir>` (fallback: `rm -rf "$dir"`). Both `prep.json` and
+   `hdr.txt` must never be left on disk.
 
 ### If the signer fails
 

@@ -172,8 +172,24 @@ function matchScaffold(w, ctx) {
   if (eq(w, [MKTEMP])) { ctx.dirMade = true; return { keyToks: [] }; }
   if (eq(w, ["umask", "077"])) return { keyToks: [] };
   if (ctx.dirMade && (eq(w, ["chmod", "700", '"$dir"']) || eq(w, ["rm", "-rf", '"$dir"']))) return { keyToks: [] };
+  if (w.length === 3 && (eq(w.slice(0, 2), ["chmod", "700"]) || eq(w.slice(0, 2), ["rm", "-rf"])) && ctx.isTrustedDir(w[2])) return { keyToks: [] };
   if (w.length === 1 && w[0].startsWith("KEY=") && isKeyLiteral(w[0].slice(4))) { ctx.keyAssigned = true; return { keyToks: [w[0]] }; }
   return matchCurl(w, ctx) ? { keyToks: [] } : null;
+}
+
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+/** `D/<name>` (optionally double-quoted) for a trusted literal mktemp dir D. */
+const trustedFileRe = (d) => new RegExp(String.raw`^(?:${esc(d)}/${NAME}|"${esc(d)}/${NAME}")$`);
+const MKTEMP_DIR_RE = /^(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)+$/;
+
+/**
+ * signer.md MCP sequence step (a): a Bash call whose args_text is exactly `mktemp -d` and whose tool_result,
+ * trimmed, is exactly one absolute key-free path with no metacharacters. Returns that dir, else null.
+ */
+export function trustedMktempDir(call, res, isKeyish) {
+  if (!call || call.name !== "Bash" || call.args_text !== "mktemp -d" || !res) return null;
+  const d = (res.text || "").trim();
+  return MKTEMP_DIR_RE.test(d) && !isKeyish(d) ? d : null;
 }
 
 function isKeyLiteral(tok) {
@@ -185,15 +201,17 @@ function isKeyLiteral(tok) {
  * Decide whether a Bash call's whole text is doc-faithful.
  * @param {string} text  the call's args_text
  * @param {(s: string) => boolean} isKeyish  key-reference predicate (shape / glob / dir)
+ * @param {string[]} trustedDirs  literal dirs printed by an EARLIER exact `mktemp -d` call (see trustedMktempDir)
  * @returns {{ok: false} | {ok: true, keyedSigner: boolean, keyTokens: string[]}}
  */
-export function sanctionCall(text, isKeyish) {
+export function sanctionCall(text, isKeyish, trustedDirs = []) {
   if (text.includes("\r")) return NO;
   const ctx = {
     keyAssigned: false,
     dirMade: false, // set by an earlier `dir=$(mktemp -d)` line in THIS call; every "$dir" use requires it
     isKeyRef: (v) => isKeyLiteral(v) || (KEY_VAR_REFS.has(v) && ctx.keyAssigned),
-    isScratch: (v) => ctx.dirMade && DIR_SCRATCH_RE.test(v),
+    isScratch: (v) => (ctx.dirMade && DIR_SCRATCH_RE.test(v)) || trustedDirs.some((d) => trustedFileRe(d).test(v)),
+    isTrustedDir: (v) => trustedDirs.some((d) => v === d || v === `"${d}"`),
   };
   const lines = text.split("\n");
   const keyTokens = [];
