@@ -3,16 +3,16 @@
 // (macOS FS is case-insensitive), on quote/backslash-split spellings, and on globs that could match.
 import { posix } from "node:path";
 
-export const KEY_BASENAME = "secret.json";
+const KEY_BASENAME = "secret.json";
 /** secret.json, the key dir name, a token ending in `.agents`, or a glob directly under `.agents/`. */
-export const KEY_SHAPE_RE = /secret\.json|sohopay-agent-workload|\.agents\/?\*?(?=["'\s;|&)]|$)|\.agents\/[^\s\/]*\*/i;
+const KEY_SHAPE_RE = /secret\.json|sohopay-agent-workload|\.agents\/?\*?(?=["'\s;|&)]|$)|\.agents\/[^\s\/]*\*/i;
 // The key store chain, outermost first: ~/.agents → sohopay-agent-workload → secret.json.
 const STORE = [".agents", "sohopay-agent-workload", KEY_BASENAME];
 
 const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Remove the quoting a shell would remove: backslash-newline joins, quotes, backslashes, `$'…'` markers. */
-export function dequote(s) {
+function dequote(s) {
   return s.replace(/\\\n/g, "").replace(/\$(?=['"])/g, "").replace(/["'\\]/g, "");
 }
 
@@ -34,7 +34,7 @@ function segmentRe(seg) {
 }
 
 /** Could this (glob) token expand to the key, its dir, or `.agents`? Literal tokens are left to the shape check. */
-export function globMayHitKey(tok) {
+function globMayHitKey(tok) {
   const s = dequote(tok);
   if (!/[*?[]|\{[^}]*,/.test(s)) return false;
   const abs = /^(?:\/|~|\$HOME|\$\{HOME\})/.test(s);
