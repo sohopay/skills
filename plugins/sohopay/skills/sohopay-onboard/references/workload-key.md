@@ -13,7 +13,7 @@ Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-speci
 1. **The npx tier is disallowed for `key generate`.** A secret-writing command runs only on a locally-installed signer: `$SOHOPAY_SIGNER`, then `sohopay-signer` on `PATH`. `$SOHOPAY_SIGNER` comes from the operator's environment — the agent **never** sets it inline.
 2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities --output json`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
 
-- No local signer resolves (npx disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
+- No local signer is installed (`$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
 
   ```text
   npm i -g @sohopay/agent-signer@0.3.0
@@ -21,7 +21,7 @@ Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-speci
 
   The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably.
 - A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
-- Resolution yields no answering candidate at all ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
+- A local signer is installed but none answers `capabilities --output json` (nonzero exit, stdout that is not JSON, or another `signer_protocol`) ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
 
 ### Generate + register (once per terminal)
 
