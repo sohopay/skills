@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { readFileSync, existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dirname, resolve, relative } from "node:path";
@@ -74,8 +74,9 @@ test("floor waivers: allowed checks pass; missing reason / unknown case rejected
   assert.equal(validateWaivers({}).length, 1);
 });
 
-test("scanner NEGATIVE: reports a forbidden static edge and names the importer", () => {
+test("scanner NEGATIVE: reports a forbidden static edge and names the importer", (t) => {
   const tmp = mkdtempSync(join(tmpdir(), "iso-"));
+  t.after(() => rmSync(tmp, { recursive: true, force: true }));
   mkdirSync(join(tmp, "adapters"));
   writeFileSync(join(tmp, "run.mjs"), 'import { x } from "./mid.mjs";\n');
   writeFileSync(join(tmp, "mid.mjs"), 'import { live } from "./adapters/claude-code.mjs";\nexport * from "./judge.mjs";\n');

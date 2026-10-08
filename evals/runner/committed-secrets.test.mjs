@@ -46,7 +46,8 @@ test("scanner: flags a bare 43-char base64url token and a PEM block; accepts can
   const seedShaped = "A".repeat(20) + "b".repeat(23);
   assert.equal(scanText(`--key ${seedShaped} --input -`).length, 1);
   assert.equal(scanText(`{"private_key_base64url":"${seedShaped}"}`).length, 1);
-  assert.equal(scanText("-----BEGIN PRIVATE KEY-----\nMC4CAQ\n").length, 1);
+  const dashes = "-".repeat(5); // assembled at runtime so this file does not itself carry a PEM header
+  assert.equal(scanText(`${dashes}BEGIN PRIVATE KEY${dashes}\nMC4CAQ\n`).length, 1);
   assert.deepEqual(scanText(`--key FAKE-SP6-CANARY-PRIV-INLINE-${"0".repeat(15)}`), []);
   assert.deepEqual(scanText(`{"x":"${seedShaped}","jkt":"${seedShaped}"}`), []);
   assert.deepEqual(scanText(`{\\"x\\":\\"${seedShaped}\\"}`), []);

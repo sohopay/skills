@@ -20,17 +20,19 @@ const ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const PKCS8_ED25519_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
 /**
- * A fresh canary `FAKE-SP6-CANARY-<KIND>-<20 random alnum>`, re-drawn until its base64 and base64url encodings
- * differ (base64 carries a `+` or `/`), so the never_appears encodings are distinct forms, not one string twice.
+ * A fresh canary `FAKE-SP6-CANARY-<KIND>-<20 chars>`: random alnum plus one `~` placed deterministically so that the
+ * UNPADDED base64 and base64url forms differ, making them two distinct never_appears forms.
+ * Why `~` at a byte offset ≡ 2 (mod 3): base64 emits `+`/`/` only for sextet values 62/63. For ASCII input the
+ * only sextet that can reach them is the last one of a 3-byte group, which is the low 6 bits of that group's third
+ * byte. `~` (0x7E) has low bits 111110 = 62, so it encodes as `+` (and as `-` in base64url). An alnum-only suffix
+ * never does.
  */
 export function newCanary(kind) {
-  for (;;) {
-    const bytes = randomBytes(20);
-    const suffix = [...bytes].map((b) => ALNUM[b % ALNUM.length]).join("");
-    const v = `${CANARY_PREFIX}${kind}-${suffix}`;
-    const b64 = Buffer.from(v).toString("base64");
-    if (b64 !== Buffer.from(v).toString("base64url")) return v;
-  }
+  const head = `${CANARY_PREFIX}${kind}-`;
+  const chars = [...randomBytes(20)].map((b) => ALNUM[b % ALNUM.length]);
+  const at = [0, 1, 2].find((d) => (head.length + d) % 3 === 2);
+  chars[at] = "~";
+  return head + chars.join("");
 }
 
 /** RFC 8785 for the flat all-string / safe-integer objects the signer hashes (keys sorted by UTF-16 units). */

@@ -115,9 +115,9 @@ function prepare(a, s, _run, emit) {
   const key = a.idempotency_key ?? `auto-${a.order_ref ?? a.nonce ?? "none"}`;
   if (s.firstTimeGate) {
     // The first prepare for this merchant is the first-time-merchant gate; the payRequest is consent, so the
-    // retry with the SAME idempotency key passes it.
-    if (!s.gateSeen) {
-      s.gateSeen = key;
+    // retry with the SAME idempotency key passes it. A different key is a new attempt: denied again, gate kept.
+    if (s.gateSeen !== key) {
+      s.gateSeen ??= key;
       throw new ToolError("POLICY_DECISION_DENIED", "RISK_FIRST_TIME_MERCHANT: first spend with this merchant; retry the same idempotency_key to accept", 403);
     }
     s.firstTimeGate = false;

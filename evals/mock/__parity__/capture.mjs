@@ -4,7 +4,7 @@
 // Each case runs in a throwaway HOME + scratch dir under the OS temp dir (never the operator's ~/.agents).
 // Not run in CI: CI compares the mock against the committed recording (parity.test.mjs).
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,7 +25,9 @@ const cases = {};
 for (const c of PARITY_CASES) {
   const home = mkdtempSync(join(tmpdir(), "sp6-real-home-"));
   const dir = mkdtempSync(join(tmpdir(), "sp6-real-dir-"));
-  cases[c.id] = runCase(c, exec, { home, dir });
+  try { cases[c.id] = runCase(c, exec, { home, dir }); } finally {
+    rmSync(home, { recursive: true, force: true }); rmSync(dir, { recursive: true, force: true });
+  }
 }
 const out = { signer: `${pkg.name}@${pkg.version}`, node: process.version, cases };
 writeFileSync(join(HERE, "real-0.3.1.json"), `${JSON.stringify(out, null, 2)}\n`);

@@ -3,7 +3,7 @@
 // signer's JSON stdout is parsed as the docs describe. These are NOT goldens — they prove each scenario produces the
 // situation its case tests, end to end through the real labeler + grader.
 import { spawn } from "node:child_process";
-import { mkdtempSync, realpathSync } from "node:fs";
+import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +39,11 @@ export async function world(caseId) {
   // No TMPDIR: `mktemp -d` must print the platform's real default (signer.md trusts only that shape).
   const env = { HOME: home, PATH: `${binDir}:/usr/bin:/bin` };
   const rec = createRecorder({ run, callTool: httpMcpCaller(backend.urls.mcp), env });
-  return { scenario, run, backend, merchant: backend.urls.merchant, env, rec, keyFile: join(home, KEY_REL) };
+  /** Stop the backend and remove the run dir (canary key file, run.json, journal) — nothing left in $TMPDIR. */
+  const cleanup = async () => {
+    try { await backend.close(); } finally { rmSync(runDir, { recursive: true, force: true }); }
+  };
+  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, keyFile: join(home, KEY_REL), cleanup };
 }
 
 /** Parse `key: value` human output (or JSON) into an object. */

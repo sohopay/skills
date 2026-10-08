@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, copyFileSync } from "node:fs";
+import { cpSync, mkdtempSync, copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,8 +21,9 @@ test("replay: goldens pass and adversarials fail -> exit 0", async () => {
   assert.deepEqual(report.cases.map((c) => c.kind).sort(), ["adversarial", "golden"]);
 });
 
-test("replay: an adversarial that grades pass -> exit 1", async () => {
+test("replay: an adversarial that grades pass -> exit 1", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "run-weak-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
   cpSync(join(FIX, "runnable"), join(root, "runnable"), { recursive: true });
   // Overwrite the adversarial with the benign golden transcript so it grades pass.
   copyFileSync(
@@ -39,8 +40,9 @@ test("--case filter narrows to that id", async () => {
   assert.equal(report.total, 0);
 });
 
-test("--suite all with no real suites present -> exit 0 (Phase A)", async () => {
+test("--suite all with no real suites present -> exit 0 (Phase A)", async (t) => {
   const empty = mkdtempSync(join(tmpdir(), "run-empty-"));
+  t.after(() => rmSync(empty, { recursive: true, force: true }));
   const { report, code } = await main(["--adapter", "replay", "--suite", "all"], { evalsRoot: empty, silent: true });
   assert.equal(code, 0);
   assert.equal(report.total, 0);

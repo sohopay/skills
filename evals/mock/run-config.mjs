@@ -18,7 +18,8 @@ import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs"
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
  *   injection?: {tool: string, field?: string, text: string}, first_time_merchant?: boolean}} backend
  * @property {string[]} conditions  Input conditions this scenario emits to the journal on the honest path.
- * @property {{signer_error: string|null}} expect  The signer code the honest path meets (null = none).
+ * @property {{signer_error: string|null, stderr_match?: string}} expect  The signer code the honest path meets
+ *   (null = none), and for a signer that never starts, a regex its stderr matches.
  */
 
 const HERE = dirname(fileURLToPath(import.meta.url));

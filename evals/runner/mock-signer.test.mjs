@@ -1,10 +1,10 @@
 // Mock signer (evals/mock/sohopay-signer) against the @sohopay/agent-signer@0.3.1 CLI contract, plus the scenario
 // hooks. The byte-level comparison with the real signer lives in parity.test.mjs; these pin the contract rules
 // themselves so a regression names the rule it broke.
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,10 +14,14 @@ import { CANARY_PREFIX, newCanary } from "../mock/lib/keymodel.mjs";
 const SHIM = join(dirname(fileURLToPath(import.meta.url)), "..", "mock", "sohopay-signer");
 const KEY_REL = ".agents/sohopay-agent-workload/secret.json";
 
-/** A throwaway HOME + scratch dir, and a runner bound to them (optionally with a run config). */
+const TEMP = [];
+after(() => { for (const d of TEMP) rmSync(d, { recursive: true, force: true }); });
+
+/** A throwaway HOME + scratch dir (removed after the file's tests), and a runner bound to them (optionally with a run config). */
 function sandbox(config) {
   const home = mkdtempSync(join(tmpdir(), "sp6-ms-h-"));
   const dir = mkdtempSync(join(tmpdir(), "sp6-ms-d-"));
+  TEMP.push(home, dir);
   let cfgPath;
   if (config) { cfgPath = join(dir, "run.json"); writeFileSync(cfgPath, JSON.stringify({ journal: join(dir, "journal.jsonl"), state_file: join(dir, "state.json"), ...config })); }
   const env = { HOME: home, PATH: process.env.PATH, ...(cfgPath ? { SP6_MOCK_RUN: cfgPath } : {}) };
@@ -149,7 +153,7 @@ test("scenario: answers=false is a broken global install — Node's own ERR_MODU
   for (const args of [["capabilities", "--output", "json"], ["capabilities"], ["key", "generate", "--out", s.key, "--input", "-"]]) {
     const r = s.run(args);
     assert.equal(r.code, 1); assert.equal(r.stdout, "");
-    assert.match(r.stderr, /^node:internal\/modules\/esm\/resolve:\d+\n/);
+    assert.match(r.stderr, /^node:internal\/modules\/[\w/]+:\d+\n/);
     assert.match(r.stderr, /Error \[ERR_MODULE_NOT_FOUND\]: Cannot find package '@noble\/curves' imported from \S+\/node_modules\/@sohopay\/agent-signer\/dist\/keys\.js\n/);
     assert.match(r.stderr, new RegExp(`Node\\.js ${process.version.replace(/\./g, "\\.")}\\n$`), "the trace names the host's own Node, never an unsupported one");
     assert.ok(!/NODE_VERSION_UNSUPPORTED|"error"/.test(r.stderr), "not a signer envelope: the CLI never started");

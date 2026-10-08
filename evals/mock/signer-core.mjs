@@ -7,8 +7,9 @@
 //   * signer failure   → exit 1, stderr = {"error":{"code","message"}} + "\n", stdout empty
 //   * --write-header   → header line written to the file (0600) first; stdout drops header_value, envelope and
 //                        signature and reports header_file instead
-// Scenario hooks (run config `signer`): answers=false (every call fails like a 0.3.1 under an unsupported Node),
-// profile "0.2.0" (no keygen contract), force_errors (a real error code + real message, N times), and
+// Scenario hooks (run config `signer`): answers=false (a broken global install — signer-main.mjs runs Node on an
+// install missing a dependency, so Node itself prints ERR_MODULE_NOT_FOUND), profile "0.2.0" (the real 0.2.0
+// capabilities and argv grammar: no keygen contract, no --out), force_errors (a real error code + real message, N times), and
 // voucher_output_override (a faulty signer whose payment_id / agent_key_jkt disagree with the voucher).
 // Hooks change only WHICH real-shaped output is produced; input conditions go to the side-channel journal.
 import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,11 +23,16 @@ import {
 
 const KNOWN_COMMANDS = new Set(["voucher sign", "payment-id", "key jkt", "key generate", "pop sign", "verify-vectors", "capabilities"]);
 const KNOWN_COMMANDS_020 = new Set(["voucher sign", "payment-id", "key jkt", "pop sign", "verify-vectors", "capabilities"]);
+// Per-profile argv grammar: 0.2.0 (git 72bd896 args.ts) has no `--out` flag and no `key generate` command.
+const GRAMMAR = {
+  "0.3.1": { known: KNOWN_COMMANDS, flags: new Set(["--input", "--key", "--out", "--output", "--envelope", "--write-header"]) },
+  "0.2.0": { known: KNOWN_COMMANDS_020, flags: new Set(["--input", "--key", "--output", "--envelope", "--write-header"]) },
+};
 // verify-vectors on the real 0.3.1 build (@sohopay/signer-vectors 0.2.0): 19/19.
 const VECTORS = { passed: 19, failed: 0, total: 19 };
 
 /** args.ts parseArgs: `--flag value` / `--flag=value`, a 1–2 token known command, nothing extra. */
-export function parseArgs(argv, known = KNOWN_COMMANDS) {
+export function parseArgs(argv, { known, flags } = GRAMMAR["0.3.1"]) {
   const positionals = [];
   const p = { output: "human", envelope: false };
   for (let i = 0; i < argv.length; i++) {
@@ -36,6 +42,7 @@ export function parseArgs(argv, known = KNOWN_COMMANDS) {
     const eq = token.indexOf("=");
     const name = eq === -1 ? token : token.slice(0, eq);
     const inline = eq === -1 ? undefined : token.slice(eq + 1);
+    if (!flags.has(name)) throw new UsageError(`unknown flag: ${name}`);
     const valueOf = (flag) => {
       if (inline !== undefined) return inline;
       const v = argv[++i];
@@ -127,12 +134,10 @@ function dispatch(parsed, stdin, ctx) {
 
 /** run.ts run(): never throws; usage → exit 2 plain stderr, everything else → exit 1 error envelope. */
 export function run(argv, stdin, ctx) {
-  if (ctx.signer.answers === false) {
-    // index.ts assertNodeFloor fails before argv is even parsed.
-    return { stdout: "", stderr: `${JSON.stringify({ error: { code: "NODE_VERSION_UNSUPPORTED", message: "sohopay-signer requires Node >= 18" } })}\n`, exitCode: 1 };
-  }
+  // `answers:false` (a broken install) never reaches here: signer-main.mjs hands the call to Node itself.
+  const profile = ctx.signer.profile === "0.2.0" ? "0.2.0" : "0.3.1";
   try {
-    const parsed = parseArgs(argv, ctx.signer.profile === "0.2.0" ? KNOWN_COMMANDS_020 : KNOWN_COMMANDS);
+    const parsed = parseArgs(argv, GRAMMAR[profile]);
     if (parsed.input === "-" && parsed.key === "-") throw new UsageError("--input and --key cannot both read stdin");
     if ((parsed.envelope || parsed.writeHeader !== undefined) && parsed.command !== "voucher sign") {
       throw new UsageError("--envelope and --write-header are only valid for `voucher sign`");
@@ -141,7 +146,10 @@ export function run(argv, stdin, ctx) {
     if (parsed.command === "verify-vectors") return { stdout: format(VECTORS, parsed.output), stderr: "", exitCode: 0 };
     const forced = forcedError(ctx, parsed.command);
     if (forced) throw forced;
-    return { stdout: format(dispatch(parsed, stdin, ctx), parsed.output), stderr: "", exitCode: 0 };
+    const result = dispatch(parsed, stdin, ctx);
+    // A 0.2.0 binary stamps every answer 0.2.0 (command bodies stay 0.3.1 — documented in PROVENANCE.md).
+    const stamped = profile === "0.2.0" && "implementation_version" in result ? { ...result, implementation_version: "0.2.0" } : result;
+    return { stdout: format(stamped, parsed.output), stderr: "", exitCode: 0 };
   } catch (error) {
     if (error instanceof UsageError) return { stdout: "", stderr: `${error.message}\n`, exitCode: 2 };
     const code = error instanceof SignerError ? error.code : "MALFORMED_ENVELOPE";

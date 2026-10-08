@@ -1,9 +1,9 @@
 // Mock backend (evals/mock/backend.mjs): MCP Streamable-HTTP transport, the per-scenario world it serves, the
 // merchant, the REST twins, localhost-only binding and the no-egress rule for everything under evals/mock.
-import test from "node:test";
+import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,8 +14,12 @@ import { loadScenario, SCENARIO_IDS } from "../mock/scenarios/index.mjs";
 
 const MOCK = join(dirname(fileURLToPath(import.meta.url)), "..", "mock");
 
+const TEMP = [];
+after(() => { for (const d of TEMP) rmSync(d, { recursive: true, force: true }); });
+
 async function up(caseId) {
   const runDir = mkdtempSync(join(tmpdir(), "sp6-mb-"));
+  TEMP.push(runDir);
   const run = buildRun(await loadScenario(caseId), { runDir, home: join(runDir, "home") });
   writeFileSync(run.journal, "");
   const backend = createBackend(run);

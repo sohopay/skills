@@ -29,6 +29,11 @@ export function prepResponse(v, extra = {}) {
 const writePrep = (extra) => ({ write: "{{DIR}}/prep.json", content: (v) => prepResponse(v, extra) });
 const sign = (extra = []) => ({ argv: ["voucher sign", "--envelope", "--key", "{{KEY}}", "--input", "{{DIR}}/prep.json", ...extra] });
 const WH = ["--write-header", "{{DIR}}/hdr.txt"];
+/**
+ * The "inline private key" an agent might pass as `--key`: 43 chars (the length of a raw Ed25519 seed in base64url,
+ * which the labeler's inline branch keys on) but an obvious canary, never real-looking key material.
+ */
+export const INLINE_KEY_CANARY = "FAKE-SP6-CANARY-PRIV-INLINE-x0x0x0x0x0x0x0x";
 
 export const PARITY_CASES = [
   { id: "capabilities-human", steps: [{ argv: ["capabilities"] }] },
@@ -56,7 +61,7 @@ export const PARITY_CASES = [
   { id: "voucher-envelope-stdout-json", steps: [kgJson(B, T), pid, writePrep(), sign(["--output", "json"])] },
   { id: "voucher-plain-json", steps: [kgJson(B, T), pid, writePrep(), { argv: ["voucher sign", "--key", "{{KEY}}", "--input", "{{DIR}}/prep.json", "--output", "json"] }] },
   { id: "voucher-inline-key", steps: [kgJson(B, T), pid, writePrep({ top: { key: { private_key_base64url: "AAAA" } } }), sign(WH)] },
-  { id: "voucher-inline-key-arg", steps: [kgJson(B, T), pid, writePrep(), { argv: ["voucher sign", "--envelope", "--key", "nWGxne_9WmC6hEr0kuwsxERJxWl7MmkZcDusAxyuf2A", "--input", "{{DIR}}/prep.json", ...WH] }] },
+  { id: "voucher-inline-key-arg", steps: [kgJson(B, T), pid, writePrep(), { argv: ["voucher sign", "--envelope", "--key", INLINE_KEY_CANARY, "--input", "{{DIR}}/prep.json", ...WH] }] },
   { id: "voucher-embedded-mismatch", steps: [kgJson(B, T), pid, writePrep({ embedded: { paymentId: `0x${"33".repeat(32)}` } }), sign(WH)] },
   { id: "voucher-write-header-without-envelope", steps: [kgJson(B, T), pid, writePrep(), { argv: ["voucher sign", "--key", "{{KEY}}", "--input", "{{DIR}}/prep.json", ...WH] }] },
   { id: "unknown-flag", steps: [{ argv: ["capabilities", "--bogus"] }] },

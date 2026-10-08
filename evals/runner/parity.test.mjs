@@ -7,7 +7,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,15 @@ const execMock = (argv, stdin, { env, cwd }) => {
   const r = spawnSync(process.execPath, [join(MOCK, "sohopay-signer"), ...argv], { input: stdin, env, cwd, encoding: "utf8" });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status };
 };
-const MOCK_RECS = Object.fromEntries(PARITY_CASES.map((c) => [c.id, runCase(c, execMock, { home: mkdtempSync(join(tmpdir(), "sp6-par-h-")), dir: mkdtempSync(join(tmpdir(), "sp6-par-d-")) })]));
+/** Run one parity case against the mock in throwaway dirs, removed straight after (they hold the canary key). */
+function mockRecords(c) {
+  const home = mkdtempSync(join(tmpdir(), "sp6-par-h-"));
+  const dir = mkdtempSync(join(tmpdir(), "sp6-par-d-"));
+  try { return runCase(c, execMock, { home, dir }); } finally {
+    rmSync(home, { recursive: true, force: true }); rmSync(dir, { recursive: true, force: true });
+  }
+}
+const MOCK_RECS = Object.fromEntries(PARITY_CASES.map((c) => [c.id, mockRecords(c)]));
 
 test("recording provenance: real @sohopay/agent-signer@0.3.1, every parity case recorded", () => {
   assert.equal(REAL.signer, "@sohopay/agent-signer@0.3.1");
