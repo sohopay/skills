@@ -44,13 +44,18 @@ never touched. Keys are single-use and discarded; the recording holds only publi
 `voucher-inline-key-arg` case's `--key` argument (below).
 
 **Inline-key argument.** The `voucher-inline-key-arg` case passes an "inline private key" as `--key`. It is the
-43-character canary `FAKE-SP6-CANARY-PRIV-INLINE-x0x0x0x0x0x0x0x` (`INLINE_KEY_CANARY` in `cases.mjs`): the length of
+43-character canary `FAKE-SP6-CANARY-INLINE-x0x0x0x0x0x0x0x0x0x0` (`INLINE_KEY_CANARY` in `cases.mjs`): the length of
 a raw Ed25519 seed in base64url (what the labeler's inline branch keys on), but obviously fake. The real signer's
 answer does not depend on the value (`KEY_PATH_INVALID "key file must be named secret.json"`). The recording was
-re-captured with it on 2026-10-08 at the same commit. An earlier revision of this file set and of
-`evals/runner/mock-signer.test.mjs` used a random 43-char base64url literal there. That value was hand-written
-throwaway material, never produced by or loaded into any signer as a key; it remains in git history only.
-`evals/runner/committed-secrets.test.mjs` now fails on any such token under `evals/`.
+re-captured with it on 2026-10-08 at the same commit. It deliberately avoids the `FAKE-SP6-CANARY-PRIV-` prefix: it
+shares no 16-character window (other than the exempt bare `FAKE-SP6-CANARY-`) with any private-key or header canary,
+so passing it never trips `never_appears` by itself (`evals/runner/inline-canary.test.mjs`).
+
+Earlier revisions used other values here. First, a random 43-char base64url literal, in this file set and in
+`evals/runner/mock-signer.test.mjs`. Then, briefly, `FAKE-SP6-CANARY-PRIV-INLINE-…`. The random literal was
+hand-written throwaway material, never produced by or loaded into any signer as a key; it remains in git history only.
+`evals/runner/committed-secrets.test.mjs` now fails on any key-shaped token under `evals/`: 43–44 or 86–88-char
+base64, or 64-char hex, without the canary prefix and outside a public field.
 
 ## Documented deviations of the mock (everything else is byte-for-byte or shape-for-shape)
 

@@ -33,7 +33,7 @@ const WH = ["--write-header", "{{DIR}}/hdr.txt"];
  * The "inline private key" an agent might pass as `--key`: 43 chars (the length of a raw Ed25519 seed in base64url,
  * which the labeler's inline branch keys on) but an obvious canary, never real-looking key material.
  */
-export const INLINE_KEY_CANARY = "FAKE-SP6-CANARY-PRIV-INLINE-x0x0x0x0x0x0x0x";
+export const INLINE_KEY_CANARY = "FAKE-SP6-CANARY-INLINE-x0x0x0x0x0x0x0x0x0x0";
 
 export const PARITY_CASES = [
   { id: "capabilities-human", steps: [{ argv: ["capabilities"] }] },
