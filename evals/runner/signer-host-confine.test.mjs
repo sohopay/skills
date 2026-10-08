@@ -173,6 +173,7 @@ test("R2-2: a case variant of a denied entry (macOS case-insensitive FS) is refu
     const r = await w.exec(["payment-id", "--input", f, "--output", "json"]);
     assert.equal(r.exitCode, 1, variant);
     assert.deepEqual(err(r), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${f}` });
+    assert.ok(w.logs.execs.at(-1).refusals.some((x) => x.role === "input" && x.reason === "outside sandbox"), `the fast pre-check itself refuses ${variant}`);
   }
   const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", join(w.sbx, "OLD-SESSION", "victim.txt"), "--output", "json"]);
   assert.equal(r.exitCode, 1);
@@ -184,15 +185,16 @@ test("R2-3: writes honour denyWrite (HOME/.claude), and an mktemp-shaped dir cou
   const r1 = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", join(w.home, ".claude", "settings.json"), "--output", "json"]);
   assert.equal(r1.exitCode, 1);
   assert.ok(!existsSync(join(w.home, ".claude", "settings.json")));
+  assert.ok(w.logs.execs.at(-1).refusals.some((x) => x.role === "write_header"), "the fast pre-check refuses a denyWrite target");
   // An mktemp-shaped dir outside the roots: allowed only when created during this run.
   const mk = join(w.dir, "tmp.AbCdEf1234");
   mkdirSync(mk);
   // Patterns match the /private-stripped canonical path (like the live MKTEMP_DIR_RE's /tmp and /var/folders forms).
   const pattern = `${w.dir.replace(/^\/private(?=\/var\/)/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/tmp\\.[A-Za-z0-9]{6,}`;
+  writeFileSync(join(mk, "x.json"), "{}");
   const old = await world("key-opacity", { policyOverrides: { mktemp: [pattern], since: Date.now() + 60_000 } });
   const r2 = await old.exec(["payment-id", "--input", join(mk, "x.json"), "--output", "json"]);
   assert.deepEqual(err(r2), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${join(mk, "x.json")}` }, "created before this run → refused");
-  writeFileSync(join(mk, "x.json"), "{}");
   const fresh = await world("key-opacity", { policyOverrides: { mktemp: [pattern], since: Date.now() - 60_000 } });
   const r3 = await fresh.exec(["payment-id", "--input", join(mk, "x.json"), "--output", "json"]);
   assert.notEqual(err(r3).message, `cannot read input file: ${join(mk, "x.json")}`, "created this run, owned by us → reaches the signer");
@@ -279,5 +281,18 @@ test("N2/R2-5: every /exec is logged — path-less, malformed, unparseable and b
     assert.deepEqual(err(r), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${d}` });
     const again = await (await post(JSON.stringify({ argv: ["capabilities", "--output", "json"], stdin: "", cwd: w.home }))).json();
     assert.equal(again.exitCode, 0, "the host survived");
+  } finally { await host.close(); }
+});
+
+test("R2-4: an exception inside a call is that call's error only — the host replies, logs it, and keeps serving", async () => {
+  const w = await world();
+  const host = createSignerHost(w.run, { logs: w.logs, clientToken: "t".repeat(48), policy: w.policy, privateDir: w.priv, seam: { crashOn: "payment-id" } });
+  const url = await host.listen(0);
+  try {
+    const post = (argv) => fetch(`${url}/exec`, { method: "POST", headers: { "content-type": "application/json", "x-signer-client": "t".repeat(48) }, body: JSON.stringify({ argv, stdin: "", cwd: w.home }) }).then((r) => r.json());
+    const crashed = await post(["payment-id", "--input", "-"]);
+    assert.equal(crashed.exitCode, 1);
+    assert.ok(w.logs.execs.some((e) => e.crashed), "the crash is logged (→ adapter error)");
+    assert.equal((await post(["capabilities", "--output", "json"])).exitCode, 0, "the host survived");
   } finally { await host.close(); }
 });

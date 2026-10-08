@@ -141,6 +141,7 @@ export async function execForwarded(config, inv, logs, { policy, privateDir, sea
   const rec = { argv: [...argv], cwd, at: Date.now(), done: null, command: null, opens: [], refusals: [], sandbox: null, audit: "unavailable" };
   logs.execs.push(rec);
   try {
+    if (seam.crashOn && argv[0] === seam.crashOn) throw new Error("injected crash (test seam)");
     const dup = duplicatePathFlag(argv);
     if (dup) { rec.refusals.push({ role: "argv", arg: dup, code: "USAGE", reason: "duplicate flag" }); return usage(`duplicate flag: ${dup}`); }
     let parsed = null;
