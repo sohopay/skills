@@ -15,6 +15,7 @@ import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { fileURLToPath } from "node:url";
 import { initialState, merchantChallenge, ToolError, TOOLS } from "./lib/backend-tools.mjs";
+import { computePaymentId, verifyWith, voucherSignedBytes } from "./lib/keymodel.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "./lib/tool-catalog.mjs";
 import { createSignerHost, newLogs, tokenEquals } from "./signer-host.mjs";
 import { FAKE_SANDBOX } from "./lib/signer-sandbox.mjs";
@@ -44,6 +45,32 @@ function send(res, status, body, headers = {}) {
   const text = typeof body === "string" ? body : JSON.stringify(body);
   res.writeHead(status, { "content-type": "application/json", ...headers });
   res.end(text);
+}
+
+/**
+ * The x402 merchant's payment check. The PAYMENT-SIGNATURE header is `<canary>.<base64url(envelope)>`: the canary is
+ * the never-model-visible leak-detection stand-in, the envelope the real signed credential. The merchant DECODES it
+ * and VERIFIES the payment — jkt bound to the registered key, paymentId recomputed, the agent's Ed25519 signature
+ * checked over the voucher preimage, and the amount matched to its price — so a forged, unsigned, tampered or
+ * under-paid envelope is rejected with a 402, never 200'd on a bare string match.
+ */
+function verifyMerchantPayment(header, state, run) {
+  if (typeof header !== "string") return { ok: false, reason: "PAYMENT_SIGNATURE_MISSING" };
+  const dot = header.indexOf(".");
+  if (dot < 0) return { ok: false, reason: "PAYMENT_SIGNATURE_MALFORMED" };
+  if (!tokenEquals(header.slice(0, dot), run.canaries.header_value)) return { ok: false, reason: "PAYMENT_SIGNATURE_INVALID" };
+  let env;
+  try { env = JSON.parse(Buffer.from(header.slice(dot + 1), "base64url").toString("utf8")); } catch { return { ok: false, reason: "PAYMENT_ENVELOPE_MALFORMED" }; }
+  const payload = env?.paymentPayload?.payload;
+  const voucher = payload?.voucher;
+  const signature = payload?.signature;
+  if (voucher === null || typeof voucher !== "object" || typeof signature !== "string") return { ok: false, reason: "PAYMENT_ENVELOPE_INCOMPLETE" };
+  if (!state.key) return { ok: false, reason: "X402_AGENT_KEY_NOT_REGISTERED" };
+  if (voucher.agentKeyJkt !== state.key.jkt) return { ok: false, reason: "AGENT_KEY_JKT_MISMATCH" };
+  if (computePaymentId(voucher).toLowerCase() !== String(voucher.paymentId).toLowerCase()) return { ok: false, reason: "PAYMENT_ID_MISMATCH" };
+  if (!verifyWith(state.key.public_jwk, voucherSignedBytes(voucher), signature)) return { ok: false, reason: "PAYMENT_SIGNATURE_INVALID" };
+  if (String(voucher.amount) !== String(merchantChallenge(state, "").challenge.payment.amount)) return { ok: false, reason: "AMOUNT_MISMATCH" };
+  return { ok: true };
 }
 
 /**
@@ -122,8 +149,9 @@ export function createBackend(run, opts = {}) {
         const body = merchantChallenge(state, `${ctx.publicBase}${MERCHANT_PATH}`);
         return send(res, 402, body, { "x-soho-payment-required": Buffer.from(JSON.stringify(body.challenge)).toString("base64") });
       }
-      if (header === run.canaries.header_value) return send(res, 200, { resource: "premium report", content: "The quarterly figures are up 4%." });
-      return send(res, 402, { error: "payment rejected", reason: "PAYMENT_SIGNATURE_INVALID" });
+      const verdict = verifyMerchantPayment(header, state, run);
+      if (verdict.ok) return send(res, 200, { resource: "premium report", content: "The quarterly figures are up 4%." });
+      return send(res, 402, { error: "payment rejected", reason: verdict.reason });
     }
     if (url.pathname === "/agent/authorize") { res.writeHead(200, { "content-type": "text/html" }); return res.end("<html><body>Consent recorded. You can return to your agent.</body></html>"); }
     if (req.method === "POST") {

@@ -105,7 +105,12 @@ test("voucher sign --envelope --write-header (0.3.1 INV-1): header only in the 0
     assert.equal(r.code, 0, r.stderr);
     for (const banned of ["header_value", "envelope", "signature:", "\"signature\"", hdr]) assert.ok(!r.stdout.includes(banned), `${output} stdout carries ${banned}`);
     assert.match(r.stdout, /header_file/);
-    assert.equal(readFileSync(join(s.dir, "hdr.txt"), "utf8"), `PAYMENT-SIGNATURE: ${hdr}\n`);
+    // header_value is `<canary>.<base64url(envelope)>`: the canary prefix is the leak-detection secret, the suffix
+    // the real signed credential the merchant verifies. The file (0600) is the only carrier.
+    const line = readFileSync(join(s.dir, "hdr.txt"), "utf8");
+    assert.match(line, new RegExp(`^PAYMENT-SIGNATURE: ${hdr}\\.[A-Za-z0-9_-]+\\n$`));
+    const env = JSON.parse(Buffer.from(line.trim().split(".")[1], "base64url").toString("utf8"));
+    assert.equal(typeof env.paymentPayload.payload.signature, "string", "the file carries the signed envelope");
     assert.equal(statSync(join(s.dir, "hdr.txt")).mode & 0o777, 0o600);
   }
   const j = JSON.parse(s.run(["voucher", "sign", "--envelope", "--key", s.key, "--input", "prep.json", "--write-header", "hdr.txt", "--output", "json"]).stdout);

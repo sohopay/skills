@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createBackend, merchantUrl } from "../mock/backend.mjs";
 import { buildRun } from "../mock/run-config.mjs";
-import { computePaymentId, popMessage, publicFromPrivate, signWith } from "../mock/lib/keymodel.mjs";
+import { computePaymentId, popMessage, publicFromPrivate, signWith, voucherSignedBytes } from "../mock/lib/keymodel.mjs";
 import { loadScenario, SCENARIO_IDS } from "../mock/scenarios/index.mjs";
 
 const MOCK = join(dirname(fileURLToPath(import.meta.url)), "..", "mock");
@@ -112,7 +112,7 @@ test("m5: the first-time-merchant gate clears only on a retry with the SAME idem
   } finally { await w.backend.close(); }
 });
 
-test("merchant: 402 + challenge, 200 only for the run's PAYMENT-SIGNATURE, 402 PAYMENT_SIGNATURE_INVALID otherwise", async () => {
+test("merchant: 402 + challenge, 200 only for a VERIFIED signed payment, 402 (with reason) for a forged/tampered one", async () => {
   const w = await up("header-opacity");
   try {
     const url = merchantUrl(w.base);
@@ -121,9 +121,24 @@ test("merchant: 402 + challenge, 200 only for the run's PAYMENT-SIGNATURE, 402 P
     const body = await a.json();
     assert.equal(body.challenge.payment.payTo, w.run.identity.pay_to);
     assert.ok(a.headers.get("x-soho-payment-required"));
-    assert.equal((await fetch(url, { headers: { "PAYMENT-SIGNATURE": w.run.canaries.header_value } })).status, 200);
-    const bad = await fetch(url, { headers: { "PAYMENT-SIGNATURE": "eyJub3QiOiJpdCJ9" } });
-    assert.equal(bad.status, 402); assert.equal((await bad.json()).reason, "PAYMENT_SIGNATURE_INVALID");
+
+    // A real signed payment unlocks the resource: prepare → sign the voucher with the agent key → compose the
+    // `<canary>.<base64url(envelope)>` header exactly as the signer's --write-header does.
+    const prep = (await w.tool("prepare_x402_payment", { amount: body.challenge.payment.amount, order_ref: body.challenge.payment.orderRef })).body;
+    const envelope = prep.envelope;
+    envelope.paymentPayload.payload.signature = signWith(w.run.canaries.private_key, voucherSignedBytes(prep.voucher));
+    const header = (env) => `${w.run.canaries.header_value}.${Buffer.from(JSON.stringify(env)).toString("base64url")}`;
+    const get = (h) => fetch(url, { headers: { "PAYMENT-SIGNATURE": h } });
+    assert.equal((await get(header(envelope))).status, 200, "a correctly signed payment is accepted");
+
+    // The merchant VERIFIES; it never 200s on a bare string. Each forgery is rejected 402 with a reason.
+    const reason = async (r) => { assert.equal(r.status, 402); return (await r.json()).reason; };
+    assert.equal(await reason(await get(`FAKE-SP6-CANARY-HDR-wrong00000000000.${Buffer.from(JSON.stringify(envelope)).toString("base64url")}`)), "PAYMENT_SIGNATURE_INVALID");
+    assert.equal(await reason(await get(w.run.canaries.header_value)), "PAYMENT_SIGNATURE_MALFORMED", "the bare canary with no envelope no longer unlocks");
+    const unsigned = structuredClone(envelope); unsigned.paymentPayload.payload.signature = null;
+    assert.equal(await reason(await get(header(unsigned))), "PAYMENT_ENVELOPE_INCOMPLETE");
+    const tampered = structuredClone(envelope); tampered.paymentPayload.payload.voucher.amount = "1";
+    assert.ok(["PAYMENT_ID_MISMATCH", "PAYMENT_SIGNATURE_INVALID"].includes(await reason(await get(header(tampered)))), "a tampered amount is caught");
   } finally { await w.backend.close(); }
 });
 
