@@ -239,7 +239,12 @@ test("N2: a read oracle into a denied root is refused with the real 'cannot read
   assert.ok(w.logs.execs[0].refusals.some((f) => f.role === "input"));
 });
 
-test("R2-2: a case variant of a denied entry (macOS case-insensitive FS) is refused too", async () => {
+// R2-2 is about case-folding, which only macOS's (case-insensitive) default FS does: there OLD-SESSION IS Old-Session.
+// On a case-sensitive FS (Linux) a case variant is a different, unrelated path, so each platform registers its own
+// variant test. Registered per platform rather than skipped: the live workflow's runner-test step requires
+// `ℹ skipped 0` on Linux, so a permanently skipped macOS-only test would fail it.
+const CASE_FOLDING_FS = process.platform === "darwin";
+if (CASE_FOLDING_FS) test("R2-2: a case variant of a denied entry (macOS case-insensitive FS) is refused too", async () => {
   const w = await world();
   writeFileSync(join(w.sbx, "Old-Session", "t.json"), "{}");
   for (const variant of ["OLD-SESSION", "old-session", "Old-Session"]) {
@@ -252,6 +257,28 @@ test("R2-2: a case variant of a denied entry (macOS case-insensitive FS) is refu
   const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", join(w.sbx, "OLD-SESSION", "victim.txt"), "--output", "json"]);
   assert.equal(r.exitCode, 1);
   assert.ok(!existsSync(join(w.sbx, "Old-Session", "victim.txt")));
+});
+
+if (!CASE_FOLDING_FS) test("R2-2 (case-sensitive FS): the denied entry is refused by the pre-check; a case variant is a different path that never reaches it", async (t) => {
+  t.diagnostic(`case-folding (the macOS R2-2 test) does not apply on ${process.platform}: case variants are distinct paths here`);
+  const w = await world();
+  writeFileSync(join(w.sbx, "Old-Session", "t.json"), "{}");
+  const exact = join(w.sbx, "Old-Session", "t.json");
+  const r0 = await w.exec(["payment-id", "--input", exact, "--output", "json"]);
+  assert.equal(r0.exitCode, 1);
+  assert.deepEqual(err(r0), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${exact}` });
+  assert.ok(w.logs.execs.at(-1).refusals.some((x) => x.role === "input" && x.reason === "outside sandbox"), "the fast pre-check refuses the denied entry");
+  for (const variant of ["OLD-SESSION", "old-session"]) {
+    const f = join(w.sbx, variant, "t.json");
+    const r = await w.exec(["payment-id", "--input", f, "--output", "json"]);
+    assert.equal(r.exitCode, 1, variant);
+    assert.deepEqual(err(r), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${f}` }, "a nonexistent distinct path: nothing read");
+    assert.ok(!w.logs.execs.at(-1).refusals.some((x) => x.reason === "outside sandbox"), `${variant} is not folded onto the denied entry (no case-folding on this FS)`);
+  }
+  const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", join(w.sbx, "OLD-SESSION", "victim.txt"), "--output", "json"]);
+  assert.equal(r.exitCode, 1);
+  assert.ok(!existsSync(join(w.sbx, "Old-Session", "victim.txt")), "a variant write never lands in the denied entry");
+  assert.ok(!existsSync(join(w.sbx, "OLD-SESSION")), "nor creates the variant directory");
 });
 
 test("R2-3: writes honour denyWrite (HOME/.claude), and an mktemp-shaped dir counts only if owned by us and created this run", async () => {
