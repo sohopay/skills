@@ -13,6 +13,7 @@ import { main } from "../run.mjs";
 import { HardError, label } from "../schema.mjs";
 import { claudeArgv, makeBudget, PINS, resolveClaude, run, runSuites, TEST_STUB_MARKER } from "./claude-code.mjs";
 import { childTraceSupport, sandboxSupport } from "../../mock/lib/signer-sandbox.mjs";
+import { probeAudit } from "./cc-audit.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = join(HERE, "__fixtures__", "stub-claude.mjs");
@@ -204,6 +205,14 @@ test("[E2E] N2: every signer /exec is audited under the REAL OS sandbox — open
     // Loader / node runtime activity outside the store is filtered structurally (recordTrace), never by name here.
     assert.deepEqual(ops, [["write", "hdr.txt"], ["chmod", "hdr.txt"]], "Linux (strace on the child): the sanctioned --key read is not an event; the header write (and its chmod) is");
   }
+});
+
+// C1 (escapes): the agent SIGKILLs its own tracer and reads the key afterwards, unobserved. Linux with strace only (the
+// probe kills its OWN strace, the stub CLI's parent — never another test's).
+const LINUX_AUDIT = process.platform === "linux" && probeAudit().audit === "available";
+test("[E2E] C1: an agent that SIGKILLs its tracer makes the sample an adapter error", { skip: !LINUX_AUDIT && !(REQUIRE && process.platform === "linux") && "no strace audit here (Linux with strace only); required under SP6_REQUIRE_SANDBOX=1 on Linux" }, async () => {
+  stubOnPath("killtracer.mjs");
+  await assert.rejects(directRun("sohopay-x402", "key-opacity"), (e) => e instanceof HardError && /tracer.*SIGKILL/.test(e.message));
 });
 
 test("R3-1: the test-only fake sandbox cannot reach a live run — runSuites refuses it, run.mjs has no flag for it, no env var selects it", async () => {

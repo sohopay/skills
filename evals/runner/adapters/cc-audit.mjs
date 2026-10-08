@@ -14,7 +14,7 @@
 import { spawnSync } from "node:child_process";
 import { posix } from "node:path";
 import { HardError } from "../schema.mjs";
-import { IO_URING_INJECT, ioUringRing, straceRecords } from "../../mock/lib/strace-records.mjs";
+import { cloneUntraced, COMPAT_TRACE, IO_URING_INJECT, ioUringRing, straceRecords } from "../../mock/lib/strace-records.mjs";
 
 export { IO_URING_INJECT, ioUringRing };
 
@@ -27,6 +27,8 @@ const COMMON = [
   "execve", "execveat", "chdir", "fchdir", "clone", "?clone3",
   // R2-9: io_uring I/O carries no paths strace can see — a ring in an agent subtree is itself an adapter error.
   "?io_uring_setup", "?io_uring_enter",
+  // m4: i386 compat forms (a 32-bit binary under an x86-64 kernel); parsed as their 64-bit equivalents.
+  ...COMPAT_TRACE,
 ];
 // Legacy path syscalls that only x86-64 still has (aarch64 never did).
 const X64_ONLY = ["open", "creat", "stat", "lstat", "access", "readlink", "unlink", "rename", "link", "symlink", "chmod", "chown", "lchown", "mkdir", "rmdir", "mknod", "utimes", "fork", "vfork"];
@@ -179,6 +181,8 @@ export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), win
   const handle = (rec, info) => {
     const { pid, sys, args, ret, at } = rec;
     if (CLONE_RE.test(sys)) {
+      // C1: a CLONE_UNTRACED child is never attached by `strace -f`; its I/O would be unobservable (fail closed, as R2-9).
+      if (info.kind !== "excluded" && cloneUntraced(sys, args)) throw new HardError(`strace: untraced child — process ${pid} cloned with CLONE_UNTRACED (or undecodable flags); its I/O is unobservable`);
       if (!/^\d+$/.test(ret)) return;
       const child = Number(ret);
       const fresh = { kind: info.kind, callId: info.callId, cwd: info.cwd };

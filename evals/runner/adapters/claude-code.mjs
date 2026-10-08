@@ -32,8 +32,9 @@ export { checkInit, makeBudget, persistedReader, PINS, captureErrors, startHookR
 
 /**
  * R2-1 fail closed: a signer /exec that could not run inside its OS sandbox, hit its per-call timeout (R3-3), used
- * io_uring (unobservable I/O), crashed the host, or ran under the test-only fake sandbox in a run that did not itself
- * inject it (R3-1) makes the whole sample an adapter error. Malformed / unparseable / bad-token requests ran nothing.
+ * io_uring or an untraced child (unobservable I/O), crashed the host, or ran under the test-only fake sandbox in a run
+ * that did not itself inject it (R3-1) makes the whole sample an adapter error. Malformed / unparseable / bad-token
+ * requests ran nothing.
  */
 export function signerHostErrors(state, { allowFake = false } = {}) {
   const out = [];
@@ -43,9 +44,22 @@ export function signerHostErrors(state, { allowFake = false } = {}) {
     else if (x.sandboxFailed) out.push(`signer host: /exec ${call} ran without its OS sandbox (${x.sandboxError ?? "unknown"})`);
     if (x.sandbox === "fake" && !allowFake) out.push(`signer host: /exec ${call} ran under the test-only fake sandbox (unconfined) in a live run`);
     if (x.ioUring) out.push(`signer host: io_uring in the signer child (unobservable I/O)`);
+    if (x.untraced) out.push(`signer host: untraced child in the signer child (CLONE_UNTRACED or undecodable clone flags: unobservable I/O)`);
     if (x.crashed) out.push(`signer host: crashed on a call (${x.crashed})`);
   }
   return out;
+}
+
+/**
+ * C1 (escapes): an agent that can see the tracer can SIGKILL it (same uid), and its tracees then run on untraced
+ * (strace without --kill-on-exit). SIGTERM / SIGINT / SIGHUP are deferred by strace (it keeps tracing), and the CLI's own
+ * exit code passes through it — but SIGKILL cannot be caught, and strace also mirrors a tracee that died by SIGKILL. So
+ * under the strace audit a strace that ended by SIGKILL without our own timeout kill is an adapter error (fail closed).
+ * @returns {string|null}
+ */
+export function tracerExitError(audit, exit) {
+  if (audit?.audit !== "available" || exit?.timedOut || exit?.signal !== "SIGKILL") return null;
+  return "the file-audit tracer (strace) or the CLI was SIGKILLed outside the harness timeout: the trace may be incomplete";
 }
 
 /**
@@ -188,6 +202,8 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const state = await w.fetchState();
   const hostErrs = signerHostErrors(state, { allowFake: opts.testSeams?.signerSandbox === "fake" });
   if (hostErrs.length) throw new HardError(`claude-code adapter: ${hostErrs.join("; ")}`);
+  const tracerErr = tracerExitError(audit, exit);
+  if (tracerErr) throw new HardError(`claude-code adapter: ${tracerErr}`);
   const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, name: h.name, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
   // N1: hook processes are excluded ONLY by the pids they reported over the authenticated relay.
   const auditEvents = audit.audit === "available"

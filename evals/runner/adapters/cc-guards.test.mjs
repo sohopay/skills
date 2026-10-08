@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HardError, validateTranscript } from "../schema.mjs";
-import { auditRefusal, checkInit, claudeArgv, makeBudget, PINS, signerAuditError, signerAuditStatus, signerHostErrors } from "./claude-code.mjs";
+import { auditRefusal, checkInit, claudeArgv, makeBudget, PINS, signerAuditError, signerAuditStatus, signerHostErrors, tracerExitError } from "./claude-code.mjs";
 import { harnessLeak, harnessSecrets, redactSecrets } from "./cc-guards.mjs";
 
 const GOOD = () => ({
@@ -70,6 +70,21 @@ test("M6: a zero, negative or non-numeric cap is rejected; accounting and the pe
   const spent = makeBudget(1);
   spent.add(1);
   assert.ok(spent.exhausted(), "nothing left → no further run");
+});
+
+test("C1 (escapes): a strace that ended by SIGKILL (the agent killed the tracer, or the CLI died by SIGKILL) is an adapter error unless the harness timed out", () => {
+  const on = { audit: "available" };
+  assert.match(tracerExitError(on, { code: null, signal: "SIGKILL", timedOut: false }), /tracer.*SIGKILL/);
+  assert.equal(tracerExitError(on, { code: null, signal: "SIGKILL", timedOut: true }), null, "our own timeout kill");
+  assert.equal(tracerExitError(on, { code: 1, signal: null, timedOut: false }), null, "the CLI's exit code passes through strace");
+  assert.equal(tracerExitError(on, { code: null, signal: "SIGTERM", timedOut: false }), null, "strace defers SIGTERM / SIGINT / SIGHUP and keeps tracing");
+  assert.equal(tracerExitError({ audit: "unavailable" }, { code: null, signal: "SIGKILL", timedOut: false }), null, "no tracer");
+});
+
+test("C1: an untraced child in the signer child (CLONE_UNTRACED) makes the sample an adapter error", () => {
+  const errs = signerHostErrors({ execs: [{ argv: ["voucher", "sign"], at: 1, done: 2, opens: [], refusals: [], sandbox: "bwrap", reachedChild: true, audit: "available", untraced: true }] });
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /untraced child/);
 });
 
 test("R2-1 fail closed: any signer /exec that could not run inside its OS sandbox makes the sample an adapter error", () => {

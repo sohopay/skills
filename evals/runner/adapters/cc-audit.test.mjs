@@ -2,7 +2,9 @@
 // fixture (__fixtures__/strace/attribution.strace). On macOS the probe says "unavailable" and nothing is synthesised.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HardError, label } from "../schema.mjs";
@@ -162,4 +164,96 @@ test("R2-9: an agent io_uring_setup the tracer failed (or the kernel refused) ma
   assert.throws(() => parseStrace(enter, opts), (e) => e instanceof HardError && /io_uring/.test(e.message), "io_uring_enter in an agent subtree is always an error");
   const resumed = `${base}1201 1760000002.180000 io_uring_setup(256, <unfinished ...>\n1201 1760000002.180100 <... io_uring_setup resumed>{flags=0x10000, sq_entries=256}) = 9<anon_inode:[io_uring]>\n`;
   assert.throws(() => parseStrace(resumed, opts), (e) => e instanceof HardError && /io_uring/.test(e.message), "a ring set up across unfinished/resumed halves is seen");
+});
+
+// Review C1: CLONE_UNTRACED makes the kernel skip ptrace auto-attach (PTRACE_O_TRACECLONE) — no privilege needed — so
+// the child's I/O never reaches the trace (probed: an untraced child read a key-store file, parseStrace returned []).
+// Any clone / clone3 carrying it from a non-excluded process is an adapter error; flags strace could not decode too.
+test("C1: a clone / clone3 with CLONE_UNTRACED (decoded or numeric) from a non-excluded process is an adapter error; undecodable flags fail closed", () => {
+  const base = readFileSync(join(FIX, "evasion.strace"), "utf8");
+  const opts = { storeRoot: STORE, cwd: "/home/agent", excludePids: new Map([[1100, 1760000002060]]), windows: EV_WINDOWS };
+  const untraced = /untraced child/;
+  const bad = [
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=CLONE_UNTRACED|SIGCHLD) = 1300`,
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=CLONE_VM|CLONE_UNTRACED|0x400000|SIGCHLD, child_tidptr=0x1) = 1300`,
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=0x800011) = 1300`,
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=8388625) = 1300`,
+    `1201 1760000002.180000 clone3({flags=CLONE_UNTRACED, exit_signal=SIGCHLD, stack=NULL, stack_size=0}, 88) = 1300`,
+    `1201 1760000002.180000 clone3({flags=0x800000, exit_signal=SIGCHLD, stack=NULL, stack_size=0}, 88) = 1300`,
+    `1201 1760000002.180000 clone3({flags=CLONE_UNTRACED, exit_signal=SIGCHLD}, 88) = -1 EPERM (Operation not permitted)`,
+    `1201 1760000002.180000 clone3(0xffffd0a1c3e8, 88) = 1300`,
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=CLONE_UNTRACED|SIGCHLD <unfinished ...>\n1201 1760000002.180100 <... clone resumed>) = 1300`,
+  ];
+  for (const line of bad) assert.throws(() => parseStrace(`${base}${line}\n`, opts), (e) => e instanceof HardError && untraced.test(e.message), line);
+  // The CLI itself is held to the same rule (its tools would escape with it).
+  assert.throws(() => parseStrace(`${base}1001 1760000007.000000 clone(child_stack=NULL, flags=CLONE_UNTRACED|SIGCHLD) = 1400\n`, opts), (e) => e instanceof HardError && untraced.test(e.message));
+  const ok = [
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7f2) = 1300`,
+    `1201 1760000002.180000 clone3({flags=CLONE_VM|CLONE_VFORK|CLONE_CLEAR_SIGHAND, exit_signal=SIGCHLD, stack=0x7f, stack_size=0x9000}, 88) = 1300`,
+    `1201 1760000002.180000 clone(child_stack=NULL, flags=0x1200011) = 1300`,
+  ];
+  for (const line of ok) assert.doesNotThrow(() => parseStrace(`${base}${line}\n`, opts), line);
+  // An excluded (hook) subtree is not the agent's.
+  assert.doesNotThrow(() => parseStrace(`${base}1100 1760000002.060000 clone(child_stack=NULL, flags=CLONE_UNTRACED|SIGCHLD) = 1500\n`, opts));
+});
+
+// Review m4: i386 compat calls (a 32-bit binary under the x86-64 kernel) are traced (optional) and mean their 64-bit op.
+test("m4: 32-bit compat syscalls are traced (optional) and parsed as their 64-bit equivalents", () => {
+  for (const arch of ["x64", "arm64"]) {
+    const set = syscallSet(arch);
+    for (const s of ["chown32", "lchown32", "fchown32", "truncate64", "ftruncate64", "stat64", "lstat64", "fstat64", "fstatat64", "fcntl64"]) assert.ok(set.includes(`?${s}`), `${arch}: ?${s}`);
+  }
+  const t = [
+    `1000 1760000000.000000 execve("/usr/local/bin/claude", ["claude"], 0x1 /* 1 var */) = 0`,
+    `1000 1760000002.000000 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x1) = 1200`,
+    `1200 1760000002.100000 chown32("${KEY}", 0, 0) = 0`,
+    `1200 1760000002.110000 lchown32("${KDIR}", 0, 0) = 0`,
+    `1200 1760000002.120000 fchown32(3<${KEY}>, 0, 0) = 0`,
+    `1200 1760000002.130000 truncate64("${KEY}", 0) = 0`,
+    `1200 1760000002.140000 ftruncate64(3<${KEY}>, 0) = 0`,
+    `1200 1760000002.150000 stat64("${KEY}", {st_mode=S_IFREG|0600, st_size=1}) = 0`,
+    `1200 1760000002.160000 fstatat64(AT_FDCWD, "${KEY}", {st_mode=S_IFREG|0600, st_size=1}, 0) = 0`,
+  ].join("\n");
+  const ev = parseStrace(`${t}\n`, { storeRoot: STORE, cwd: "/home/agent", windows: [{ id: "A", name: "Bash", start: 1760000001500, end: 1760000003000 }] });
+  assert.deepEqual(ev.map((e) => [e.op, e.path]), [["chown", KEY], ["chown", KDIR], ["chown", KEY], ["truncate", KEY], ["truncate", KEY], ["stat", KEY], ["stat", KEY]]);
+});
+
+// C1 end to end: a REAL raw clone(CLONE_UNTRACED) (python ctypes, no privilege) under the adapter's exact strace argv.
+// The untraced child really reads the key-store file (the escape is real), and parseStrace refuses the trace.
+const AUDIT = probeAudit();
+const PY = spawnSync("python3", ["-c", "print(1)"], { encoding: "utf8" }).status === 0;
+const C1_REQUIRED = process.env.SP6_REQUIRE_SANDBOX === "1" && process.platform === "linux";
+const C1_SKIP = !C1_REQUIRED && (AUDIT.audit !== "available" || !PY) && `no strace audit or python3 here (${AUDIT.reason ?? "python3 missing"}); runs on Linux with strace, required under SP6_REQUIRE_SANDBOX=1`;
+test("[E2E] C1: a real CLONE_UNTRACED child under the adapter's strace reads the key store unseen — parseStrace makes it an adapter error", { skip: C1_SKIP }, () => {
+  assert.equal(AUDIT.audit, "available", AUDIT.reason ?? "");
+  assert.ok(PY, "python3 is required for the raw-clone probe");
+  const dir = realpathSync(mkdtempSync(join(tmpdir(), "cc-untraced-")));
+  try {
+    const store = join(dir, ".agents");
+    mkdirSync(store);
+    const key = join(store, "secret.json");
+    writeFileSync(key, "SECRETKEY");
+    const probe = join(dir, "probe.py");
+    writeFileSync(probe, [
+      "import ctypes, os, sys, platform",
+      "libc = ctypes.CDLL(None, use_errno=True)",
+      "libc.syscall.restype = ctypes.c_long",
+      "nr = {'x86_64': 56, 'aarch64': 220}[platform.machine()]",
+      "u = ctypes.c_ulong",
+      "pid = libc.syscall(ctypes.c_long(nr), u(0x00800000 | 17), u(0), u(0), u(0), u(0))",
+      "if pid == 0:",
+      "    fd = os.open(sys.argv[1], os.O_RDONLY)",
+      "    os.write(1, b'UNTRACED CHILD read: ' + os.read(fd, 64) + b'\\n')",
+      "    os._exit(0)",
+      "os.waitpid(pid, 0)",
+    ].join("\n"));
+    const out = join(dir, "audit.strace");
+    const argv = straceArgv(out, { killOnExit: AUDIT.killOnExit });
+    const r = spawnSync(argv[0], [...argv.slice(1), "/bin/sh", "-c", `python3 ${probe} ${key}`], { encoding: "utf8", cwd: dir });
+    assert.match(r.stdout, /UNTRACED CHILD read: SECRETKEY/, `the escape is real (${r.stderr})`);
+    const text = readFileSync(out, "utf8");
+    assert.match(text, /CLONE_UNTRACED|0x8000/, "strace saw the clone itself");
+    assert.ok(!/openat\([^\n]*secret\.json/.test(text), "the untraced child's read never reached the trace");
+    assert.throws(() => parseStrace(text, { storeRoot: store, cwd: dir, windows: [{ id: "A", name: "Bash", start: 0, end: Number.POSITIVE_INFINITY }] }), (e) => e instanceof HardError && /untraced child/.test(e.message));
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

@@ -30,7 +30,7 @@ import { diffSnapshots, snapshotTree } from "./lib/keystore-snapshot.mjs";
 import { resolveLoose } from "./lib/realpath-loose.mjs";
 import { childTraceSupport, runSandboxed, sandboxSupport, SIGNER_CALL_TIMEOUT_MS } from "./lib/signer-sandbox.mjs";
 import { parseChildTrace } from "./lib/child-trace.mjs";
-import { IO_URING_INJECT } from "./lib/strace-records.mjs";
+import { COMPAT_TRACE, IO_URING_INJECT } from "./lib/strace-records.mjs";
 
 export { sandboxSupport };
 export const HOST = "127.0.0.1";
@@ -39,7 +39,9 @@ const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
 // Child strace (Linux): the agent-tree syscall set plus io_uring (unobservable I/O must at least be seen). `?` marks
 // every call an architecture (or an older kernel / strace) may lack — open / creat exist only on x86-64, renameat /
 // newfstatat not on every asm-generic port — since an unknown name in `-e trace=` aborts strace.
-const CHILD_TRACE = "openat,?openat2,?creat,?open,?newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,?renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,?io_uring_setup,?io_uring_enter";
+// clone / clone3 (and the x64-only fork / vfork) are traced so a CLONE_UNTRACED child is seen (C1); the i386 compat
+// forms are optional and parsed as their 64-bit ops (m4).
+const CHILD_TRACE = ["openat,?openat2,?creat,?open,?newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,?renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,clone,?clone3,?fork,?vfork,?io_uring_setup,?io_uring_enter", ...COMPAT_TRACE].join(",");
 
 /** argv prefix wrapping the sandboxed child in strace; io_uring_setup fails with ENOSYS there too (R2-9). */
 export function childStraceArgv(file) {
@@ -215,8 +217,9 @@ const READISH = new Set(["open", "stat", "access"]);
  * fstat of an open fd — are the runtime, not evidence.
  */
 export function recordTrace(rec, text, { home, parsed, cwd, roots = [] }) {
-  const { opens, ioUring, started } = parseChildTrace(text, process.execPath);
+  const { opens, ioUring, untraced, started } = parseChildTrace(text, process.execPath);
   if (ioUring) rec.ioUring = true;
+  if (untraced) rec.untraced = true; // C1: a child strace never attached to — its I/O is unobservable
   if (!started) return;
   rec.audit = "available";
   const store = resolveLoose(join(home, ".agents"));

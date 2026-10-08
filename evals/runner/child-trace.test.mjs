@@ -49,7 +49,7 @@ test("R2-9: the signer child's strace fails io_uring_setup (ENOSYS); a failed se
 // Syscalls an architecture may lack (legacy path calls only x86-64 still has; renameat / newfstatat that newer
 // asm-generic ports dropped; newer calls an older kernel or strace may not know). An unknown name in `-e trace=` aborts
 // strace, so each must carry `?` in every set that is not x64-only.
-const ARCH_OPTIONAL = ["open", "creat", "stat", "lstat", "access", "readlink", "unlink", "rename", "link", "symlink", "chmod", "chown", "lchown", "mkdir", "rmdir", "mknod", "utimes", "fork", "vfork", "renameat", "newfstatat", "openat2", "faccessat2", "fchmodat2", "clone3", "io_uring_setup", "io_uring_enter"];
+const ARCH_OPTIONAL = ["open", "creat", "stat", "lstat", "access", "readlink", "unlink", "rename", "link", "symlink", "chmod", "chown", "lchown", "mkdir", "rmdir", "mknod", "utimes", "fork", "vfork", "renameat", "newfstatat", "openat2", "faccessat2", "fchmodat2", "clone3", "io_uring_setup", "io_uring_enter", "chown32", "lchown32", "fchown32", "truncate64", "ftruncate64", "stat64", "lstat64", "fstat64", "fstatat64", "fcntl64"];
 const traceSet = (argv) => argv.find((a) => a.startsWith("trace=")).slice("trace=".length).split(",");
 
 test("aarch64: every arch-optional syscall in the signer-child and agent (non-x64) trace sets is marked `?`", () => {
@@ -66,4 +66,40 @@ test("R3-5: a trace where node's execve never succeeded is NOT started — no op
   const r = parseChildTrace(read("child-noexec.strace"), NODE);
   assert.equal(r.started, false);
   assert.deepEqual(r.opens, []);
+});
+
+// Review C1: the signer child is held to the agent tree's rule — a CLONE_UNTRACED (or undecodable) clone after node
+// started is reported (the host turns it into an adapter error). Its trace set carries clone / clone3 to see it.
+test("C1: a CLONE_UNTRACED clone in the signer child is reported; an ordinary thread / process clone is not", () => {
+  const set = traceSet(childStraceArgv("/w/c.strace"));
+  assert.ok(set.includes("clone") && set.includes("?clone3"), "the child trace sees clones");
+  const start = `7 1760000100.000000 execve("${NODE}", ["${NODE}", "child.mjs"], 0x1 /* 2 vars */) = 0\n`;
+  const bwrapOwn = `6 1760000099.000000 clone(child_stack=NULL, flags=CLONE_NEWNS|CLONE_NEWUSER|SIGCHLD) = 7\n`;
+  assert.equal(parseChildTrace(`${bwrapOwn}${start}7 1760000100.100000 clone(child_stack=NULL, flags=CLONE_UNTRACED|SIGCHLD) = 9\n`, NODE).untraced, true);
+  assert.equal(parseChildTrace(`${start}7 1760000100.100000 clone3({flags=0x800000, exit_signal=SIGCHLD}, 88) = 9\n`, NODE).untraced, true);
+  assert.equal(parseChildTrace(`${start}7 1760000100.100000 clone3(0xffffd0a1c3e8, 88) = 9\n`, NODE).untraced, true, "undecodable flags fail closed");
+  const thread = "clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0xffff, parent_tid=0xffff, exit_signal=0, stack=0xffff, stack_size=0x7ff100, tls=0xffff} => {parent_tid=[8]}, 88) = 8";
+  assert.equal(parseChildTrace(`${bwrapOwn}${start}7 1760000100.100000 ${thread}\n`, NODE).untraced, false);
+});
+
+// Review m1: strace -y prints the cwd as `AT_FDCWD</path>`; a relative path syscall is resolved against it, so a relative
+// stat / unlink inside the key store is a store event. m4: compat names parse as their 64-bit op.
+test("m1/m4: relative path syscalls resolve against AT_FDCWD</path>; compat calls parse as their 64-bit ops", () => {
+  const set = traceSet(childStraceArgv("/w/c.strace"));
+  for (const c of ["chown32", "lchown32", "fchown32", "truncate64", "ftruncate64", "stat64", "lstat64", "fstat64", "fstatat64", "fcntl64"]) assert.ok(set.includes(`?${c}`), `child traces ?${c}`);
+  const start = `7 1760000100.000000 execve("${NODE}", ["${NODE}", "child.mjs"], 0x1 /* 2 vars */) = 0\n`;
+  const lines = [
+    `7 1760000100.100000 newfstatat(AT_FDCWD</tmp/h/.agents>, "secret.json", {st_mode=S_IFREG|0600, st_size=1}, 0) = 0`,
+    `7 1760000100.110000 unlinkat(AT_FDCWD</tmp/h/.agents>, "victim.json", 0) = 0`,
+    `7 1760000100.120000 chown32("/tmp/h/.agents/secret.json", 0, 0) = 0`,
+    `7 1760000100.130000 fchown32(3</tmp/h/.agents/secret.json>, 0, 0) = 0`,
+    `7 1760000100.140000 truncate64("/tmp/h/.agents/secret.json", 0) = 0`,
+  ].join("\n");
+  assert.deepEqual(parseChildTrace(`${start}${lines}\n`, NODE).opens.map((o) => [o.op, o.path]), [
+    ["stat", "/tmp/h/.agents/secret.json"],
+    ["unlink", "/tmp/h/.agents/victim.json"],
+    ["chown", "/tmp/h/.agents/secret.json"],
+    ["chown", "/tmp/h/.agents/secret.json"],
+    ["truncate", "/tmp/h/.agents/secret.json"],
+  ]);
 });
