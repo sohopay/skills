@@ -27,8 +27,10 @@ on:
         description: "Samples per case (5 = the live k; fewer = smoke run, never regenerates goldens)"
         required: false
         default: "5"
+  # labeled ONLY: every live run spends once, on an explicit label (or a dispatch). Pushes never re-run it; to re-run,
+  # remove and re-add run-live-evals, or dispatch.
   pull_request:
-    types: [labeled, synchronize]
+    types: [labeled]
 
 permissions: {}
 

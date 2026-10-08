@@ -5,7 +5,8 @@ import { PINS } from "./adapters/cc-guards.mjs";
 
 export const LIVE_LABEL = "run-live-evals";
 export const CONCURRENCY_PREFIX = "sp6-live-${{ github.event.pull_request.number || github.ref }}";
-export const FORK_EXPR = "github.event.pull_request.head.repo.full_name != github.repository";
+export const NOOP_CLAUSE = "${{ github.event_name == 'pull_request' && (!contains(github.event.pull_request.labels.*.name, 'run-live-evals') || (github.event.action == 'labeled' && github.event.label.name != 'run-live-evals')) && format('-noop-{0}', github.run_id) || '' }}";
+export const FORK_EXPR ="github.event.pull_request.head.repo.full_name != github.repository";
 
 /** Drop full-line comments and trailing ` # ...` comments (outside quotes, roughly); keep line numbers. */
 export function stripComments(text) {
@@ -53,20 +54,25 @@ export function liveWorkflowErrors(text) {
   const { clean, raw, top, jobs } = readWorkflow(text);
   const no = (m) => errs.push(m);
 
-  // 1. Triggers: workflow_dispatch + pull_request [labeled, synchronize] only; never pull_request_target.
+  // 1. Triggers: workflow_dispatch + pull_request [labeled] only — every live run spends once, on an explicit label or
+  //    dispatch (no synchronize / opened / reopened, and never the type-less default); never pull_request_target.
   if (/pull_request_target/.test(clean)) no("pull_request_target is forbidden (it runs PR code with secrets)");
   const on = get(top, "on");
   const triggers = on ? blocks(on.body, 2).map((b) => b.key).sort() : [];
   if (JSON.stringify(triggers) !== JSON.stringify(["pull_request", "workflow_dispatch"])) no(`triggers must be exactly workflow_dispatch + pull_request, got ${JSON.stringify(triggers)}`);
   const pr = on && get(blocks(on.body, 2), "pull_request");
   const types = pr && get(blocks(pr.body, 4), "types");
-  if (!types || types.value.replace(/\s/g, "") !== "[labeled,synchronize]") no("pull_request types must be [labeled, synchronize]");
+  if (!types || types.value.replace(/\s/g, "") !== "[labeled]") no(`pull_request types must be exactly [labeled] (got ${types ? types.value : "the default: opened, synchronize, reopened"})`);
 
   // 2. Top-level permissions: {} and the per-PR concurrency group.
   if (get(top, "permissions")?.value !== "{}") no("top-level permissions must be {}");
   const conc = get(top, "concurrency");
   const ck = conc ? blocks(conc.body, 2) : [];
-  if (!get(ck, "group")?.value.startsWith(CONCURRENCY_PREFIX)) no(`concurrency group must start with ${CONCURRENCY_PREFIX}`);
+  const group = get(ck, "group")?.value ?? "";
+  if (!group.startsWith(CONCURRENCY_PREFIX)) no(`concurrency group must start with ${CONCURRENCY_PREFIX}`);
+  // A PR event that will not run (label absent, or a different label added) gets its own group, so it can never cancel
+  // a live run in progress.
+  if (!group.includes(NOOP_CLAUSE)) no(`concurrency group must give no-op PR events a unique -noop- suffix (${NOOP_CLAUSE})`);
   if (get(ck, "cancel-in-progress")?.value !== "true") no("concurrency cancel-in-progress must be true");
 
   // 3. The first job is the fork gate: no environment, no secrets, permissions {}, refuses a fork PR, label-gated.

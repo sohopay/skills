@@ -28,9 +28,10 @@ test("job graph: gate → live (environment) → issues + regen; every later job
   for (const id of ["gate", "issues", "regen"]) assert.equal(key(job(id), "environment"), undefined, id);
 });
 
-test("triggers: workflow_dispatch + pull_request [labeled, synchronize], label-gated; never pull_request_target", () => {
+test("triggers: workflow_dispatch + pull_request [labeled] ONLY (one spend per explicit label / dispatch), label-gated; never pull_request_target", () => {
   assert.ok(!/pull_request_target/.test(wf.clean));
-  assert.match(YML, /pull_request:\n\s+types: \[labeled, synchronize\]/);
+  assert.match(YML, /pull_request:\n\s+types: \[labeled\]\n/);
+  assert.ok(!/synchronize|reopened|opened/.test(wf.clean.split("jobs:")[0]), "no push-driven or open-driven PR type");
   assert.match(key(job("gate"), "if").body.join("\n"), /contains\(github\.event\.pull_request\.labels\.\*\.name, 'run-live-evals'\)/);
 });
 
@@ -93,7 +94,13 @@ test("regen pushes only to the PR head branch, refuses develop/main, checks the 
 const MUTATIONS = [
   ["pull_request_target", (y) => y.replace("  pull_request:\n", "  pull_request_target:\n"), /pull_request_target|triggers/],
   ["push trigger", (y) => y.replace("  pull_request:\n", "  push:\n  pull_request:\n"), /triggers must be exactly/],
-  ["opened type", (y) => y.replace("[labeled, synchronize]", "[opened, labeled, synchronize]"), /types must be/],
+  ["synchronize type", (y) => y.replace("types: [labeled]", "types: [labeled, synchronize]"), /types must be exactly \[labeled\]/],
+  ["opened type", (y) => y.replace("types: [labeled]", "types: [opened, labeled]"), /types must be exactly \[labeled\]/],
+  ["reopened type", (y) => y.replace("types: [labeled]", "types: [labeled, reopened]"), /types must be exactly \[labeled\]/],
+  ["unlabeled type", (y) => y.replace("types: [labeled]", "types: [labeled, unlabeled]"), /types must be exactly \[labeled\]/],
+  ["no types (GitHub default: opened, synchronize, reopened)", (y) => y.replace("  pull_request:\n    types: [labeled]\n", "  pull_request:\n"), /types must be exactly \[labeled\]/],
+  ["noop concurrency suffix removed (an unrelated label would cancel a running live eval)", (y) => y.replace(/\$\{\{ github\.event_name == 'pull_request' && \(!contains[^\n]*-noop-[^\n]*\}\}/, ""), /noop/],
+  ["noop suffix ignores unrelated labels", (y) => y.replace(" || (github.event.action == 'labeled' && github.event.label.name != 'run-live-evals')", ""), /noop/],
   ["top-level write-all", (y) => y.replace(/^permissions: \{\}$/m, "permissions: write-all"), /top-level permissions/],
   ["concurrency group", (y) => y.replace("group: sp6-live-", "group: live-"), /concurrency group/],
   ["no cancel-in-progress", (y) => y.replace("cancel-in-progress: true", "cancel-in-progress: false"), /cancel-in-progress/],
