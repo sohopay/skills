@@ -34,7 +34,23 @@ Grep results:
 - Lines 54–56: Prose constraint stating the agent "**MUST NOT** read, print, parse, copy, or summarize" the key (constraint, not an instructed command).
 - Line 75: `rm -rf "$dir"` targets the `mktemp -d` temporary directory (created line 42), not the key's parent dir.
 
-**Verdict:** The `secret_read` over-approximation (basename/parent-dir in any non-signer `tool_call`) is safe for x402 goldens with no prose change to `signer.md`. Legitimate goldens will not trigger false `secret_read` positives in Task 2.
+**Verdict (Task 0, signer.md only):** no instructed non-signer command touched the key file or its dir. The line numbers above are from Task 0; signer.md changed later (see the outcome below).
+
+**Amendment 2 outcome (Tasks 12–14 and the final review):**
+
+- **T12 audit (workload-key.md + signer.md).** The audit became test-backed and grew into the labeler redesign. The over-approximation stayed fail-closed; it was not narrowed. Instead, legitimate doc forms are sanctioned by a whole-call allowlist of doc-derived templates (`evals/runner/sanction.mjs`, `keyref.mjs`). Every documented form must label clean (the labeler-sanction must-pass tests), and every reviewed bypass must fire.
+- **Prose changes**, made so that honest goldens pass without widening the allowlist:
+  - `workload-key.md`:
+    - keygen and `pop sign` read their JSON stdin from a single-quoted heredoc (`<<'SOHOPAY_EOF'`);
+    - the resolver separates "no local signer" (`SIGNER_KEYGEN_REQUIRES_LOCAL`) from "installed but not answering" (`SIGNER_UNRESOLVED`).
+  - `signer.md`:
+    - the MCP sign sequence is: one Bash `mktemp -d`; the prepare response written to `<dir>/prep.json` with the file-write tool; one `voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt`; `curl -H @<dir>/hdr.txt`; then removal of `<dir>`;
+    - a literal mktemp dir is trusted across calls only under the mktemp-trust rule;
+    - the quoted-heredoc last resort for `--input` was dropped.
+  - `prepare-and-voucher.md`:
+    - the V2 sign bullets point at that sequence;
+    - the npx tier is pinned (`npx --no @sohopay/agent-signer@<pin>`, final review m1), and INV-pin-sync now covers it.
+  - All three: every signer invocation passes `--output json` (Task 14 ruling). The labeler reads `created` / `jkt` and the x402 cross-check fields from that JSON and never parses human output.
 
 ---
 
@@ -47,7 +63,7 @@ Grep results:
 - Static INV enforcement: Task 10
 
 **Implementation:**
-- Task 0 creates `CODEOWNERS` at repo root with the five protected paths requiring `@sohopay/maintainers` review.
+- Task 0 creates `CODEOWNERS` at repo root with the five protected paths requiring `@sohopay/maintainers` review. Later tasks added `evals/live-workflow.sha256`, `scripts/validate-skills.mjs`, `validate.yml` (T17) and `evals/*/transcripts/` (final review I2); the repo-wide catch-all stays first.
 - Task 10 enforces INV-sp6-floor-waivers: any waiver that attempts to disable a `never_appears` predicate is rejected at validation time.
 
 ---
@@ -58,7 +74,7 @@ Grep results:
 
 **Owning Task:** Task 17
 
-**Rationale:** Ensures that multiple runs of the live eval workflow triggered by different PRs do not interfere. Each PR gets its own concurrency group (typically keyed on `github.head_ref`), so only the latest run per PR proceeds; earlier runs are cancelled if superseded.
+**Rationale:** Ensures that multiple runs of the live eval workflow triggered by different PRs do not interfere. Each PR gets its own concurrency group, keyed on the PR number (`sp6-live-${{ github.event.pull_request.number || github.ref }}`), so only the latest run per PR proceeds and earlier runs are cancelled. An event that will not run (the label is absent, or a different label was added) gets a unique `-noop-` suffix, so it can never cancel a live run in progress.
 
 ---
 
