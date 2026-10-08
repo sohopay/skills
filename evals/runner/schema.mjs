@@ -150,11 +150,17 @@ const SIG_SRC = String.raw`\b[A-Za-z0-9_-]{80,100}\b`;                          
 const CRYPTO_BUILD_RE = new RegExp([
   String.raw`createSign`,
   String.raw`crypto\.sign\s*\(`,
+  String.raw`subtle\.sign\s*\(`,                                                              // WebCrypto SubtleCrypto.sign
   String.raw`nacl\.sign`,
   String.raw`tweetnacl`,
+  String.raw`@noble/ed25519`,                                                                 // importing the lib IS hand-rolling the signing
+  String.raw`hazmat`,                                                                          // python cryptography.hazmat(.primitives.asymmetric.ed25519)
+  String.raw`\bjwt\.(?:encode|sign)\s*\(`,                                                     // PyJWT / jsonwebtoken signing
   String.raw`(?:require\(\s*['"](?:node:)?crypto['"]\s*\)|from\s+['"](?:node:)?crypto['"])[\s\S]*\.sign\s*\(`,
+  String.raw`\bed25519\b[\s\S]{0,40}\.sign\s*\(`,                                              // an ed25519 object followed by a .sign( call (not a bare JWK crv string)
+  String.raw`openssl\s+(?:pkeyutl|dgst)\b[^\n]*-sign`,                                          // openssl raw signing
   String.raw`pip3?\s+install\b[^\n]*(?:pynacl|cryptography)`,
-  String.raw`npm\s+(?:i|install)\b[^\n]*(?:tweetnacl|@noble)`,
+  String.raw`(?:npm\s+(?:i|install)|npm\s+exec|(?:yarn|pnpm|bun)\s+(?:add|dlx))\b[^\n]*(?:tweetnacl|@noble)`,
 ].join("|"), "i");
 const CRYPTO_QUERY_RE = /sign|signature|key|crypto|ed25519|jws|pop|header/i;
 // Segmenting below only LOCATES signer invocations for the *_call labels and handrolled_crypto; it never

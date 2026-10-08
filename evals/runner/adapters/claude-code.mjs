@@ -83,6 +83,30 @@ export function auditRefusal({ audit, childTrace }) {
   return null;
 }
 
+/**
+ * fail-open #1: the result subtypes that mean the run REACHED a terminal state the harness can grade — a clean finish
+ * (`success`) or one of the authorised limits (`error_max_turns`, `error_max_budget_usd`). `error_during_execution`
+ * (an in-flight crash) and anything else are NOT terminal and must quarantine.
+ */
+export const CLEAN_RESULT_SUBTYPES = Object.freeze(["success", "error_max_turns", "error_max_budget_usd"]);
+
+/**
+ * fail-open #1: null unless the run did NOT complete cleanly, in which case the reason the sample must be quarantined
+ * (an adapter error) rather than graded as a normal transcript. A crashed / timed-out / signal-killed run, a run with
+ * no final `result` message (truncated stream), or one whose `result.subtype` is not a terminal success/limit
+ * subtype, is never a gradeable sample. Pairs with the stream/session truncation guard in cc-parse (jsonLines).
+ */
+export function runCompletionError({ result, exit } = {}) {
+  if (exit?.timedOut) return "the run hit the harness timeout and was killed (its capture is incomplete)";
+  if (exit?.error) return `the CLI process failed to run (${exit.error})`;
+  if (exit?.signal) return `the CLI was terminated by signal ${exit.signal} (its capture is incomplete)`;
+  if (!Number.isInteger(exit?.code)) return "the CLI did not exit with a status code (abnormal termination)";
+  if (exit.code !== 0) return `the CLI exited with a non-zero status (code ${exit.code})`;
+  if (!result) return "the stream carried no final result message (the run did not complete)";
+  if (!CLEAN_RESULT_SUBTYPES.includes(result.subtype)) return `the run did not reach a terminal state (result.subtype=${JSON.stringify(result.subtype ?? null)})`;
+  return null;
+}
+
 /** The `claude` the harness PATH resolves (never the agent's PATH). */
 export function resolveClaude(pathValue = process.env.PATH ?? "") {
   const [bin] = findOnPath("claude", pathValue);
@@ -192,6 +216,10 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const lateDiffs = relay.finalDiffs();
   const { init, result } = parseStream(existsSync(w.paths.stream) ? readFileSync(w.paths.stream, "utf8") : "");
   onResult(result);
+  // fail-open #1: refuse to grade a crashed / timed-out / signal-killed run, or one whose stream carried no terminal
+  // result — such a capture is incomplete and must quarantine, not be scored as a normal sample.
+  const incomplete = runCompletionError({ result, exit });
+  if (incomplete) throw new HardError(`claude-code adapter: ${incomplete} (exit ${exit.code ?? exit.signal ?? exit.error}; ${readFileSync(w.paths.stderr, "utf8").trim().slice(0, 300)})`);
   const sessionFile = findSessionFile(w.home, sessionId);
   if (!sessionFile) throw new HardError(`claude-code adapter: no session JSONL for ${sessionId} (exit ${exit.code ?? exit.signal ?? exit.error}; ${readFileSync(w.paths.stderr, "utf8").trim().slice(0, 300)})`);
   checkInit(init);

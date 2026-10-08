@@ -529,7 +529,14 @@ function checkSp6Waivers(knownIds) {
   try { doc = JSON.parse(readFileSync(f, 'utf8')); } catch { fail('evals/floor-waivers.json is not valid JSON'); return; }
   const errs = validateWaivers(doc, knownIds);
   for (const e of errs) fail(`INV-sp6-floor-waivers: ${e}`);
-  if (!errs.length) pass(`INV-sp6-floor-waivers (${doc.waivers.length} waivers)`);
+  // v1 waives NOTHING: the list must be empty, not merely structurally valid. A non-empty but
+  // well-formed waivers list would otherwise silently disable a floor check for a case.
+  const count = Array.isArray(doc.waivers) ? doc.waivers.length : NaN;
+  if (count !== 0) {
+    fail(`INV-sp6-floor-waivers: the waivers list must be empty in v1 (found ${count}); no floor check is waivable yet`);
+  } else if (!errs.length) {
+    pass('INV-sp6-floor-waivers (0 waivers, empty as required)');
+  }
 }
 
 /**
@@ -576,7 +583,13 @@ function loadSp6Pending() {
 
 function checkSp6Suite(name, pending = new Set()) {
   const dir = join(ROOT, 'evals', name);
-  if (!existsSync(join(dir, 'assertions.json'))) return null; // Phase A: no real suite yet
+  if (!existsSync(join(dir, 'assertions.json'))) {
+    // A DECLARED SP6 suite (SP6_SUITES) with no assertions.json would otherwise pass its invariants
+    // vacuously (zero cases, zero teeth). Fail closed: the suite is declared, so its assertions.json
+    // must exist. (The Phase-A "no real suite yet" state is gone — every SP6_SUITES entry is real.)
+    fail(`INV-sp6 ${name}: declared SP6 suite has no evals/${name}/assertions.json — a missing suite must not pass vacuously`);
+    return null;
+  }
   const before = failCount;
   let suite;
   try { suite = loadSuite(dir); } catch (e) { fail(`INV-sp6 ${name}: cannot load suite: ${e.message}`); return null; }

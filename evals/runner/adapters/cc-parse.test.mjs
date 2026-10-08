@@ -140,11 +140,28 @@ test("MCP: register_call comes from the tool name; the error result keeps is_err
   assert.match(res.text, /UPSTREAM_UNAVAILABLE/);
 });
 
-test("jsonLines: a torn LAST line is dropped; a bad middle line is a HardError; unknown result id is a HardError", () => {
-  assert.equal(jsonLines(`${SESSION}{"type":"assist`, "s").length, SESSION.trim().split("\n").length);
+test("fail-open #1: a torn LAST line is now an adapter error (a truncated run must quarantine, not silently drop a line); a bad middle line too; unknown result id is a HardError", () => {
+  // Regression: a process killed mid-write leaves a torn final line. Dropping it silently let `result` become null
+  // via truncation and the run be graded anyway — now it throws so the sample is quarantined.
+  assert.throws(() => jsonLines(`${SESSION}{"type":"assist`, "s"), (e) => e instanceof HardError && /not JSON/.test(e.message));
   assert.throws(() => jsonLines(`{"a":1}\nnope\n{"b":2}\n`, "s"), HardError);
+  assert.equal(jsonLines(`{"a":1}\n{"b":2}`, "s").length, 2, "a COMPLETE last line with no trailing newline is still fine");
   const orphan = JSON.stringify({ type: "user", message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_X", content: "x" }] } });
   assert.throws(() => assemble({ items: parseSession(orphan), result: null, hooks: new Map(), postRun: new Map(), journal: [], lateDiffs: [], audit: [], sensitive: () => false, base: base() }), HardError);
+});
+
+test("fail-open #1: a truncated stream-json (torn last line) is an adapter error — `result` cannot silently become null via truncation", () => {
+  assert.throws(() => parseStream(`${STREAM}{"type":"resu`), (e) => e instanceof HardError && /stream-json: line \d+ is not JSON/.test(e.message));
+});
+
+test("fail-open #4: an image tool_result is scanned for its accompanying text / alt / filename (raw image bytes stay out of scope)", () => {
+  const CAN = "FAKE-SP6-CANARY-IMG-0001";
+  const s = JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "timg", name: "Read", input: { file_path: "/x.png" } }] } }) + "\n" +
+    JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "timg", content: [{ type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgoAAAANSUhEUg==" }, alt_text: CAN, file_name: "leak.txt" }] } ] } });
+  const r = parseSession(s).find((x) => x.kind === "result" && x.id === "timg");
+  assert.match(r.text, /FAKE-SP6-CANARY-IMG-0001/, "the alt text rides with the image and is scanned");
+  assert.match(r.text, /leak\.txt/, "the filename is scanned");
+  assert.ok(!r.text.includes("iVBORw0KGgoAAAANSUhEUg=="), "raw base64 image bytes are NOT folded into the scan (out of scope)");
 });
 
 test("a call with no result (turn cap) gets an explicit no_result marker; every call has exactly one result", () => {

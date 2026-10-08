@@ -14,16 +14,17 @@
 // attachment / summary / file-history / hook-summary lines (spec: stop-hook and system entries are not events).
 import { HardError } from "../schema.mjs";
 
-/** JSON lines → objects. A torn final line (process killed mid-write) is dropped; any other bad line is an error. */
+/**
+ * JSON lines → objects. ANY unparseable line — including a torn final line from a process killed mid-write — is an
+ * adapter error (fail-open #1): silently dropping the torn last line let a truncated run's `result` become null and
+ * be graded anyway, so a truncated capture must quarantine, not degrade. A complete last line with no trailing
+ * newline still parses normally (it is not torn).
+ */
 export function jsonLines(text, what) {
-  const lines = text.split("\n");
   const out = [];
-  lines.forEach((l, n) => {
+  text.split("\n").forEach((l, n) => {
     if (l.trim() === "") return;
-    try { out.push(JSON.parse(l)); } catch {
-      const isLast = lines.slice(n + 1).every((x) => x.trim() === "");
-      if (!isLast) throw new HardError(`${what}: line ${n + 1} is not JSON`);
-    }
+    try { out.push(JSON.parse(l)); } catch { throw new HardError(`${what}: line ${n + 1} is not JSON`); }
   });
   return out;
 }
@@ -49,7 +50,15 @@ function blockText(content) {
   if (!Array.isArray(content)) return content === undefined || content === null ? "" : JSON.stringify(content);
   return content.map((b) => {
     if (b?.type === "text") return b.text ?? "";
-    if (b?.type === "image") return "[image]";
+    // fail-open #4: the raw image bytes (b.source.data) are binary and out of scope for the text-based never_appears
+    // scan, but any text riding WITH the image (alt text, title/caption, a filename, a source URL) is attacker-
+    // controllable and must still be scanned — so fold it into the result text rather than collapsing to "[image]".
+    if (b?.type === "image") {
+      const meta = [b.text, b.alt, b.alt_text, b.title, b.caption, b.name, b.file_name, b.filename,
+        b.source?.url, b.source?.file_name, b.source?.filename, b.source?.path, b.source?.media_type]
+        .filter((x) => typeof x === "string" && x !== "");
+      return meta.length ? `[image] ${meta.join(" ")}` : "[image]";
+    }
     return JSON.stringify(b);
   }).join("\n");
 }

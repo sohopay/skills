@@ -58,17 +58,32 @@ export function makeBudget(capUsd) {
   };
 }
 
-/** Env names that hold credentials (the harness's own: API key, OAuth, GitHub / Actions / npm tokens, cloud keys…). */
-const CREDENTIAL_NAME = /(?:^|_)(?:API_KEY|KEY|TOKEN|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?)$/i;
 const CANARY = "FAKE-SP6-CANARY-";
+/** Minimum length of an env value worth treating as a possible secret (a 12-char value still has a raw form to match). */
+const MIN_SECRET_LEN = 12;
+/**
+ * Obviously-benign env vars whose (often long) values are NOT secrets and CAN legitimately appear in a capture — e.g.
+ * a sandbox TMPDIR prefix is embedded in `mktemp -d` output, a PATH / HOME in an env dump. Scanning them would cause
+ * false quarantines, so they are allowlisted out (names only; everything else of length >= MIN_SECRET_LEN is scanned).
+ */
+const BENIGN_ENV_NAMES = new Set([
+  "PATH", "HOME", "PWD", "OLDPWD", "SHELL", "SHLVL", "USER", "LOGNAME", "HOSTNAME", "TERM", "TERM_PROGRAM",
+  "TERM_PROGRAM_VERSION", "TERM_SESSION_ID", "COLORTERM", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "LC_MESSAGES",
+  "TZ", "TMPDIR", "TMP", "TEMP", "TEMPDIR", "CLAUDE_CODE_TMPDIR", "DISPLAY", "EDITOR", "VISUAL", "PAGER", "LESS",
+  "LSCOLORS", "LS_COLORS", "CLICOLOR", "MANPATH", "INFOPATH", "_", "__CF_USER_TEXT_ENCODING", "COMMAND_MODE",
+  "XPC_FLAGS", "XPC_SERVICE_NAME", "SSH_AUTH_SOCK", "Apple_PubSub_Socket_Render", "SECURITYSESSIONID",
+  "MallocNanoZone", "__CFBundleIdentifier",
+]);
 
 /**
- * T17 C1 (defence in depth): the harness's real secrets — every credential-named env value of at least 16 chars that is
- * not a path, has no whitespace and is not a planted canary. They must never leave in a transcript.
+ * T17 C1 (defence in depth): the harness's real secrets must never leave in a transcript. fail-open #3 broadens the
+ * detection beyond credential-NAMED vars: ANY env value of at least MIN_SECRET_LEN chars is treated as a secret —
+ * paths and whitespace-bearing values included — EXCEPT a small benign allowlist (above) and the planted canaries.
+ * ANTHROPIC_API_KEY and the like stay covered; a bare / oddly-named credential no longer slips through on its name.
  */
 export function harnessSecrets(env = process.env) {
   return Object.entries(env)
-    .filter(([k, v]) => typeof v === "string" && CREDENTIAL_NAME.test(k) && v.length >= 16 && !v.startsWith("/") && !/\s/.test(v) && !v.startsWith(CANARY))
+    .filter(([k, v]) => typeof v === "string" && v.length >= MIN_SECRET_LEN && !BENIGN_ENV_NAMES.has(k) && !v.startsWith(CANARY))
     .map(([name, value]) => ({ name, value }));
 }
 

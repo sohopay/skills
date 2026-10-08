@@ -8,7 +8,7 @@ import { HardError } from "../schema.mjs";
 
 const mk = (meta, extra = {}) => ({
   case_id: "c1", suite: "s1", meta,
-  secrets: { private_key: "k", header_value: "h" },
+  secrets: { private_key: "FAKE-SP6-CANARY-PRIV-TEST", header_value: "FAKE-SP6-CANARY-HDR-TEST" },
   sensitive_paths: { key_path: "/x/secret.json" },
   events: [{ i: 0, type: "stop", code: 0 }],
   ...extra,

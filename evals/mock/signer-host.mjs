@@ -23,7 +23,7 @@
 // `/exec` requires the client token baked into the installed client (agent-readable by necessity).
 import { lstatSync, mkdtempSync, readlinkSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, isAbsolute, join, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { parseArgs } from "./signer-core.mjs";
 import { diffSnapshots, snapshotTree } from "./lib/keystore-snapshot.mjs";
@@ -92,6 +92,44 @@ function linkTargetOrNull(p) {
 }
 const usage = (message) => ({ stdout: "", stderr: `${message}\n`, exitCode: 2 });
 const signerError = (code, message) => ({ stdout: "", stderr: `${JSON.stringify({ error: { code, message } })}\n`, exitCode: 1 });
+
+const SECRET_TMP_RE = /^\.secret\.\d+\.\d+\.tmp$/;
+/** entryState() string → {kind, mode, nlink} (its `type|mode|size|mtime|ino|nlink|target` layout). */
+function parseEntryState(s) {
+  if (typeof s !== "string") return null;
+  const parts = s.split("|");
+  return { kind: parts[0], mode: parts[1], nlink: parts[5] };
+}
+
+/**
+ * The key-store post-states a sanctioned `key generate --out <path>` can itself produce — and ONLY those. An agent
+ * write / symlink-plant that lands in ~/.agents during the call window shows up in the before/after diff too, so marking
+ * every diff entry owned (the old behaviour) would launder it as signer-owned and drop it from the audit. Instead, from
+ * the diff, mark owned ONLY:
+ *   - the validated output `secret.json` (exactly the --out path), created, a 0600 regular file with one link;
+ *   - its transient `.secret.<pid>.<ts>.tmp` sibling in the same directory, created, 0600 file, one link;
+ *   - a directory the signer itself created to reach the output (an ancestor of --out, created, mode 0700).
+ * Anything else — a different path, a symlink, a wrong mode, a hard-linked (nlink>1) file, a modify of a pre-existing
+ * file — is an agent change and is NOT owned, so it still reaches the audit.
+ * @param {Map<string,string>} before  snapshotTree before the child ran
+ * @param {Map<string,string>} after   snapshotTree after the child ran
+ * @param {{outPath: string|null}} o
+ */
+export function ownedKeygenArtifacts(before, after, { outPath }) {
+  const owned = [];
+  if (typeof outPath !== "string") return owned;
+  const outDir = dirname(outPath);
+  for (const c of diffSnapshots(before, after)) {
+    if (c.after === null || c.change === "delete") continue; // deletes are never a sanctioned write
+    const st = parseEntryState(c.after);
+    if (!st) continue;
+    const isFreshSecret = c.change === "create" && st.kind === "file" && st.mode === "600" && st.nlink === "1"
+      && (c.path === outPath || (dirname(c.path) === outDir && SECRET_TMP_RE.test(basename(c.path))));
+    const isSignerDir = c.change === "create" && st.kind === "dir" && st.mode === "700" && outPath.startsWith(c.path + sep);
+    if (isFreshSecret || isSignerDir) owned.push({ path: c.path, after: c.after, change: c.change, at: Date.now() });
+  }
+  return owned;
+}
 
 /** The duplicated path flag in argv, if any (`--flag v` and `--flag=v` both count). */
 function duplicatePathFlag(argv) {

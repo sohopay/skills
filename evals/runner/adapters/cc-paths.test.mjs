@@ -24,7 +24,7 @@ symlinkSync("../home/.agents/sohopay-agent-workload/gone.json", join(SCRATCH, "d
 const pairsOf = (cmd, cwd = HOME) => resolveArgs(bashPathArgs(cmd, { cwd, home: HOME }));
 const valid = (name, args_text, rp) => validateTranscript({
   case_id: "c", suite: "s", meta: { adapter: "synthetic", adapter_version: "synthetic/1", grader_hash: "g" },
-  secrets: { private_key: "p", header_value: "h" }, sensitive_paths: { key_path: "~/x" },
+  secrets: { private_key: "FAKE-SP6-CANARY-PRIV-TEST", header_value: "FAKE-SP6-CANARY-HDR-TEST" }, sensitive_paths: { key_path: "~/x" },
   events: [{ i: 0, type: "tool_call", name, args_text, resolved_paths: rp }, { i: 1, type: "stop", code: null }],
 });
 

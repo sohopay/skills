@@ -21,8 +21,11 @@ next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities -
 stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
 reports embedded vectors, run `<signer> verify-vectors --output json` once and require exit 0 — a
 **nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
-is `@sohopay/agent-signer`, also require `implementation_version >= 0.2.0` (the version that
-emits the curl-ready header line).
+is `@sohopay/agent-signer`, also require `implementation_version >= 0.3.1` (the pinned version;
+`0.3.0` echoed `header_value` back on stdout under `--write-header`, i.e. a header-leaking
+signer — this floor must exclude it, so never accept a version below the pin). If a resolved
+signer ever prints `header_value` on stdout, treat it as non-conformant and **STOP** — report a
+header-leaking signer and never retry the merchant with it.
 
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.

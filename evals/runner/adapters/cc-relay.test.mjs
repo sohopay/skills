@@ -66,6 +66,19 @@ test("I4: captureErrors — every answered call needs Pre and Post (or a denial)
   assert.deepEqual(captureErrors(items, relay), ["hook relay error: malformed payload"]);
 });
 
+test("fail-open #2: a relay hook whose id has no matching tool_use in the session (a dropped call) is a capture gap", () => {
+  const items = [{ kind: "call", id: "a", name: "Bash" }, { kind: "result", id: "a" }];
+  // `ghost` (observed pre/post) and `phantom` (a denial) were relayed, but their calls never reached the session
+  // JSONL — the observed key-store pre/post diffs would be silently lost. captureErrors must flag both.
+  const relay = { errors: [], hooks: new Map([["a", { pre: {}, post: {} }], ["ghost", { pre: {}, post: {} }], ["phantom", { denied: true }]]) };
+  const errs = captureErrors(items, relay);
+  assert.ok(errs.some((e) => /ghost/.test(e) && /no matching tool_use|dropped call/.test(e)), JSON.stringify(errs));
+  assert.ok(errs.some((e) => /phantom/.test(e) && /no matching tool_use|dropped call/.test(e)), JSON.stringify(errs));
+  relay.hooks.delete("ghost");
+  relay.hooks.delete("phantom");
+  assert.deepEqual(captureErrors(items, relay), [], "no orphan hooks → no gaps");
+});
+
 test("M3: a persisted output is read in full from inside the workspace; outside or missing is an adapter error", () => {
   const f = join(HOME, ".claude", "projects", "p", "tool-results", "t.txt");
   mkdirSync(join(HOME, ".claude", "projects", "p", "tool-results"), { recursive: true });

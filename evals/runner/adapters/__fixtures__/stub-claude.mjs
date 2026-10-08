@@ -28,6 +28,9 @@ const NO_HOOKS = flags.includes("nohooks");
 const DROP_HOOK = Number(flags.find((f) => f.startsWith("drophook="))?.slice(9) ?? 0); // 1-based tool call whose hooks are lost
 let BAD_HOOK = flags.includes("badhook"); // the first PreToolUse sends a malformed payload
 const GARBAGE = flags.includes("garbage"); // a non-JSON line in the middle of the session JSONL
+const NO_RESULT = flags.includes("noresult"); // crash: never emit the final stream-json result line
+const STREAM_TORN = flags.includes("streamtorn"); // killed mid-write: a torn final stream-json line
+const EXIT_CODE = Number(flags.find((f) => f.startsWith("exitcode="))?.slice(9) ?? 0); // non-zero process exit
 if (argv[0] === "--version") { process.stdout.write(`${VERSION} (Claude Code)\n`); process.exit(0); }
 
 const opts = {};

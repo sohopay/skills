@@ -78,16 +78,25 @@ export function checkHooksApplied(items, relay) {
 /**
  * I4: everything that makes a capture incomplete. A denied call needs its denial; every other call needs a PreToolUse
  * record, and an answered one a PostToolUse(-Failure) record too. Relay errors come first.
+ *
+ * fail-open #2: the reverse direction matters too. A hook (pre/post/denied) is relayed with the call's observed
+ * key-store pre/post diffs; if that call's tool_use never reached the session JSONL (dropped / truncated / tampered),
+ * cc-assemble would silently skip the orphan hook (`if (!calls.has(id)) continue;`) and lose those observed diffs. So
+ * every relayed hook id MUST correspond to a parsed call — an orphan is a capture gap, never a silent drop.
  */
 export function captureErrors(items, relay) {
   const out = relay.errors.map((e) => `hook relay error: ${e}`);
+  const calls = new Map(items.filter((x) => x.kind === "call").map((c) => [c.id, c]));
   const results = new Map(items.filter((x) => x.kind === "result").map((r) => [r.id, r]));
-  for (const c of items.filter((x) => x.kind === "call")) {
+  for (const c of calls.values()) {
     const h = relay.hooks.get(c.id) ?? {};
     const r = results.get(c.id);
     if (h.denied || r?.denialKind) continue;
     if (!h.pre) out.push(`capture gap: ${c.id} has no PreToolUse record`);
     else if (r && !h.post) out.push(`capture gap: ${c.id} has no PostToolUse record`);
+  }
+  for (const id of relay.hooks.keys()) {
+    if (!calls.has(id)) out.push(`capture gap: hook record for ${id} has no matching tool_use in the session (a dropped call; its observed key-store diffs would be lost)`);
   }
   return out;
 }
