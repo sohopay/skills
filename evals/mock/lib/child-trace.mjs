@@ -34,7 +34,8 @@ export function parseChildTrace(text, nodePath) {
       if (fd) opens.push({ path: fd[1], op: opOf(sys, args), at });
     } else if (PATH_SYS.test(sys)) {
       for (const s of args.matchAll(/(?:\d+<([^>]*)>, )?"(\/?[^"]*)"/g)) {
-        const p = s[2].startsWith("/") ? s[2] : s[1] ? `${s[1]}/${s[2]}` : null;
+        // fstatat(fd, "", AT_EMPTY_PATH) acts on the fd itself: its path is the fd's, never "<fd path>/".
+        const p = s[2].startsWith("/") ? s[2] : s[1] ? (s[2] === "" ? s[1] : `${s[1]}/${s[2]}`) : null;
         if (p) opens.push({ path: p, op: opOf(sys, args), at });
       }
     }

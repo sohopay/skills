@@ -192,7 +192,7 @@ async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, polic
     }
     logs.state = out.reply.state ?? logs.state;
     for (const n of out.reply.notes ?? []) logs.journal.push({ source: "signer", condition: n.condition, at: n.at });
-    if (out.trace !== null) recordTrace(rec, out.trace, { home, parsed, cwd });
+    if (out.trace !== null) recordTrace(rec, out.trace, { home, parsed, cwd, roots: childPolicy.writeRoots });
     if (rec.command === "key generate") {
       for (const c of diffSnapshots(before, snapshotTree(join(home, ".agents")))) logs.owned.push({ path: c.path, after: c.after, change: c.change, at: Date.now() });
     }
@@ -202,11 +202,17 @@ async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, polic
   }
 }
 
+const READISH = new Set(["open", "stat", "access"]);
+
 /**
  * Linux: the child's opens (kernel paths), with the sanctioned --key read / keygen --out write marked as such. The call
  * counts as audited only if the trace saw the child node's own execve (R3-5): otherwise nothing of the signer was seen.
+ * Filtered STRUCTURALLY (never by a name list): every op in the key store is kept; outside it, only mutations of an
+ * argv-named path or of a path inside the agent's sandbox write set (`roots`) are. Reads, stats and access checks
+ * outside the store — the dynamic loader (ld.so.*), the node binary and its libs, the mock's modules, /proc/self/*,
+ * fstat of an open fd — are the runtime, not evidence.
  */
-export function recordTrace(rec, text, { home, parsed, cwd }) {
+export function recordTrace(rec, text, { home, parsed, cwd, roots = [] }) {
   const { opens, ioUring, started } = parseChildTrace(text, process.execPath);
   if (ioUring) rec.ioUring = true;
   if (!started) return;
@@ -214,9 +220,12 @@ export function recordTrace(rec, text, { home, parsed, cwd }) {
   const store = resolveLoose(join(home, ".agents"));
   const key = typeof parsed?.key === "string" && parsed.key !== "-" ? resolveLoose(resolve(cwd, parsed.key)) : null;
   const outDir = rec.command === "key generate" && typeof parsed?.out === "string" ? dirname(resolveLoose(resolve(cwd, parsed.out))) : null;
+  const named = new Set(["input", "key", "out", "writeHeader"].map((k) => parsed?.[k]).filter((v) => typeof v === "string" && v !== "-").map((v) => resolveLoose(resolve(cwd, v))));
+  const sandboxSet = [...new Set(roots.flatMap((r) => [r, resolveLoose(r)]))]; // as given and canonical (macOS /tmp → /private/tmp)
+  const under = (p, d) => p === d || p.startsWith(d + sep);
   for (const o of opens) {
-    const inStore = o.path === store || o.path.startsWith(store + sep);
-    if (!inStore && o.op === "open") continue; // reads outside the store (node, its libs, the input copy) are noise
+    const inStore = under(o.path, store);
+    if (!inStore && (READISH.has(o.op) || !(named.has(o.path) || sandboxSet.some((d) => under(o.path, d))))) continue;
     // Sanctioned: reading / checking the --key file and its key-root ancestors; keygen's writes in (and checks of the
     // ancestors of) the --out dir. Anything else in the store is the signer reaching where it was not pointed.
     const readish = o.op === "open" || o.op === "stat" || o.op === "access";

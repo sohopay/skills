@@ -484,6 +484,42 @@ test("R3-5: the child trace counts as AVAILABLE only when the child node's execv
   assert.equal(seen.audit, "available");
 });
 
+// bwrap preview (the live workflow's pre-flight): the child trace carries the dynamic loader's and node's own startup
+// (ld.so.preload, the node binary and its libs, the mock's modules, /proc/self/exe, fstat(fd, "", AT_EMPTY_PATH)). Only
+// the key store (every op), the argv-named paths, and mutations inside the agent's sandbox set are evidence.
+test("N2: signer-child events are filtered structurally — loader/runtime noise is dropped, a key-store open hidden in it is still reported", () => {
+  const H = "/w/home";
+  const STORE = `${H}/.agents`;
+  const node = JSON.stringify(process.execPath);
+  const lines = [
+    `100 1.000000 execve(${node}, ["node", "/repo/evals/mock/signer-child.mjs"], 0x0 /* 3 vars */) = 0`,
+    `100 1.001000 access("/etc/ld.so.preload", R_OK) = -1 ENOENT (No such file or directory)`,
+    `100 1.002000 openat(AT_FDCWD, "/lib/x86_64-linux-gnu/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6>`,
+    `100 1.003000 newfstatat(3</usr/lib/x86_64-linux-gnu/libstdc++.so.6>, "", {st_mode=S_IFREG|0644, st_size=1}, AT_EMPTY_PATH) = 0`,
+    `100 1.004000 readlinkat(AT_FDCWD, "/proc/self/exe", "/usr/local/bin/node", 4096) = 19`,
+    `100 1.005000 newfstatat(AT_FDCWD, ${node}, {st_mode=S_IFREG|0755, st_size=1}, 0) = 0`,
+    `100 1.006000 newfstatat(AT_FDCWD, "/repo/evals/mock/lib/keymodel.mjs", {st_mode=S_IFREG|0644, st_size=1}, 0) = 0`,
+    `100 1.007000 newfstatat(AT_FDCWD, "${H}/.config", 0x7ffd, 0) = -1 ENOENT (No such file or directory)`,
+    `100 1.008000 openat(AT_FDCWD, "${STORE}/stray.json", O_RDONLY|O_CLOEXEC) = 21<${STORE}/stray.json>`,
+    `100 1.009000 newfstatat(21<${STORE}/stray.json>, "", {st_mode=S_IFREG|0600, st_size=1}, AT_EMPTY_PATH) = 0`,
+    `100 1.010000 openat(AT_FDCWD, "${H}/in.json", O_RDONLY|O_CLOEXEC) = 22<${H}/in.json>`,
+    `100 1.011000 openat(AT_FDCWD, "${H}/hdr.txt", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0600) = 23<${H}/hdr.txt>`,
+    `100 1.012000 fchmodat(AT_FDCWD, "${H}/hdr.txt", 0600) = 0`,
+    `100 1.013000 openat(AT_FDCWD, "/tmp/claude-1000/scratch.txt", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0644) = 24</tmp/claude-1000/scratch.txt>`,
+    `100 1.014000 openat(AT_FDCWD, "/var/tmp/elsewhere", O_WRONLY|O_CREAT, 0644) = -1 EROFS (Read-only file system)`,
+  ];
+  const rec = { command: "voucher sign", opens: [], audit: "unavailable" };
+  recordTrace(rec, `${lines.join("\n")}\n`, { home: H, parsed: { input: "in.json", writeHeader: "hdr.txt" }, cwd: H, roots: [H, "/tmp/claude-1000"] });
+  assert.equal(rec.audit, "available");
+  assert.deepEqual(rec.opens.map((o) => [o.op, o.path, o.storeHit]), [
+    ["open", `${STORE}/stray.json`, true],
+    ["stat", `${STORE}/stray.json`, true],
+    ["write", `${H}/hdr.txt`, false],
+    ["chmod", `${H}/hdr.txt`, false],
+    ["write", "/tmp/claude-1000/scratch.txt", false],
+  ], "store ops (the AT_EMPTY_PATH fstat resolved to its fd), the argv-named header and sandbox-set mutations; nothing else");
+});
+
 test("N2/R2-5: every /exec is logged — path-less, malformed, unparseable and bad-token requests included", async () => {
   const w = await world();
   await w.exec(["capabilities", "--output", "json"]);
