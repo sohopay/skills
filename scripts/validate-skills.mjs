@@ -10,7 +10,7 @@ import { validateTranscript } from '../evals/runner/schema.mjs';
 import { goldenAuditError, transcriptKindError } from '../evals/runner/golden.mjs';
 import { validateWaivers } from '../evals/runner/waivers.mjs';
 import { loadPending, PENDING_FILE } from '../evals/runner/pending.mjs';
-import { livePinError, liveWorkflowErrors } from '../evals/runner/live-workflow-check.mjs';
+import { livePinError, liveWorkflowErrors, unquotedHashErrors } from '../evals/runner/live-workflow-check.mjs';
 import {
   HOSTED_BASE,
   HOSTED_SKILL_DIRS,
@@ -673,6 +673,20 @@ function checkSp6LiveWorkflow() {
   if (!pinErr && !errs.length) pass('INV-sp6-live-workflow (hash pin + rules)');
 }
 checkSp6Invariants();
+
+/**
+ * INV-workflow-yaml: no workflow holds " #" inside an unquoted ${{ }} value. YAML reads it as a comment, GitHub rejects
+ * the file, and every trigger in it silently stops (the #80 merge shipped one in evals-live.yml).
+ */
+function checkWorkflowYaml() {
+  const dir = join(ROOT, '.github/workflows');
+  const before = failCount;
+  for (const f of readdirSync(dir).filter((n) => /\.ya?ml$/.test(n))) {
+    for (const e of unquotedHashErrors(readFileSync(join(dir, f), 'utf8'))) fail(`INV-workflow-yaml .github/workflows/${f}: ${e}`);
+  }
+  if (failCount === before) pass('INV-workflow-yaml');
+}
+checkWorkflowYaml();
 
 if (failed) process.exit(1);
 console.log('All skill validations passed.');

@@ -88,10 +88,30 @@ export function readWorkflow(text) {
 }
 
 /** Every rule the T17 rulings fix; returns human-readable violations (empty = OK). */
+/**
+ * Plain (unquoted) YAML values whose `${{ }}` expression holds " #": YAML ends the value at the comment, GitHub sees an
+ * unterminated expression and rejects the whole file (every trigger dead; each push shows a failed zero-job run).
+ * Checked on the original text, before any comment stripping.
+ */
+export function unquotedHashErrors(text) {
+  const errs = [];
+  text.split("\n").forEach((line, n) => {
+    const m = /^\s*(?:-\s+)?[\w.-]+:\s+(?!["'|>])(.*)$/.exec(line);
+    if (!m) return;
+    for (const e of m[1].matchAll(/\$\{\{(.*?)(?:\}\}|$)/g)) {
+      if (/\s#/.test(e[1])) errs.push(`line ${n + 1}: unquoted value holds " #" inside \${{ }} — YAML reads it as a comment and the workflow fails to parse; quote the value`);
+    }
+  });
+  return errs;
+}
+
 export function liveWorkflowErrors(text) {
   const errs = [];
   const { clean, raw, top, jobs } = readWorkflow(text);
   const no = (m) => errs.push(m);
+
+  // 0. The file must parse as GitHub reads it (a " #" in an unquoted expression silently truncates it).
+  for (const e of unquotedHashErrors(text)) no(e);
 
   // 1. Triggers: workflow_dispatch + pull_request [labeled] only — every live run spends once, on an explicit label or
   //    dispatch (no synchronize / opened / reopened, and never the type-less default); never pull_request_target.
