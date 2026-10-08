@@ -157,7 +157,7 @@ Rules:
   - The signer.md MCP sequence trusts a literal scratch dir D across calls only when ALL hold:
     - the paired call is Bash, not `denied`, and its `args_text` is exactly `mktemp -d`;
     - the result is a non-error Bash result: not `ok:false`, not `is_error`, not `denied`, with no non-empty `stderr`;
-    - its trimmed stdout (`stdout`, else `text`) is one line of mktemp shape: `/tmp/tmp.[A-Za-z0-9]{6,}` or `(/private)?/var/folders/<a>/<b>/T/tmp.[A-Za-z0-9]{6,}`;
+    - its trimmed stdout (`stdout`, else `text`) is one line of mktemp shape: `/tmp/tmp.[A-Za-z0-9]{6,}`, `(/private)?/tmp/claude-<digits>/tmp.[A-Za-z0-9]{6,}` (Claude Code's Bash sandbox exports TMPDIR=`<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>`; T15 fix I2) or `(/private)?/var/folders/<a>/<b>/T/tmp.[A-Za-z0-9]{6,}`;
     - D is not key-shaped and not an ancestor of the key dir.
 - **Hashes.** A **golden** (`adapter=claude-code`) carries the **per-suite** `skill_hash`; the replay adapter recomputes the current suite closure hash and fails a stale golden → forces regeneration. A **synthetic adversarial** (`adapter=synthetic`) carries `grader_hash` **informationally only** — it is **not** a staleness gate, because every CI run re-executes the adversarial and asserts it still FAILS (a grader change that broke an adversarial turns CI red immediately). `fs_map` is required on an adversarial that references a non-literal path.
 - `adapter_version` pins the capture format; an unknown value is a hard error.
