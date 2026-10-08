@@ -8,7 +8,7 @@
 // adapter error (HardError), never a graded sample. Spend comes from the CLI's own per-session cost.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { HardError, label, validateTranscript } from "../schema.mjs";
 import { grade } from "../grader.mjs";
@@ -24,6 +24,7 @@ import { parseStrace, probeAudit, straceArgv } from "./cc-audit.mjs";
 import { buildPrompt } from "./cc-prompts.mjs";
 import { checkInit, DENIED_TOOLS, makeBudget, persistedReader, PINS } from "./cc-guards.mjs";
 import { captureErrors, checkHooksApplied, startHookRelay } from "./cc-relay.mjs";
+import { sweepWorkspace } from "./cc-sweep.mjs";
 
 export { checkInit, makeBudget, persistedReader, PINS, captureErrors, startHookRelay };
 
@@ -109,8 +110,6 @@ function postRunResolve(items, relay, home) {
   return out;
 }
 
-const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
 /** Parse + check + assemble + validate a finished run (throws HardError on any capture problem). */
 async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, onResult }) {
   const lateDiffs = relay.finalDiffs();
@@ -124,23 +123,25 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const gaps = captureErrors(items, relay);
   if (gaps.length) throw new HardError(`claude-code adapter: incomplete capture: ${gaps.join("; ")}`);
   const state = await w.fetchState();
-  const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
+  const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, name: h.name, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
+  // N1: hook processes are excluded ONLY by the pids they reported over the authenticated relay.
   const auditEvents = audit.audit === "available"
-    ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludeArgv: new RegExp(escRe(w.paths.relayHdr)), windows })
+    ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludePids: relay.hookPids, windows })
     : [];
   const { keyFile, keyDir } = keyCtx;
   const sensitive = (p) => p === keyFile || p === keyDir || p.startsWith(keyDir + "/") || keyDir.startsWith(p.replace(/\/+$/, "") + "/");
   const cost = typeof result?.total_cost_usd === "number" ? result.total_cost_usd : null;
   const t = assemble({
     items, result, exit, hooks: relay.hooks, postRun: postRunResolve(items, relay, w.home), journal: state.journal, lateDiffs, audit: auditEvents, sensitive,
-    owned: state.owned, signerOpens: state.opens, storeRoot: keyCtx.storeRoot,
+    owned: state.owned, signerExecs: state.execs,
     base: {
       case_id: ref.caseId, suite: ref.suiteDir,
       meta: {
         adapter: "claude-code", adapter_version: PINS.ADAPTER_VERSION, skill_hash: skillHash(join(opts.skillsRoot, ref.suiteDir, "SKILL.md"), opts.skillsRoot),
         cli_version: opts.cliVersion, model_id: PINS.MODEL_ID, sample_index: opts.sample_index,
         session_id: sessionId, cost_usd: cost, num_turns: result?.num_turns ?? null,
-        audit: audit.audit, audit_backend: audit.backend, audit_reason: audit.reason, keystore_audit: "lstat-diff", signer_audit: "signer-host-open-log", sandbox: "claude-code",
+        audit: audit.audit, audit_backend: audit.backend, audit_reason: audit.reason, keystore_audit: "lstat-diff", signer_audit: "signer-host-exec-log", sandbox: "claude-code",
+        swept_pids: exit.swept ?? [],
       },
       secrets: { ...w.run.transcript.secrets },
       sensitive_paths: { ...w.run.transcript.sensitive_paths },
@@ -161,17 +162,20 @@ export async function run(ref, opts) {
   const audit = opts.audit ?? probeAudit();
   const w = await createWorld({ suiteDir: ref.suiteDir, caseId: ref.caseId, skillsRoot: opts.skillsRoot });
   let relay = null;
+  let registryFile = null;
   try {
     const storeRoot = join(w.home, ".agents");
     const keyFile = join(w.home, KEY_REL);
     const keyCtx = { storeRoot, keyFile, keyDir: dirname(keyFile), baseline: snapshotTree(storeRoot) };
-    relay = await startHookRelay(w, keyCtx);
-    writeSettings(w, relay.url);
-    assertHermetic(w);
     const sessionId = randomUUID();
+    registryFile = join(w.base, "relays", `${sessionId}.json`);
+    relay = await startHookRelay(w, keyCtx, { registryFile });
+    writeSettings(w);
+    assertHermetic(w);
     const args = claudeArgv({ prompt: buildPrompt(ref.suiteDir, ref.caseId, w), sessionId, settings: w.paths.settings, mcpConfig: w.paths.mcp, budgetLeftUsd: opts.budgetLeftUsd });
     const [argv0, ...argv] = audit.audit === "available" ? [...straceArgv(w.paths.audit, { killOnExit: audit.killOnExit }), opts.claudeBin, ...args] : [opts.claudeBin, ...args];
     const exit = await spawnCli(argv0, argv, w, { timeoutMs: opts.timeoutMs ?? PINS.RUN_TIMEOUT_MS, killGraceMs: opts.killGraceMs ?? PINS.KILL_GRACE_MS });
+    exit.swept = await sweepWorkspace({ prefix: w.prefix, home: w.home }); // N6: survivors outside the process group
     let result = null;
     try {
       return await capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, onResult: (r) => { result = r; } });
@@ -183,6 +187,7 @@ export async function run(ref, opts) {
     }
   } finally {
     if (relay) await relay.close();
+    if (registryFile) rmSync(registryFile, { force: true });
     await w.cleanup();
   }
 }

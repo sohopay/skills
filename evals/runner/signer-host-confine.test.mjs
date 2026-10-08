@@ -24,7 +24,8 @@ async function world(caseId = "key-opacity") {
   for (const d of [home, sbx, operator, runRoot, priv]) mkdirSync(d, { recursive: true, mode: 0o700 });
   const run = buildRun(await loadScenario(caseId), { runDir: runRoot, home });
   seedHome(run);
-  const policy = { home, roots: [home, sbx], mktemp: [] };
+  mkdirSync(join(sbx, "old-session"), { mode: 0o700 }); // an operator entry the sandbox denies inside its TMPDIR
+  const policy = { home, roots: [home, sbx], mktemp: [], deny: [join(sbx, "old-session")] };
   const logs = newLogs();
   const exec = (argv, { stdin = "", cwd = home, env = { HOME: home }, seam } = {}) => execForwarded(run, { argv, stdin, cwd, env }, logs, { policy, privateDir: priv, seam });
   return { dir, home, sbx, operator, runRoot, priv, run, logs, exec, key: join(home, ".agents", "sohopay-agent-workload", "secret.json") };
@@ -129,4 +130,13 @@ test("I8: a planted file swapped into the open path by rename is identified by i
   assert.equal(r.exitCode, 1);
   assert.ok(w.logs.execs[0].refusals.some((f) => f.role === "input"));
   assert.ok(!w.logs.execs[0].opens.some((o) => o.storeHit));
+});
+
+test("N2: an entry the sandbox denies INSIDE an allowed root (the operator's own /tmp/claude-<uid> session) is refused too", async () => {
+  const w = await world();
+  const f = join(w.sbx, "old-session", "transcript.json");
+  writeFileSync(f, "{}");
+  const r = w.exec(["payment-id", "--input", f, "--output", "json"]);
+  assert.equal(r.exitCode, 1);
+  assert.deepEqual(err(r), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${f}` });
 });

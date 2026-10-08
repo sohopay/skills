@@ -1,6 +1,6 @@
 // Fail-closed guards for the live adapter: the pins, the init-message check (I3), the spend budget (M6) and the reader
 // for persisted large outputs (M3). Every guard refuses (HardError) rather than guessing.
-import { readFileSync, realpathSync } from "node:fs";
+import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { sep } from "node:path";
 import { HardError } from "../schema.mjs";
 import { initVersion } from "./cc-parse.mjs";
@@ -58,15 +58,21 @@ export function makeBudget(capUsd) {
 }
 
 /**
- * M3: read a persisted tool output at capture time. Only a file inside the workspace HOME (where Claude Code saves
- * them) is accepted, after realpath; anything else — outside, a link out, missing — is an adapter error.
+ * M3 / N5: read a persisted tool output at capture time. Only a regular file (lstat: no symlink) at
+ * HOME/.claude/projects/<slug>/tool-results/<name> — where Claude Code saves them — whose realpath stays there, and
+ * which is at least the size the CLI recorded, is accepted; anything else is an adapter error.
  */
 export function persistedReader(home) {
   const root = realpathSync(home);
-  return (path) => {
-    let real;
-    try { real = realpathSync(path); } catch { throw new HardError(`persisted output ${path} is missing`); }
-    if (real !== root && !real.startsWith(root + sep)) throw new HardError(`persisted output ${path} resolves outside the workspace`);
-    return readFileSync(real, "utf8");
+  const SHAPE = /^\.claude\/projects\/[^/]+\/tool-results\/[^/]+$/;
+  return (path, expectedSize) => {
+    let st;
+    try { st = lstatSync(path); } catch { throw new HardError(`persisted output ${path} is missing`); }
+    if (st.isSymbolicLink() || !st.isFile()) throw new HardError(`persisted output ${path} is a symlink or not a regular file`);
+    const real = realpathSync(path);
+    if (!real.startsWith(root + sep) || !SHAPE.test(real.slice(root.length + 1))) throw new HardError(`persisted output ${path} is not under HOME/.claude/projects/<slug>/tool-results/`);
+    const body = readFileSync(real);
+    if (Number.isFinite(expectedSize) && body.length < expectedSize) throw new HardError(`persisted output ${path} is shorter (${body.length} B) than the CLI recorded (${expectedSize} B)`);
+    return body.toString("utf8");
   };
 }

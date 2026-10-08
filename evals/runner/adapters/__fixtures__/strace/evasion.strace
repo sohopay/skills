@@ -1,8 +1,8 @@
 1000 1760000000.000000 execve("/usr/local/bin/claude", ["claude", "-p", "Pay for the report"], 0x7ffd5a2b8e10 /* 20 vars */) = 0
 1000 1760000000.500000 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7f3c2a1ff910, parent_tid=0x7f3c2a1ff910, exit_signal=0, stack=0x7f3c299ff000, stack_size=0x7ff100, tls=0x7f3c2a1ff640} => {parent_tid=[1001]}, 88) = 1001
-1001 1760000001.900000 clone(child_stack=NULL, flags=CLONE_VM|CLONE_VFORK|SIGCHLD) = 1100
-1100 1760000001.901000 execve("/bin/sh", ["/bin/sh", "-c", "'/usr/bin/node' '/home/op/.cache/sp6-live/hook.mjs' 'pre'"], 0x7f3c2b0 /* 20 vars */) = 0
-1100 1760000001.902000 openat(AT_FDCWD, "/home/agent/.agents/sohopay-agent-workload/secret.json", O_RDONLY) = -1 EACCES (Permission denied)
+1001 1760000002.050000 clone(child_stack=NULL, flags=CLONE_VM|CLONE_VFORK|SIGCHLD) = 1100
+1100 1760000002.051000 execve("/bin/sh", ["/bin/sh", "-c", "'/usr/bin/node' '/home/op/.cache/sp6-live/hook.mjs' 'pre'"], 0x7f3c2b0 /* 20 vars */) = 0
+1100 1760000002.052000 openat(AT_FDCWD, "/home/agent/.agents/sohopay-agent-workload/secret.json", O_RDONLY) = -1 EACCES (Permission denied)
 1001 1760000002.100000 clone(child_stack=NULL, flags=CLONE_VM|CLONE_VFORK|SIGCHLD) = 1200
 1200 1760000002.101000 execve("/bin/bash", ["/bin/bash", "-c", "bash -c 'cat \"$(printf %s/x/L2/secr%s.json /tmp et)\"' _ /home/op/.cache/sp6-live/run-1/relay.hdr"], 0x7f3c2b0 /* 20 vars */) = 0
 1200 1760000002.110000 clone(child_stack=NULL, flags=CLONE_CHILD_CLEARTID|CLONE_CHILD_SETTID|SIGCHLD, child_tidptr=0x7f2) = 1201

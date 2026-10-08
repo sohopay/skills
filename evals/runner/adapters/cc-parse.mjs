@@ -55,21 +55,26 @@ function blockText(content) {
 }
 
 const RESULT_BLOCK_RE = /(?:^|_)tool_result$/;
-const SAVED_RE = /<persisted-output>[\s\S]*?Full output saved to: (\S+)/;
+// Every truncation the 2.1.292 CLI reports where the FULL output is not obtainable from a complete persisted file.
+const TRUNCATION_RE = /persist limit; only the first|could not all be saved|this session writes no files|It could not be saved, so only the first|<truncated-output>|<bash output unavailable|tool result was not saved|binary content was not saved|storage write failed|Output truncated \(/;
 
 /**
- * M3: Claude Code persists a large output to a file and keeps only a preview in the message (and possibly in
- * toolUseResult.stdout). The full file is read into `stdout` so never_appears scans everything the tool produced; a
- * referenced output that cannot be obtained is an adapter error, never a silently shorter transcript.
+ * M3 / N5: Claude Code persists a large output to a file and keeps only a preview in the message. Only the STRUCTURED
+ * `toolUseResult.persistedOutputPath` is trusted (a text marker can be printed by the agent itself); the full file is
+ * read into `stdout` so never_appears scans everything the tool produced. A truncation whose full output is not
+ * obtainable, or a persisted-output marker without the structured field, is an adapter error.
  */
 function fillPersisted(r, tur, readPersisted) {
   const obj = tur && typeof tur === "object" && !Array.isArray(tur) ? tur : {};
-  const path = typeof obj.persistedOutputPath === "string" ? obj.persistedOutputPath : SAVED_RE.exec(r.text)?.[1] ?? null;
-  const truncated = Number.isFinite(obj.persistedOutputSize) && (r.stdout ?? "").length < obj.persistedOutputSize;
-  if (!path && !truncated) return;
-  if (!path) throw new HardError(`session: truncated output for ${r.id} names no persisted file`);
+  if (TRUNCATION_RE.test(r.text)) throw new HardError(`session: truncated or unsaved tool output for ${r.id} (the full output is not obtainable)`);
+  const path = typeof obj.persistedOutputPath === "string" ? obj.persistedOutputPath : null;
+  if (!path) {
+    if (Number.isFinite(obj.persistedOutputSize)) throw new HardError(`session: truncated output for ${r.id} names no persisted file`);
+    if (/<persisted-output>/.test(r.text)) throw new HardError(`session: persisted-output marker for ${r.id} without a structured persistedOutputPath (forged or unsupported)`);
+    return;
+  }
   if (typeof readPersisted !== "function") throw new HardError(`session: persisted output ${path} cannot be read`);
-  try { r.stdout = readPersisted(path); } catch (e) {
+  try { r.stdout = readPersisted(path, Number.isFinite(obj.persistedOutputSize) ? obj.persistedOutputSize : undefined); } catch (e) {
     throw e instanceof HardError ? e : new HardError(`session: persisted output ${path} cannot be read: ${e.message}`);
   }
 }

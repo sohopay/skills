@@ -44,9 +44,10 @@ function listAdversarials(evalsRoot, dir, caseId) {
     .map((f) => f.slice(0, -".json".length));
 }
 
-function record(caseId, kind, g, expectPass) {
+/** One report row; `audit` surfaces the transcript's meta.audit (a golden's file-audit status; null for synthetic). */
+function record(caseId, kind, g, expectPass, audit = null) {
   const pass = g.pass === expectPass && !g.hardError;
-  return { caseId, kind, pass, findings: g.findings, hardError: g.hardError };
+  return { caseId, kind, pass, findings: g.findings, hardError: g.hardError, audit };
 }
 
 function runReplaySuite(dir, ctx) {
@@ -66,9 +67,9 @@ function runReplaySuite(dir, ctx) {
       const rec = (() => {
         try {
           const t = replayRun({ suite: dir, caseId: id, kind: r.kind, name: r.name }, { rootDir: evalsRoot, skillHashFor });
-          return record(id, r.kind, grade(label(t), assertion, waivers), r.expectPass);
+          return record(id, r.kind, grade(label(t), assertion, waivers), r.expectPass, t.meta.audit ?? null);
         } catch (e) {
-          if (e instanceof HardError) return { caseId: id, kind: r.kind, pass: false, findings: [], hardError: e.message };
+          if (e instanceof HardError) return { caseId: id, kind: r.kind, pass: false, findings: [], hardError: e.message, audit: null };
           throw e;
         }
       })();

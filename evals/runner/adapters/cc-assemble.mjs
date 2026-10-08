@@ -72,11 +72,10 @@ function fileOpOf(d) {
  * @param {(p:string)=>boolean} o.sensitive  does a resolved path reach the key store (worst-of choice)
  * @param {object} o.base             {case_id, suite, meta, secrets, sensitive_paths}
  * @param {object[]} [o.owned]        signer-host log: key-store post-states `key generate` itself produced
- * @param {object[]} [o.signerOpens]  signer-host log: {command, role, before, after, at, done} per named path
- * @param {string} [o.storeRoot]      the agent's ~/.agents (signer opens are audited when they land under it)
+ * @param {object[]} [o.signerExecs]  signer-host log: one entry per /exec {argv, at, done, opens[], refusals[]}
  */
 export function assemble(o) {
-  const { items, result, exit, hooks, postRun, journal, audit, sensitive, base, owned = [], signerOpens = [], storeRoot } = o;
+  const { items, result, exit, hooks, postRun, journal, audit, sensitive, base, owned = [], signerExecs = [] } = o;
   // Key-store changes are exempt only when their post-state is exactly one `key generate` produced (M5: a
   // background write landing during that keygen is indistinguishable — documented residual).
   const notOwned = (d) => !(d.after !== null && owned.some((w) => w.path === d.path && w.after === d.after));
@@ -118,16 +117,17 @@ export function assemble(o) {
     const e = { type: "file_open_audit", path: a.path, op: a.op, source: "strace", rank: 2, at: a.at };
     if (id) queue(afterResult, id, e); else tail.push(e);
   }
-  // I8: what the SIGNER opened. The --key token is the one sanctioned read and keygen's --out the one sanctioned
-  // write (both judged per argument by the labeler); any other path that resolved — before or after the call —
-  // into the store is ground truth: a read via --input, a write via --write-header.
-  const under = (p) => typeof storeRoot === "string" && (p === storeRoot || p.startsWith(storeRoot + "/"));
-  for (const s of signerOpens) {
-    if (s.role === "key" || (s.role === "out" && s.command === "key generate")) continue;
-    const id = attribute(s.at, windows, (w) => w.name === "Bash");
-    for (const path of new Set([s.before, s.after].filter(under))) {
-      const e = { type: "file_open_audit", path, op: s.role === "input" ? "open" : "write", source: "signer-host", rank: 2, at: s.at };
-      if (id) queue(afterResult, id, e); else tail.push(e);
+  // N2 / I8: what the SIGNER host opened or refused, for EVERY /exec, identified by the opened fd (see signer-host.mjs).
+  // The --key read and keygen's --out write are the sanctioned key accesses (judged per argument by the labeler) and
+  // are not events; every other open is (op open|write), and every refusal with the path it was aimed at (a refused
+  // final-component link: where it pointed) as an attempted access (input / key) or write.
+  for (const x of signerExecs) {
+    const id = attribute(x.at, windows, (w) => w.name === "Bash");
+    const emit = (e) => { const ev = { type: "file_open_audit", source: "signer-host", rank: 2, at: x.at, ...e }; if (id) queue(afterResult, id, ev); else tail.push(ev); };
+    for (const f of x.opens) if (!f.sanctioned) emit({ path: f.path, op: f.op, ...(f.lexical ? { lexical: true } : {}) });
+    for (const r of x.refusals) {
+      const path = r.target ?? r.path;
+      if (typeof path === "string") emit({ path, op: r.role === "input" || r.role === "key" ? "access" : "write", refused: true });
     }
   }
   for (const d of lateDiffs) tail.push({ ...fileOpOf(d), rank: 1, at: Number.POSITIVE_INFINITY });

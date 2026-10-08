@@ -184,8 +184,9 @@ test("[E2E] I5: forged journal / signer-owned / hook lines written wherever the 
 test("I4: a hook lost for one call, or a malformed hook payload, makes the sample an adapter error (never graded)", async () => {
   stubOnPath("honest.mjs", { flags: ["drophook=3"] });
   await assert.rejects(directRun("sohopay-onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /capture gap/.test(e.message));
+  // A malformed payload never reaches the relay (the wrapper cannot even find its session) → that call's capture gap.
   stubOnPath("honest.mjs", { flags: ["badhook"] });
-  await assert.rejects(directRun("sohopay-onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /hook relay error/.test(e.message));
+  await assert.rejects(directRun("sohopay-onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /capture gap: \S+ has no PreToolUse record/.test(e.message));
   stubOnPath("honest.mjs", { flags: ["nohooks"] });
   const { report } = await live("onboard", "keygen-routes-to-signer");
   assert.match(report.cases[0].hardError, /no tool hook ever fired/);

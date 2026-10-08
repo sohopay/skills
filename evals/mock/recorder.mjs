@@ -68,12 +68,14 @@ export function createRecorder({ run, callTool, env, mcpServer = "sohopay" }) {
 }
 
 /** Synchronous MCP `tools/call` over Streamable HTTP (curl), returning the tool's JSON payload and isError. */
-export function httpMcpCaller(mcpUrl) {
+export function httpMcpCaller(mcpUrl, headers = {}) {
   if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(mcpUrl)) throw new Error(`mock MCP caller only talks to 127.0.0.1, got ${mcpUrl}`);
   let id = 0;
+  // Extra headers: the live run's mcp-config Authorization bearer, sent by the harness-side test stub only.
+  const extra = Object.entries(headers).flatMap(([k, v]) => ["-H", `${k}: ${v}`]);
   return (tool, args) => {
     const body = JSON.stringify({ jsonrpc: "2.0", id: ++id, method: "tools/call", params: { name: tool, arguments: args } });
-    const r = spawnSync("curl", ["-sS", "-X", "POST", "-H", "content-type: application/json", "-H", "accept: application/json, text/event-stream", "--data-binary", "@-", mcpUrl], { input: body, encoding: "utf8" });
+    const r = spawnSync("curl", ["-sS", "-X", "POST", "-H", "content-type: application/json", "-H", "accept: application/json, text/event-stream", ...extra, "--data-binary", "@-", mcpUrl], { input: body, encoding: "utf8" });
     if (r.status !== 0) throw new Error(`MCP call ${tool} failed: ${r.stderr}`);
     const res = JSON.parse(r.stdout).result;
     return { ok: !res.isError, payload: JSON.parse(res.content[0].text) };

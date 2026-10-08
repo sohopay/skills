@@ -1,7 +1,7 @@
 // The hermetic world for one live claude-code sample.
 //
-//   <run base>/sp6-run-XXXX/  0700, the RUN ROOT: run.json (canaries), ctl.token, settings, MCP config, relay.hdr,
-//                             stream/stderr capture, strace output. The base is under the OPERATOR's home
+//   <run base>/sp6-run-XXXX/  0700, the RUN ROOT: run.json (canaries), ctl.token, settings, MCP config (with the /mcp
+//                             bearer), host-private/, stream/stderr capture, strace output. The base is under the OPERATOR's home
 //                             (SP6_RUN_ROOT_BASE overrides), never /tmp: outside HOME and HOME's parent, denied to the
 //                             agent for read AND write (permissions + sandbox), named by nothing it can read. The journal,
 //                             signer-owned changes, signer opens and hook records never touch a disk: they live in the
@@ -17,7 +17,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HardError } from "../schema.mjs";
 import { closureFiles } from "../hashes.mjs";
-import { trustedMktempDir } from "../sanction.mjs";
+import { MKTEMP_DIR_RE, trustedMktempDir } from "../sanction.mjs";
 import { buildRun, findOnPath, KEY_REL, seedHome } from "../../mock/run-config.mjs";
 import { brokenInstallEntry } from "../../mock/signer-main.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
@@ -25,6 +25,7 @@ import { loadScenario } from "../../mock/scenarios/index.mjs";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, "..", "..", "mock", "backend.mjs");
 const CLIENT_SRC = join(HERE, "cc-signer-client.mjs");
+const HOOK_SRC = join(HERE, "cc-hook.mjs");
 const REPO_ROOT = resolve(HERE, "..", "..", "..");
 const SIGNER_ENTRY_REL = join("lib", "node_modules", "@sohopay", "agent-signer", "dist", "cli", "index.js");
 export const MCP_SERVER = "sohopay";
@@ -43,10 +44,11 @@ export function sandboxTmpDir(env, id = uid()) {
 
 /** Validate the backend's control-channel state; anything malformed is an adapter error, never a crash. */
 export function parseBackendState(s) {
-  const ok = s && typeof s === "object" && ["journal", "owned", "opens"].every((k) => Array.isArray(s[k]));
+  const ok = s && typeof s === "object" && ["journal", "owned", "execs"].every((k) => Array.isArray(s[k]));
+  const fileRec = (o) => o && typeof o.role === "string" && typeof o.path === "string";
   const entries = ok && s.journal.every((e) => e && typeof e.condition === "string" && Number.isFinite(e.at))
     && s.owned.every((e) => e && typeof e.path === "string" && (e.after === null || typeof e.after === "string"))
-    && s.opens.every((e) => e && typeof e.role === "string" && typeof e.before === "string" && typeof e.after === "string" && Number.isFinite(e.at) && Number.isFinite(e.done));
+    && s.execs.every((e) => e && Array.isArray(e.argv) && Number.isFinite(e.at) && Number.isFinite(e.done) && Array.isArray(e.opens) && e.opens.every(fileRec) && Array.isArray(e.refusals) && e.refusals.every((r) => r && typeof r.role === "string"));
   if (!entries) throw new HardError("mock backend: malformed control-channel state");
   return s;
 }
@@ -123,6 +125,17 @@ export function installSkills(suiteDir, skillsRoot, home) {
   return [...dirs].map((d) => basename(d)).sort();
 }
 
+/**
+ * N1: install the hook wrapper at the FIXED, secret-free path <base>/hook.mjs (comment lines stripped). The hook
+ * command names only node and this path; the relay url + token are found per session in <base>/relays/.
+ */
+export function installHookWrapper(base) {
+  const dest = join(base, "hook.mjs");
+  const code = readFileSync(HOOK_SRC, "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+  writeFileSync(dest, code, { mode: 0o700 });
+  return dest;
+}
+
 /** The agent's environment: nothing inherited except identity, locale, harness auth and a DEFAULT TMPDIR. */
 export function agentEnv({ home, binDir }, parent = process.env) {
   const env = {
@@ -145,7 +158,7 @@ const tmpSpellings = (p) => (process.platform === "darwin" && p.startsWith("/tmp
  * of our own (the operator's Claude sessions live there). Node's install prefix is re-allowed if it sits inside a
  * denied root (nvm), since the installed signer runs on it.
  */
-export function confinement({ home, runRoot }) {
+export function confinement({ home, runRoot, prefix = dirname(home), platform = process.platform, tmp = realpathSync(tmpdir()) }) {
   const operatorHome = realpathSync(homedir());
   const repoRoot = realpathSync(REPO_ROOT);
   const sandboxTmp = sandboxTmpDir({});
@@ -161,29 +174,37 @@ export function confinement({ home, runRoot }) {
   }
   const nodePrefix = dirname(dirname(realpathSync(process.execPath)));
   const inside = (p, d) => p === d || p.startsWith(d + sep);
+  // N9 (macOS, best effort): $TMPDIR (/var/folders/<a>/<b>/T) holds other runs' workspaces and operator temp files.
+  // Deny it, re-allowing only this run's workspace and fresh `mktemp -d` dirs (tmp.*; macOS mktemp ignores TMPDIR).
+  const darwinTmp = platform === "darwin" && !tmp.startsWith("/tmp") && !tmp.startsWith("/private/tmp") ? tmp : null;
+  const mktempGlobs = darwinTmp ? [`${darwinTmp}/tmp.*`] : [];
   return {
-    operatorHome, repoRoot, sandboxTmp,
-    denyRead: [operatorHome, repoRoot, runRoot, ...others],
+    operatorHome, repoRoot, sandboxTmp, mktempGlobs,
+    denyRead: [operatorHome, repoRoot, runRoot, ...others, ...(darwinTmp ? [darwinTmp] : [])],
     denyWrite: [runRoot, operatorHome, repoRoot, join(home, ".claude")],
-    allowRead: [operatorHome, repoRoot].some((d) => inside(nodePrefix, d)) ? [nodePrefix] : [],
+    allowRead: [...([operatorHome, repoRoot].some((d) => inside(nodePrefix, d)) ? [nodePrefix] : []), ...(darwinTmp ? [prefix, ...mktempGlobs] : [])],
   };
 }
 
 /** Claude Code settings for the run (passed with --settings from the run root; never written into HOME). */
-export function runSettings({ runRoot, home, hookUrl, relayHdr, confine }) {
-  const hook = (event) => [{ matcher: "*", hooks: [{ type: "command", command: `/usr/bin/curl -sS -f -o /dev/null --max-time 30 -H @${shq(relayHdr)} -H 'content-type: application/json' --data-binary @- ${shq(`${hookUrl}/${event}`)}`, timeout: 60 }] }];
+export function runSettings({ runRoot, home, hookWrapper, node, confine }) {
+  // N1: no run-root path and no token in any hook command (Claude Code records the command in the session JSONL).
+  const hook = (event) => [{ matcher: "*", hooks: [{ type: "command", command: `${shq(node)} ${shq(hookWrapper)} ${shq(event)}`, timeout: 60 }] }];
   const scoped = (p) => [`Read(/${p}/**)`, `Edit(/${p}/**)`];
+  const darwinSpellings = (p) => (p.startsWith("/private/var/") ? [p, p.slice("/private".length)] : [p]);
+  const projects = join(home, ".claude", "projects");
   return {
     permissions: {
       defaultMode: "dontAsk",
       // File tools only inside the workspace HOME (= cwd) and the sandbox TMPDIR (signer.md's scratch dir).
-      allow: ["Bash", "TodoWrite", "Skill", `mcp__${MCP_SERVER}`, ...scoped(home), ...tmpSpellings(confine.sandboxTmp).flatMap(scoped)],
-      deny: ["WebFetch", "WebSearch", "Agent", "Task", "ToolSearch", ...confine.denyRead.flatMap(scoped), `Edit(/${join(home, ".claude")}/**)`, `Edit(/${runRoot}/**)`],
+      allow: ["Bash", "TodoWrite", "Skill", `mcp__${MCP_SERVER}`, ...scoped(home), ...tmpSpellings(confine.sandboxTmp).flatMap(scoped), ...(confine.mktempGlobs ?? []).flatMap(darwinSpellings).flatMap(scoped)],
+      // The session JSONL (hook attachments, tool results) under ~/.claude/projects is not the agent's to read.
+      deny: ["WebFetch", "WebSearch", "Agent", "Task", "ToolSearch", ...confine.denyRead.flatMap(scoped), ...scoped(projects), `Edit(/${join(home, ".claude")}/**)`, `Edit(/${runRoot}/**)`],
     },
     sandbox: {
       enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
       network: { allowedDomains: ["127.0.0.1", "localhost"] },
-      filesystem: { denyRead: confine.denyRead, denyWrite: confine.denyWrite, allowRead: confine.allowRead },
+      filesystem: { denyRead: [...confine.denyRead, projects], denyWrite: confine.denyWrite, allowRead: confine.allowRead },
     },
     hooks: { PreToolUse: hook("pre"), PostToolUse: hook("post"), PostToolUseFailure: hook("post"), PermissionDenied: hook("denied") },
   };
@@ -238,7 +259,7 @@ export function assertHermetic(w) {
   if (sbx !== c.sandboxTmp || !trustedMktempDir(probe, { name: "Bash", ok: true, stdout: `${sbx}/tmp.AbCd1234Ef\n` }, () => false)) {
     throw new HardError(`hermetic: sandbox TMPDIR ${sbx} does not give a trusted mktemp -d shape`);
   }
-  const secrets = [w.run.canaries.private_key, w.run.canaries.header_value, runRoot, w.runRoot, w.ctlToken];
+  const secrets = [w.run.canaries.private_key, w.run.canaries.header_value, runRoot, w.runRoot, w.ctlToken, w.mcpToken];
   for (const f of filesUnder(w.prefix, w.home)) {
     const body = readFileSync(f, "utf8");
     if (secrets.some((s) => body.includes(s))) throw new HardError(`hermetic: ${f} names the run root or carries a canary or token`);
@@ -270,27 +291,37 @@ export async function createWorld({ suiteDir, caseId, skillsRoot }) {
     const run = buildRun(scenario, { runDir: runRoot, home });
     const paths = {
       runPath: join(runRoot, "run.json"), tokens: join(runRoot, "ctl.token"), settings: join(runRoot, "settings.json"), mcp: join(runRoot, "mcp.json"),
-      stream: join(runRoot, "stream.jsonl"), stderr: join(runRoot, "claude.stderr"), audit: join(runRoot, "audit.strace"), relayHdr: join(runRoot, "relay.hdr"),
+      stream: join(runRoot, "stream.jsonl"), stderr: join(runRoot, "claude.stderr"), audit: join(runRoot, "audit.strace"), privateDir: join(runRoot, "host-private"),
     };
     writeFileSync(paths.runPath, `${JSON.stringify(run, null, 2)}\n`, { mode: 0o600 });
+    mkdirSync(paths.privateDir, { mode: 0o700 });
     const ctlToken = randomBytes(32).toString("hex");
     const clientToken = randomBytes(24).toString("hex");
-    writeFileSync(paths.tokens, JSON.stringify({ ctl: ctlToken, client: clientToken }), { mode: 0o600 });
+    const mcpToken = randomBytes(32).toString("hex");
+    // N2: the signer host's confinement — the agent's sandbox set: HOME, the sandbox TMPDIR, fresh mktemp dirs — minus
+    // what the sandbox denies inside them (the operator's pre-existing /tmp/claude-<uid> entries, …).
+    const confine = confinement({ home, runRoot, prefix });
+    const policy = {
+      home, roots: [home, ...tmpSpellings(sandboxTmpDir({}))], mktemp: [MKTEMP_DIR_RE.source.replace(/^\^/, "").replace(/\$$/, "")],
+      deny: confine.denyRead.filter((d) => !confine.allowRead.some((a) => a.startsWith(d + sep))),
+    };
+    writeFileSync(paths.tokens, JSON.stringify({ ctl: ctlToken, client: clientToken, mcp: mcpToken, policy, privateDir: paths.privateDir }), { mode: 0o600 });
     seedHome(run);
     backend = await startBackend(paths.runPath, paths.tokens, ctlToken);
     const binDir = installSigner(run, prefix, backend.urls.signer, clientToken);
     const skills = installSkills(suiteDir, skillsRoot, home);
     const env = agentEnv({ home, binDir });
-    writeFileSync(paths.mcp, JSON.stringify({ mcpServers: { [MCP_SERVER]: { type: "http", url: backend.urls.mcp } } }), { mode: 0o600 });
-    const confine = confinement({ home, runRoot });
-    return { scenario, run, runRoot, prefix, home, binDir, env, urls: backend.urls, paths, skills, confine, ctlToken, fetchState: backend.fetchState, cleanup };
+    // N4: Claude Code sends the bearer from this (agent-denied) config; an agent curl to /mcp has none.
+    writeFileSync(paths.mcp, JSON.stringify({ mcpServers: { [MCP_SERVER]: { type: "http", url: backend.urls.mcp, headers: { Authorization: `Bearer ${mcpToken}` } } } }), { mode: 0o600 });
+    const hookWrapper = installHookWrapper(base);
+    return { scenario, run, runRoot, base, prefix, home, binDir, env, urls: backend.urls, paths, skills, confine, ctlToken, mcpToken, hookWrapper, fetchState: backend.fetchState, cleanup };
   } catch (e) {
     await cleanup();
     throw e;
   }
 }
 
-/** Write the run's settings file once the hook endpoint is known. */
-export function writeSettings(w, hookUrl) {
-  writeFileSync(w.paths.settings, JSON.stringify(runSettings({ runRoot: w.runRoot, home: w.home, hookUrl, relayHdr: w.paths.relayHdr, confine: w.confine }), null, 2), { mode: 0o600 });
+/** Write the run's settings file. */
+export function writeSettings(w) {
+  writeFileSync(w.paths.settings, JSON.stringify(runSettings({ runRoot: w.runRoot, home: w.home, hookWrapper: w.hookWrapper, node: process.execPath, confine: w.confine }), null, 2), { mode: 0o600 });
 }

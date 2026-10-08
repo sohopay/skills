@@ -42,7 +42,9 @@ const runRootListing = readdirSync(dirname(opts.settings)).sort();
 appendFileSync(join(recordDir, "argv.jsonl"), `${JSON.stringify({ argv, cwd: process.cwd(), env: recordedEnv, runRootListing })}\n`);
 
 const settings = JSON.parse(readFileSync(opts.settings, "utf8"));
-const mcpUrl = JSON.parse(readFileSync(opts["mcp-config"], "utf8")).mcpServers.sohopay.url;
+const mcpServer = JSON.parse(readFileSync(opts["mcp-config"], "utf8")).mcpServers.sohopay;
+const mcpUrl = mcpServer.url;
+const mcpHeaders = mcpServer.headers ?? {}; // Claude Code sends the mcp-config headers (the bearer) on every request
 const sessionId = opts["session-id"];
 const cwd = process.cwd();
 const sessionFile = join(process.env.HOME, ".claude", "projects", cwd.replace(/[^A-Za-z0-9]/g, "-"), `${sessionId}.jsonl`);
@@ -104,7 +106,7 @@ function execute(name, input) {
     return { ok: false, raw: { stdout, stderr, exitCode: r.status }, content: text, tur: `Error: ${text}` };
   }
   if (name.startsWith("mcp__sohopay__")) {
-    const { ok, payload } = httpMcpCaller(mcpUrl)(name.slice("mcp__sohopay__".length), input);
+    const { ok, payload } = httpMcpCaller(mcpUrl, mcpHeaders)(name.slice("mcp__sohopay__".length), input);
     const text = JSON.stringify(payload);
     return { ok, raw: { ok, payload, text }, content: [{ type: "text", text }], tur: [{ type: "text", text }] };
   }

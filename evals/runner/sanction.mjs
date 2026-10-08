@@ -210,7 +210,7 @@ const trustedFileRe = (d) => new RegExp(String.raw`^(?:${esc(d)}/${NAME}|"${esc(
 // (optionally via its `/private` realpath), or — inside Claude Code's Bash sandbox, which exports
 // TMPDIR=<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid> — `/tmp/claude-<uid>/tmp.*` (production agents see this too).
 // Anything else (`/tmp`, a home dir, `..`, a non-numeric or nested claude-* dir) is not a fresh mktemp dir.
-const MKTEMP_DIR_RE = /^(?:\/tmp\/tmp\.[A-Za-z0-9]{6,}|(?:\/private)?\/tmp\/claude-\d+\/tmp\.[A-Za-z0-9]{6,}|(?:\/private)?\/var\/folders\/[^/\s]+\/[^/\s]+\/T\/tmp\.[A-Za-z0-9]{6,})$/;
+export const MKTEMP_DIR_RE = /^(?:\/tmp\/tmp\.[A-Za-z0-9]{6,}|(?:\/private)?\/tmp\/claude-\d+\/tmp\.[A-Za-z0-9]{6,}|(?:\/private)?\/var\/folders\/[^/\s]+\/[^/\s]+\/T\/tmp\.[A-Za-z0-9]{6,})$/;
 
 /**
  * signer.md MCP sequence step (a). Trusts D only if ALL hold: the call (paired to this result by call_i) is a Bash

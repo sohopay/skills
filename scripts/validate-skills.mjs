@@ -7,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { loadSuite, validateJoin } from '../evals/runner/cases.mjs';
 import { closureFiles, skillHash } from '../evals/runner/hashes.mjs';
 import { validateTranscript } from '../evals/runner/schema.mjs';
+import { goldenAuditError } from '../evals/runner/golden.mjs';
 import { validateWaivers } from '../evals/runner/waivers.mjs';
 import {
   HOSTED_BASE,
@@ -573,6 +574,8 @@ function checkSp6Suite(name) {
       else if (t.meta.adapter === 'claude-code' && hash && t.meta.skill_hash !== hash) {
         fail(`INV-sp6-transcripts-present ${name}/${id}: stale skill_hash (re-record)`);
       }
+      const auditErr = v.ok ? goldenAuditError(t) : null;
+      if (auditErr) fail(`${auditErr} — ${name}/${id}`);
     } catch { fail(`INV-sp6-transcripts-present ${name}/${id}: invalid JSON`); }
   }
   // Teeth: every case must carry >=1 adversarial transcript (<caseId>.*.json), same stem convention as run.mjs.
