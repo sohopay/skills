@@ -85,6 +85,7 @@ test("settings: web tools and sub-agents denied, sandbox mandatory with localhos
   assert.equal(s.permissions.defaultMode, "dontAsk");
   for (const d of ["WebFetch", "WebSearch", "Agent", "Task", "Read(//private/var/folders/x/y/T/sp6-run-1/**)", "Edit(//private/var/folders/x/y/T/sp6-run-1/**)"]) assert.ok(s.permissions.deny.includes(d), d);
   assert.ok(!s.permissions.allow.some((a) => /^Web/.test(a)));
+  for (const a of ["Bash", "Read", "Skill", "mcp__sohopay"]) assert.ok(s.permissions.allow.includes(a), a);
   assert.deepEqual(s.sandbox.network.allowedDomains, ["127.0.0.1", "localhost"]);
   assert.equal(s.sandbox.enabled, true);
   assert.equal(s.sandbox.failIfUnavailable, true);

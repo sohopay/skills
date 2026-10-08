@@ -103,7 +103,8 @@ export function runSettings({ runRoot, home, hookUrl }) {
   return {
     permissions: {
       defaultMode: "dontAsk",
-      allow: ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "TodoWrite", `mcp__${MCP_SERVER}`],
+      // dontAsk denies anything not listed; Skill must be here or the installed skills cannot be loaded.
+      allow: ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "TodoWrite", "Skill", `mcp__${MCP_SERVER}`],
       deny: ["WebFetch", "WebSearch", "Agent", "Task", `Read(/${runRoot}/**)`, `Edit(/${runRoot}/**)`, `Edit(/${join(home, ".claude")}/**)`],
     },
     sandbox: {
