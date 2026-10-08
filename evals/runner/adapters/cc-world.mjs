@@ -16,6 +16,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HardError } from "../schema.mjs";
+import { registerWorld, sweepStale } from "./cc-lifecycle.mjs";
 import { closureFiles } from "../hashes.mjs";
 import { MKTEMP_DIR_RE, trustedMktempDir } from "../sanction.mjs";
 import { buildRun, findOnPath, KEY_REL, seedHome } from "../../mock/run-config.mjs";
@@ -336,7 +337,8 @@ export function assertHermetic(w) {
 
 /**
  * Build the world for one sample. Returns { run, runRoot, prefix, home, binDir, env, urls, paths, confine, ctlToken,
- * fetchState, cleanup }. `cleanup()` stops the backend and removes both roots.
+ * fetchState, lifecycle, cleanup }. `cleanup()` stops the backend and removes both roots; `lifecycle` (cc-lifecycle.mjs)
+ * tracks extra paths / process groups for teardown on a signal or an uncaught exception.
  */
 export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox, signerCallTimeoutMs = SIGNER_CALL_TIMEOUT_MS }) {
   // R3-1: the only value accepted is the test-only "fake" (set by run() from testSeams); anything else is a wiring bug.
@@ -344,14 +346,19 @@ export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox,
   if (!Number.isInteger(signerCallTimeoutMs) || signerCallTimeoutMs < 100 || signerCallTimeoutMs > 600_000) throw new HardError(`claude-code adapter: signer call timeout must be an integer 100..600000 ms, got ${signerCallTimeoutMs}`);
   mkdirSync(runRootBase(), { recursive: true, mode: 0o700 });
   const base = realpathSync(runRootBase());
+  // m8: first remove what a hard-killed earlier run left behind (dead owner, older than STALE_MS).
+  try { sweepStale(base); } catch (e) { process.stderr.write(`sp6: stale-world sweep failed (continuing): ${e.message}\n`); }
   const runRoot = realpathSync(mkdtempSync(join(base, "sp6-run-")));
   chmodSync(runRoot, 0o700);
   const prefix = realpathSync(mkdtempSync(join(tmpdir(), "agent-home-")));
+  // m8: torn down on SIGINT / SIGTERM / SIGHUP / exit (incl. an uncaught exception) if cleanup() never runs.
+  const lifecycle = registerWorld({ base, prefix, runRoot });
   let backend = null;
   const cleanup = async () => {
     try { if (backend) await backend.close(); } finally {
       rmSync(prefix, { recursive: true, force: true });
       rmSync(runRoot, { recursive: true, force: true });
+      lifecycle.release();
     }
   };
   try {
@@ -379,13 +386,14 @@ export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox,
     writeFileSync(paths.tokens, JSON.stringify(tokens), { mode: 0o600 });
     seedHome(run);
     backend = await startBackend(paths.runPath, paths.tokens, ctlToken);
+    lifecycle.trackPid(backend.pid);
     const binDir = installSigner(run, prefix, backend.urls.signer, clientToken);
     const skills = installSkills(suiteDir, skillsRoot, home);
     const env = agentEnv({ home, binDir });
     // N4: Claude Code sends the bearer from this (agent-denied) config; an agent curl to /mcp has none.
     writeFileSync(paths.mcp, JSON.stringify({ mcpServers: { [MCP_SERVER]: { type: "http", url: backend.urls.mcp, headers: { Authorization: `Bearer ${mcpToken}` } } } }), { mode: 0o600 });
     const hookWrapper = installHookWrapper(base);
-    return { scenario, run, runRoot, base, prefix, home, binDir, env, urls: backend.urls, paths, skills, confine, ctlToken, mcpToken, hookWrapper, fetchState: backend.fetchState, backendPid: backend.pid, cleanup };
+    return { scenario, run, runRoot, base, prefix, home, binDir, env, urls: backend.urls, paths, skills, confine, ctlToken, mcpToken, hookWrapper, fetchState: backend.fetchState, backendPid: backend.pid, lifecycle, cleanup };
   } catch (e) {
     await cleanup();
     throw e;

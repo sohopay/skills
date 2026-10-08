@@ -134,6 +134,8 @@ function spawnCli(argv0, argv, w, { timeoutMs, killGraceMs }) {
     const out = createWriteStream(w.paths.stream, { mode: 0o600 });
     const err = createWriteStream(w.paths.stderr, { mode: 0o600 });
     const child = spawn(argv0, argv, { cwd: w.home, env: w.env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    // m8: its own process group survives our death; a signal / uncaught exception SIGKILLs the group.
+    w.lifecycle?.trackGroup(child.pid);
     child.stdout.pipe(out);
     child.stderr.pipe(err);
     let timedOut = false;
@@ -244,6 +246,7 @@ export async function run(ref, opts) {
     const keyCtx = { storeRoot, keyFile, keyDir: dirname(keyFile), baseline: snapshotTree(storeRoot) };
     const sessionId = randomUUID();
     registryFile = join(w.base, "relays", `${sessionId}.json`);
+    w.lifecycle.trackPath(registryFile); // m8: removed on a signal / uncaught exception too
     relay = await startHookRelay(w, keyCtx, { registryFile });
     // C1: the harness key goes 0600 into the agent-denied run root, read by the CLI's apiKeyHelper; never into its env.
     // The run root (and the file) is removed by w.cleanup().
