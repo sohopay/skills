@@ -1,0 +1,302 @@
+# SP6 live behavioural evals: OPT-IN, advisory, never a merge gate (the gate is the replay step in validate.yml).
+#
+# Runs the pinned Claude Code CLI against the localhost mock world:
+#   node evals/runner/run.mjs --adapter claude-code --suite all --samples 5 --require-audit
+# The adapter pins the model (claude-sonnet-5-5) and --max-turns 20 (evals/runner/adapters/cc-guards.mjs PINS); spend
+# comes from each session's own reported cost, and the run stops with partial results once the cap is crossed.
+#
+# Job graph: gate (no env, no secrets, refuses forks) -> live (protected environment, contents: read)
+#            -> issues (issues: write) and regen (contents: write, same-repo PRs only).
+#
+# Safety rules (spec "Live path"; T17 rulings):
+#   * never `pull_request_target`: PR code must never run with the base repo's secrets on a fork's say-so;
+#   * the fork refusal runs in the first job, before any job that loads the protected environment;
+#   * ANTHROPIC_API_KEY lives only in the protected environment, attached only to the live job, exposed only to the
+#     single step that starts the live run;
+#   * pushes go only to the PR's own head branch, never develop/main, with GITHUB_TOKEN (no personal token).
+name: SP6 live evals (opt-in)
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: "One case id for a smoke run (empty = every case)"
+        required: false
+        default: ""
+      samples:
+        description: "Samples per case (5 = the live k; fewer = smoke run, never regenerates goldens)"
+        required: false
+        default: "5"
+  pull_request:
+    types: [labeled, synchronize]
+
+permissions: {}
+
+# One live run per PR (or ref); a newer run cancels the older one. A PR event that will not run (the label is absent, or
+# some OTHER label was added) gets a unique suffix, so it can never cancel a live run that is in progress.
+concurrency:
+  group: sp6-live-${{ github.event.pull_request.number || github.ref }}${{ github.event_name == 'pull_request' && (!contains(github.event.pull_request.labels.*.name, 'run-live-evals') || (github.event.action == 'labeled' && github.event.label.name != 'run-live-evals')) && format('-noop-{0}', github.run_id) || '' }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: Gate (fork refusal, no secrets)
+    # PR runs only while the run-live-evals label is on the PR; adding some other label does not start a run.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (contains(github.event.pull_request.labels.*.name, 'run-live-evals') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'run-live-evals'))
+    runs-on: ubuntu-latest
+    permissions: {}
+    outputs:
+      allow_regen: ${{ steps.check.outputs.allow_regen }}
+      case: ${{ steps.check.outputs.case }}
+      samples: ${{ steps.check.outputs.samples }}
+    steps:
+      - name: Refuse a fork PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          echo "::error::refusing a fork PR (${HEAD_REPO}): live evals run only on same-repo branches"
+          exit 1
+      - name: Validate the request
+        id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          IN_CASE: ${{ inputs.case }}
+          IN_SAMPLES: ${{ inputs.samples }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "pull_request" ]; then
+            # Belt and braces with the step above: a fork never gets past this job.
+            [ "$HEAD_REPO" = "$REPO" ] || { echo "::error::refusing a fork PR ($HEAD_REPO)"; exit 1; }
+            case "$HEAD_REF" in
+              develop|main) echo "::error::refusing a PR whose head branch is $HEAD_REF"; exit 1 ;;
+            esac
+            { echo "allow_regen=true"; echo "case="; echo "samples=5"; } >> "$GITHUB_OUTPUT"
+          else
+            [[ "$IN_CASE" =~ ^([a-z0-9][a-z0-9-]{0,80})?$ ]] || { echo "::error::invalid case id"; exit 1; }
+            [[ "$IN_SAMPLES" =~ ^[1-9][0-9]?$ ]] && [ "$IN_SAMPLES" -le 20 ] || { echo "::error::samples must be 1..20"; exit 1; }
+            # Dispatch runs have no PR head branch to commit to: they never regenerate goldens.
+            { echo "allow_regen=false"; echo "case=$IN_CASE"; echo "samples=$IN_SAMPLES"; } >> "$GITHUB_OUTPUT"
+          fi
+
+  live:
+    name: Live run (protected environment)
+    needs: gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment: sp6-live-evals
+    permissions:
+      contents: read
+    outputs:
+      safety_failures: ${{ steps.verdict.outputs.safety_failures }}
+      regen_count: ${{ steps.verdict.outputs.regen_count }}
+    env:
+      # Kernel-enforcement and child-evidence tests must RUN here (none skipped); see the test step below.
+      SP6_REQUIRE_SANDBOX: "1"
+      DISABLE_AUTOUPDATER: "1"
+      CLAUDE_CODE_VERSION: "2.1.292" # == PINS.CLI_VERSION (evals-live-workflow.test.mjs checks)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The PR head itself (not the merge ref), so regenerated goldens hash the skills on the branch they land on.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+
+      - name: Install the OS sandbox and tracer (bubblewrap, strace, unprivileged userns)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends bubblewrap strace
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
+          if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          # The same functional probe sandboxSupport() runs (R4-2): fail here, loudly, rather than in a sample.
+          bwrap --die-with-parent --new-session --unshare-all --ro-bind / / --dev /dev --proc /proc true
+          strace -V | head -n 1
+
+      - name: Install the pinned Claude Code CLI
+        run: |
+          set -euo pipefail
+          npm install -g --no-fund --no-audit "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}"
+          got="$(claude --version | awk '{print $1}')"
+          [ "$got" = "$CLAUDE_CODE_VERSION" ] || { echo "::error::claude --version is $got, pinned $CLAUDE_CODE_VERSION"; exit 1; }
+
+      - name: Runner tests with the sandbox REQUIRED (kernel + evidence tests must run and pass)
+        # No ANTHROPIC_API_KEY here, and the adapter tests refuse any `claude` that is not a marked stub (R4-1), so the
+        # real CLI installed above can never be started by a test. SP6_AUDIT is NOT set: the stub tests need it unset.
+        env:
+          SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run-tests
+        run: |
+          set -euo pipefail
+          node --test evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs | tee "$RUNNER_TEMP/sp6-tests.txt"
+          grep -qx 'ℹ skipped 0' "$RUNNER_TEMP/sp6-tests.txt" || { echo "::error::a runner test was skipped under SP6_REQUIRE_SANDBOX=1"; exit 1; }
+
+      - name: Live run (k samples per case, budget-capped)
+        id: run
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SP6_AUDIT: require
+          # Runner-private, outside /tmp and outside the checkout; assertHermetic denies it to the agent. Do not set
+          # TMPDIR: the hermetic check requires the platform default.
+          SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run
+          SP6_LIVE_OUT_DIR: ${{ runner.temp }}/sp6-live/transcripts
+          SP6_LIVE_BUDGET_USD: "10" # provisional cap (spec); recalibrate from the first measured runs
+          CASE: ${{ needs.gate.outputs.case }}
+          SAMPLES: ${{ needs.gate.outputs.samples }}
+        run: |
+          set -uo pipefail
+          [ -n "$ANTHROPIC_API_KEY" ] || { echo "::error::ANTHROPIC_API_KEY is not set in the sp6-live-evals environment"; exit 1; }
+          mkdir -p "$SP6_LIVE_OUT_DIR"
+          args=(--adapter claude-code --suite all --samples "$SAMPLES" --require-audit)
+          if [ -n "$CASE" ]; then args+=(--case "$CASE"); fi
+          node evals/runner/run.mjs "${args[@]}" > "$RUNNER_TEMP/sp6-live/report.json"
+          code=$?
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          # 0 = all passed, 1 = a report with failures; anything else means there is no report to act on.
+          if [ "$code" -gt 1 ]; then echo "::error::run.mjs produced no report (exit $code)"; exit "$code"; fi
+          jq -r '"Live: \(.total) samples, \(.passed) passed, \(.failed) failed, \(.hardErrors) adapter errors; spend $\([.cases[].costUsd // 0] | add // 0)"' \
+            "$RUNNER_TEMP/sp6-live/report.json" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verdict (regression issues, golden candidates)
+        id: verdict
+        if: ${{ !cancelled() && contains(fromJSON('["0","1"]'), steps.run.outputs.exit_code) }}
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          ALLOW_REGEN: ${{ needs.gate.outputs.allow_regen }}
+          CASE: ${{ needs.gate.outputs.case }}
+          SAMPLES: ${{ needs.gate.outputs.samples }}
+        run: |
+          set -euo pipefail
+          flags=()
+          # Regenerate only from a full k=5, all-case run on a same-repo PR (gate decided allow_regen).
+          if [ "$ALLOW_REGEN" = "true" ] && [ "$SAMPLES" = "5" ] && [ -z "$CASE" ]; then flags+=(--allow-regen); fi
+          node evals/runner/live-ci.mjs --report "$RUNNER_TEMP/sp6-live/report.json" --live-dir "$RUNNER_TEMP/sp6-live/transcripts" \
+            --out "$RUNNER_TEMP/sp6-verdict" --samples "$SAMPLES" "${flags[@]}" | tee -a "$GITHUB_OUTPUT"
+
+      # Transcripts carry only the mock world's FAKE-SP6-CANARY-* values (no real key, token or PII); the unwaivable
+      # never_appears floor is what guards real secrets. Short retention all the same.
+      - name: Upload transcripts and report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sp6-live-transcripts-${{ github.run_id }}
+          path: ${{ runner.temp }}/sp6-live
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Upload verdict
+        if: ${{ !cancelled() && steps.verdict.outcome == 'success' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sp6-live-verdict-${{ github.run_id }}
+          path: ${{ runner.temp }}/sp6-verdict
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: Fail the job when any sample failed (advisory, never a merge gate)
+        if: ${{ steps.run.outputs.exit_code != '0' }}
+        run: |
+          echo "::error::live evals: at least one sample failed or was not run (see the report artifact)"
+          exit 1
+
+  issues:
+    name: Open / update sp6-live-regression issues
+    needs: [gate, live]
+    if: ${{ !cancelled() && needs.live.outputs.safety_failures == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sp6-live-verdict-${{ github.run_id }}
+          path: ${{ runner.temp }}/verdict
+      - name: One issue per failing safety case id (findings + run link only)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERDICT: ${{ runner.temp }}/verdict
+        run: |
+          set -euo pipefail
+          gh label create sp6-live-regression --force --color B60205 --description "SP6 live eval: a safety case failed in a live sample"
+          shopt -s nullglob
+          for f in "$VERDICT"/issues/*.md; do
+            id="$(basename "$f" .md)"
+            [[ "$id" =~ ^[a-z0-9][a-z0-9-]{0,80}$ ]] || { echo "::error::unexpected case id in verdict: $id"; exit 1; }
+            title="sp6-live-regression: $id"
+            num="$(gh issue list --label sp6-live-regression --state open --limit 200 --json number,title \
+              --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)"
+            if [ -n "$num" ]; then
+              gh issue comment "$num" --body-file "$f"
+            else
+              gh issue create --title "$title" --label sp6-live-regression --body-file "$f"
+            fi
+          done
+
+  regen:
+    name: Commit regenerated goldens onto the PR head branch
+    needs: [gate, live]
+    if: >-
+      ${{ !cancelled() && github.event_name == 'pull_request' &&
+          github.event.pull_request.head.repo.full_name == github.repository &&
+          needs.gate.outputs.allow_regen == 'true' &&
+          needs.live.outputs.regen_count != '' && needs.live.outputs.regen_count != '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Refuse protected branches
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          case "$HEAD_REF" in
+            develop|main) echo "::error::never commit goldens to $HEAD_REF"; exit 1 ;;
+          esac
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: sp6-live-verdict-${{ github.run_id }}
+          path: ${{ runner.temp }}/verdict
+      # No PR code runs in this job (only git): the candidates were audited and replayed green in the live job.
+      - name: Commit and push (GITHUB_TOKEN, bot author, no trailer)
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          VERDICT: ${{ runner.temp }}/verdict
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$(git rev-parse HEAD)" != "$HEAD_SHA" ]; then
+            echo "::warning::the PR head moved since the live run ($HEAD_SHA); goldens not committed — re-run live evals on the new head"
+            exit 0
+          fi
+          paths=()
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            [[ "$p" =~ ^evals/sohopay-(onboard|x402)/transcripts/[a-z0-9][a-z0-9-]*\.json$ ]] || { echo "::error::unexpected golden path: $p"; exit 1; }
+            cp "$VERDICT/regen/$p" "$p"
+            paths+=("$p")
+          done < "$VERDICT/regen-manifest.txt"
+          [ "${#paths[@]}" -gt 0 ] || { echo "no goldens to commit"; exit 0; }
+          git add -- "${paths[@]}"
+          if git diff --cached --quiet; then echo "goldens unchanged"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+            commit -q -m "test(evals): regenerate SP6 goldens from a k=5 live run" -m "Sample 0 of each case whose 5 live samples all passed: ${RUN_URL}"
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
+          msg="Goldens committed to ${HEAD_REF}. GITHUB_TOKEN pushes do not re-trigger workflows: a maintainer must re-run the replay gate (Validate skills) on this PR. Upgrade path: a GitHub App installation token, whose pushes do re-trigger CI (spec, Live path, Regeneration)."
+          echo "::notice::$msg"
+          echo "$msg" >> "$GITHUB_STEP_SUMMARY"
