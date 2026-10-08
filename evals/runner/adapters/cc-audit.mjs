@@ -8,6 +8,7 @@
 //            an open's `= N</path>` annotation, fd annotations, and links the trace itself created are resolved.
 //            Lines of a pid seen before its parent's clone returns are buffered until the parentage is known. The
 //            signer never runs in this tree (it is hosted out of process), so its sanctioned key opens cannot appear.
+//            io_uring_setup fails with ENOSYS in the whole tree (IO_URING_INJECT, R2-9), so file I/O stays visible.
 //   darwin → unavailable: fs_usage and dtrace need root (and dtrace SIP off). No events are emitted, never fake ones.
 //            The cross-platform key-store lstat audit and the signer host's open log still run everywhere.
 import { spawnSync } from "node:child_process";
@@ -23,7 +24,7 @@ const COMMON = [
   "linkat", "symlinkat", "fchmodat", "?fchmodat2", "fchownat", "mkdirat", "mknodat", "utimensat", "truncate", "ftruncate",
   "fchmod", "fchown", "setxattr", "lsetxattr", "fsetxattr", "removexattr", "lremovexattr", "fremovexattr",
   "execve", "execveat", "chdir", "fchdir", "clone", "?clone3",
-  // R2-9: io_uring I/O carries no paths strace can see — its use in an agent subtree is itself an adapter error.
+  // R2-9: io_uring I/O carries no paths strace can see — a ring in an agent subtree is itself an adapter error.
   "?io_uring_setup", "?io_uring_enter",
 ];
 // Legacy path syscalls that only x86-64 still has (aarch64 never did).
@@ -38,7 +39,6 @@ export function syscallSet(arch = process.arch) {
 export function straceArgv(outFile, { arch = process.arch, killOnExit = false } = {}) {
   return ["strace", "-f", "-ttt", "-qq", "-y", "-s", "4096", ...(killOnExit ? ["--kill-on-exit"] : []), "-o", outFile, "-e", `trace=${syscallSet(arch).join(",")}`, "-e", IO_URING_INJECT, "--"];
 }
-
 
 /**
  * Which audit backend this host supports; never throws. On linux a trial run uses the EXACT syscall set of the real
