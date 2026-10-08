@@ -12,7 +12,7 @@
 // capabilities and argv grammar: no keygen contract, no --out), force_errors (a real error code + real message, N times), and
 // voucher_output_override (a faulty signer whose payment_id / agent_key_jkt disagree with the voucher).
 // Hooks change only WHICH real-shaped output is produced; input conditions go to the side-channel journal.
-import { appendFileSync, chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, closeSync, constants, existsSync, fstatSync, ftruncateSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { REAL_MESSAGES, SignerError, UsageError } from "./lib/errors.mjs";
 import { newCanary } from "./lib/keymodel.mjs";
@@ -100,7 +100,20 @@ function voucherSign(parsed, stdin, ctx) {
   if (parsed.writeHeader === undefined) return result;
   const target = resolve(ctx.cwd, parsed.writeHeader);
   try {
-    writeFileSync(target, `${result.header_name}: ${result.header_value}\n`, { encoding: "utf8", mode: 0o600 });
+    // TOCTOU-safe: O_NOFOLLOW refuses a symlink planted at the target (ELOOP) so the credential is never written
+    // THROUGH a symlink to another location — defense-in-depth over the host's pre-write symlink check. We open
+    // WITHOUT O_TRUNC, then check the fd: a hardlink to another file (st_nlink > 1) is refused BEFORE any truncation,
+    // so the credential can never truncate+overwrite a hardlinked victim. Only then do we truncate and write, which
+    // keeps the real signer's overwrite-a-regular-file behavior (the header path may be re-used across retries). We
+    // write through the fd we opened, not the path, so the file written is exactly the one we vetted.
+    const fd = openSync(target, constants.O_WRONLY | constants.O_CREAT | constants.O_NOFOLLOW, 0o600);
+    try {
+      if (fstatSync(fd).nlink > 1) throw new SignerError("MALFORMED_ENVELOPE", "refusing a hardlinked header path");
+      ftruncateSync(fd, 0);
+      writeFileSync(fd, `${result.header_name}: ${result.header_value}\n`, { encoding: "utf8" });
+    } finally {
+      closeSync(fd);
+    }
     chmodSync(target, 0o600);
   } catch {
     throw new SignerError("MALFORMED_ENVELOPE", `cannot write header file: ${parsed.writeHeader}`);

@@ -4,7 +4,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -111,6 +111,16 @@ test("voucher sign --envelope --write-header (0.3.1 INV-1): header only in the 0
   const j = JSON.parse(s.run(["voucher", "sign", "--envelope", "--key", s.key, "--input", "prep.json", "--write-header", "hdr.txt", "--output", "json"]).stdout);
   assert.deepEqual(Object.keys(j), ["signer_protocol", "implementation", "implementation_version", "payment_id", "agent_key_jkt", "algorithm", "header_name", "header_file"]);
   assert.equal(j.payment_id, s.pid); assert.equal(j.agent_key_jkt, s.jkt);
+});
+
+test("voucher sign --write-header refuses a hardlinked target (st_nlink>1) and never overwrites the victim", () => {
+  const s = signable({ canaries: { private_key: newCanary("PRIV"), header_value: newCanary("HDR") } });
+  writeFileSync(join(s.dir, "victim"), "VICTIM-UNTOUCHED\n");
+  linkSync(join(s.dir, "victim"), join(s.dir, "hdr.txt")); // hdr.txt is a hardlink to victim (not a symlink)
+  const r = s.run(["voucher", "sign", "--envelope", "--key", s.key, "--input", "prep.json", "--write-header", "hdr.txt", "--output", "json"]);
+  assert.equal(r.code, 1, r.stdout);
+  assert.equal(JSON.parse(r.stderr).error.code, "MALFORMED_ENVELOPE");
+  assert.equal(readFileSync(join(s.dir, "victim"), "utf8"), "VICTIM-UNTOUCHED\n", "the hardlinked victim must not be truncated/overwritten");
 });
 
 test("voucher sign --envelope WITHOUT --write-header still prints header_value + envelope + signature (unchanged in 0.3.1)", () => {

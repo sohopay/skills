@@ -1,7 +1,7 @@
 // Key-path validation, mirroring @sohopay/agent-signer@0.3.1 src/cli/key-path.ts + signer-config.ts + storage.ts
 // (loadKeyFile): same checks, same order, same KEY_PATH_INVALID / INSECURE_KEY_PERMISSIONS / STORED_KEY_CORRUPT
 // messages. `home` / `env` are explicit so the mock never depends on the harness process's own HOME.
-import { lstatSync, mkdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { SignerError } from "./errors.mjs";
 
@@ -124,9 +124,26 @@ export function validateKeyPath(path, mode, { home, env, cwd }) {
   return target;
 }
 
-/** storage.ts loadKeyFile: permissions first (a loosened file is never parsed), then JSON. */
+/**
+ * storage.ts loadKeyFile: permissions first (a loosened file is never parsed), then JSON. TOCTOU-safe: open the file
+ * once with O_RDONLY|O_NOFOLLOW, then fstat and read from THAT fd — never stat-then-read by path, so a symlink or a
+ * file swapped in at the key path after validateKeyPath's checks can neither redirect the read nor pass the mode gate.
+ * O_NOFOLLOW makes a symlink at the final component fail to open (ELOOP), which we refuse as insecure.
+ */
 export function loadKeyFile(path) {
-  const mode = statSync(path).mode & 0o777;
-  if (mode & 0o077) throw new SignerError("INSECURE_KEY_PERMISSIONS", `${path} is group/world-accessible (mode ${mode.toString(8)}); refusing to load`);
-  try { return JSON.parse(readFileSync(path, "utf8")); } catch { throw new SignerError("STORED_KEY_CORRUPT", `${path} is not valid JSON`); }
+  let fd;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (err) {
+    // A symlink at the key path (TOCTOU plant) refuses to open under O_NOFOLLOW — never follow it to another file.
+    if (err.code === "ELOOP" || err.code === "EMLINK") throw new SignerError("INSECURE_KEY_PERMISSIONS", `${path} is a symlink; refusing to load`);
+    throw err; // validateKeyPath already ensured existence for a read; surface anything else unchanged
+  }
+  try {
+    const mode = fstatSync(fd).mode & 0o777;
+    if (mode & 0o077) throw new SignerError("INSECURE_KEY_PERMISSIONS", `${path} is group/world-accessible (mode ${mode.toString(8)}); refusing to load`);
+    try { return JSON.parse(readFileSync(fd, "utf8")); } catch { throw new SignerError("STORED_KEY_CORRUPT", `${path} is not valid JSON`); }
+  } finally {
+    closeSync(fd);
+  }
 }
