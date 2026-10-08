@@ -3,12 +3,12 @@
  * Merge-gate: when the pinned signer is resolvable, prove it advertises the keygen
  * contract. Exit codes: 0 when the contract checks out OR the signer can't be resolved
  * here (non-fatal — see below); 1 only when a RESOLVED signer advertises the wrong or
- * missing contract. CI resolves `@sohopay/agent-signer@<SIGNER_PIN>` from GitHub Packages
+ * missing contract, or is not the pinned version. CI resolves `@sohopay/agent-signer@<SIGNER_PIN>` from GitHub Packages
  * (.npmrc + the NODE_AUTH_TOKEN env in validate.yml); if the CI token lacks read access to
  * the private package, the check soft-skips rather than blocking every skills PR.
  */
 import { spawnSync } from 'node:child_process';
-import { SIGNER_SPEC, KEYGEN_CONTRACT } from './signer-pin.mjs';
+import { SIGNER_PIN, SIGNER_SPEC, KEYGEN_CONTRACT } from './signer-pin.mjs';
 
 function candidates() {
   const list = [];
@@ -57,6 +57,12 @@ if (!caps) {
 }
 if (caps.signer_protocol !== 'sohopay-signer/1') {
   console.error(`FAIL: signer_protocol is ${caps.signer_protocol}, expected sohopay-signer/1`);
+  process.exit(1);
+}
+// The gate proves the PINNED signer: a resolved signer of any other version (e.g. one already
+// on PATH) must fail rather than pass the gate without exercising the pin.
+if (caps.implementation_version !== SIGNER_PIN) {
+  console.error(`FAIL: implementation_version is ${caps.implementation_version}, expected the pin ${SIGNER_PIN} (${SIGNER_SPEC})`);
   process.exit(1);
 }
 const contract = caps.command_contracts?.['key generate'];
