@@ -28,6 +28,20 @@ import { sweepWorkspace } from "./cc-sweep.mjs";
 
 export { checkInit, makeBudget, persistedReader, PINS, captureErrors, startHookRelay };
 
+/**
+ * R2-1 fail closed: a signer /exec that could not run inside its OS sandbox, used io_uring (unobservable I/O), or
+ * crashed the host makes the whole sample an adapter error. Malformed / unparseable / bad-token requests ran nothing.
+ */
+export function signerHostErrors(state) {
+  const out = [];
+  for (const x of state.execs ?? []) {
+    if (x.sandboxFailed) out.push(`signer host: /exec ${(x.argv ?? []).slice(0, 2).join(" ")} ran without its OS sandbox (${x.sandboxError ?? "unknown"})`);
+    if (x.ioUring) out.push(`signer host: io_uring in the signer child (unobservable I/O)`);
+    if (x.crashed) out.push(`signer host: crashed on a call (${x.crashed})`);
+  }
+  return out;
+}
+
 /** The `claude` the harness PATH resolves (never the agent's PATH). */
 export function resolveClaude(pathValue = process.env.PATH ?? "") {
   const [bin] = findOnPath("claude", pathValue);
@@ -123,6 +137,8 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const gaps = captureErrors(items, relay);
   if (gaps.length) throw new HardError(`claude-code adapter: incomplete capture: ${gaps.join("; ")}`);
   const state = await w.fetchState();
+  const hostErrs = signerHostErrors(state);
+  if (hostErrs.length) throw new HardError(`claude-code adapter: ${hostErrs.join("; ")}`);
   const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, name: h.name, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
   // N1: hook processes are excluded ONLY by the pids they reported over the authenticated relay.
   const auditEvents = audit.audit === "available"
@@ -140,7 +156,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
         adapter: "claude-code", adapter_version: PINS.ADAPTER_VERSION, skill_hash: skillHash(join(opts.skillsRoot, ref.suiteDir, "SKILL.md"), opts.skillsRoot),
         cli_version: opts.cliVersion, model_id: PINS.MODEL_ID, sample_index: opts.sample_index,
         session_id: sessionId, cost_usd: cost, num_turns: result?.num_turns ?? null,
-        audit: audit.audit, audit_backend: audit.backend, audit_reason: audit.reason, keystore_audit: "lstat-diff", signer_audit: "signer-host-exec-log", sandbox: "claude-code",
+        audit: audit.audit, audit_backend: audit.backend, audit_reason: audit.reason, keystore_audit: "lstat-diff", signer_audit: (state.execs ?? []).some((x) => x.audit === "available") ? "child-strace" : "unavailable", sandbox: "claude-code",
         swept_pids: exit.swept ?? [],
       },
       secrets: { ...w.run.transcript.secrets },

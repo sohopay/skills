@@ -12,6 +12,7 @@
 //            The cross-platform key-store lstat audit and the signer host's open log still run everywhere.
 import { spawnSync } from "node:child_process";
 import { posix } from "node:path";
+import { HardError } from "../schema.mjs";
 
 // *at / fd forms exist on every Linux arch; `?name` = optional (strace or the kernel may not know it).
 const COMMON = [
@@ -19,6 +20,8 @@ const COMMON = [
   "linkat", "symlinkat", "fchmodat", "?fchmodat2", "fchownat", "mkdirat", "mknodat", "utimensat", "truncate", "ftruncate",
   "fchmod", "fchown", "setxattr", "lsetxattr", "fsetxattr", "removexattr", "lremovexattr", "fremovexattr",
   "execve", "execveat", "chdir", "fchdir", "clone", "?clone3",
+  // R2-9: io_uring I/O carries no paths strace can see — its use in an agent subtree is itself an adapter error.
+  "?io_uring_setup", "?io_uring_enter",
 ];
 // Legacy path syscalls that only x86-64 still has (aarch64 never did).
 const X64_ONLY = ["open", "creat", "stat", "lstat", "access", "readlink", "unlink", "rename", "link", "symlink", "chmod", "chown", "lchown", "mkdir", "rmdir", "mknod", "utimes", "fork", "vfork"];
@@ -174,10 +177,13 @@ function pathsOf(rec, parts, cwd, op, follow) {
 /**
  * Parse strace output into audit events under `storeRoot`: [{path, op, at, pid, ret, callId}].
  * @param {string} text
- * @param {{storeRoot:string, cwd:string, excludePids?:Set<number>, windows:{id:string, name?:string, start:number, end:number}[]}} o
- *   windows: tool-call windows (Pre → Post hook times). excludePids: hook processes (self-reported over the relay).
+ * @param {{storeRoot:string, cwd:string, excludePids?:Map<number,number>, windows:{id:string, name?:string, start:number, end:number}[]}} o
+ *   windows: tool-call windows (Pre → Post hook times). excludePids: hook pid → when the relay received its report;
+ *   a pid is excluded only as a DIRECT child of the CLI cloned within that hook's span (R2-8).
  */
-export function parseStrace(text, { storeRoot, cwd, excludePids = new Set(), windows = [] }) {
+export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), windows = [] }) {
+  const HOOK_SPAN_MS = 60_000;
+  const isHookClone = (child, at) => excludePids.has(child) && at <= excludePids.get(child) + 1000 && excludePids.get(child) - at <= HOOK_SPAN_MS;
   const recs = records(text);
   const procs = new Map(); // pid → {kind: "cli"|"tool"|"excluded"|"orphan", callId, cwd}
   const buffered = new Map(); // pid → its records seen before its parent's clone returned
@@ -195,7 +201,7 @@ export function parseStrace(text, { storeRoot, cwd, excludePids = new Set(), win
       if (!/^\d+$/.test(ret)) return;
       const child = Number(ret);
       const fresh = { kind: info.kind, callId: info.callId, cwd: info.cwd };
-      if (excludePids.has(child)) fresh.kind = "excluded";
+      if (info.kind === "cli" && !/CLONE_THREAD/.test(args) && isHookClone(child, at)) fresh.kind = "excluded";
       else if (info.kind === "cli" && !/CLONE_THREAD/.test(args)) {
         const w = windowAt(at);
         fresh.kind = w ? "tool" : "excluded";
@@ -207,6 +213,7 @@ export function parseStrace(text, { storeRoot, cwd, excludePids = new Set(), win
       return;
     }
     if (info.kind === "excluded") return;
+    if (/^io_uring_(setup|enter)$/.test(sys) && info.kind !== "cli") throw new HardError(`strace: io_uring used by agent process ${pid} — its file I/O is unobservable`);
     const parts = splitArgs(args);
     if (sys === "chdir" || sys === "fchdir") {
       if (ret !== "0") return;
@@ -234,7 +241,6 @@ export function parseStrace(text, { storeRoot, cwd, excludePids = new Set(), win
   };
 
   for (const rec of recs) {
-    if (excludePids.has(rec.pid) && !procs.has(rec.pid)) procs.set(rec.pid, { kind: "excluded", callId: null, cwd });
     const info = procs.get(rec.pid);
     if (info) { handle(rec, info); continue; }
     if (!buffered.has(rec.pid)) buffered.set(rec.pid, []);

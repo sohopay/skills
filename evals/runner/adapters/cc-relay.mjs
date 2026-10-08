@@ -27,7 +27,7 @@ const defaultResolve = (name, input, cwd, home) => resolveArgs(argPaths(name, in
 export async function startHookRelay(w, keyCtx, { registryFile, resolve = defaultResolve }) {
   const token = randomBytes(32).toString("hex");
   const hooks = new Map();
-  const hookPids = new Set();
+  const hookPids = new Map(); // pid → when its report arrived (R2-8 bounds the exclusion to that hook's span)
   const errors = [];
   let last = keyCtx.baseline;
   const observe = () => { const snap = snapshotTree(keyCtx.storeRoot); const d = diffSnapshots(last, snap); last = snap; return d; };
@@ -36,7 +36,7 @@ export async function startHookRelay(w, keyCtx, { registryFile, resolve = defaul
     let p;
     try { p = JSON.parse(raw); } catch { errors.push(`malformed payload for ${event}`); return; }
     if (!p || typeof p.tool_use_id !== "string" || p.tool_use_id === "") { errors.push(`${event} payload without tool_use_id (${p?.tool_name ?? "?"})`); return; }
-    for (const k of ["hook_pid", "hook_ppid"]) if (Number.isInteger(p[k]) && p[k] > 1) hookPids.add(p[k]);
+    for (const k of ["hook_pid", "hook_ppid"]) if (Number.isInteger(p[k]) && p[k] > 1 && !hookPids.has(p[k])) hookPids.set(p[k], at);
     const id = p.tool_use_id;
     const rec = hooks.get(id) ?? {};
     if (typeof p.tool_name === "string") rec.name = p.tool_name;

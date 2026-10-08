@@ -122,6 +122,7 @@ export function assemble(o) {
   // are not events; every other open is (op open|write), and every refusal with the path it was aimed at (a refused
   // final-component link: where it pointed) as an attempted access (input / key) or write.
   for (const x of signerExecs) {
+    if (!Array.isArray(x.argv)) continue; // malformed / unparseable / bad-token requests ran nothing
     const id = attribute(x.at, windows, (w) => w.name === "Bash");
     const emit = (e) => { const ev = { type: "file_open_audit", source: "signer-host", rank: 2, at: x.at, ...e }; if (id) queue(afterResult, id, ev); else tail.push(ev); };
     for (const f of x.opens) if (!f.sanctioned) emit({ path: f.path, op: f.op, ...(f.lexical ? { lexical: true } : {}) });

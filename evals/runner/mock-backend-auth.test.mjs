@@ -24,7 +24,7 @@ async function up() {
   const backend = createBackend(run, { sink: logs.journal, mcpToken: MCP, ctl: { token: CTL, state: () => ({ journal: logs.journal, execs: logs.execs, owned: logs.owned }) } });
   const base = await backend.listen(0);
   mkdirSync(join(ROOT, "priv"), { recursive: true });
-  const host = createSignerHost(run, { logs, clientToken: CLIENT, policy: { home: join(ROOT, "home"), roots: [join(ROOT, "home")], mktemp: [] }, privateDir: join(ROOT, "priv") });
+  const host = createSignerHost(run, { logs, clientToken: CLIENT, policy: { home: join(ROOT, "home"), writeRoots: [join(ROOT, "home")], denyRead: [], denyWrite: [], allowRead: [], mktemp: [], since: Date.now() }, privateDir: join(ROOT, "priv") });
   const signer = await host.listen(0);
   return { base, signer, close: async () => { await backend.close(); await host.close(); } };
 }
@@ -57,7 +57,7 @@ test("N7: the signer host's /exec rejects a missing or wrong client token (and r
     assert.equal((await post({})).status, 404);
     assert.equal((await post({ "x-signer-client": "e".repeat(47) })).status, 404);
     const state = await (await fetch(`${w.base}/__ctl/state`, { headers: { "x-ctl-token": CTL } })).json();
-    assert.equal(state.execs.length, 0, "nothing executed or logged for rejected requests");
+    assert.deepEqual(state.execs.map((e) => e.rejected), ["token", "token"], "R2-5: rejections are logged, and nothing ran");
     assert.equal((await post({ "x-signer-client": CLIENT })).status, 200);
   } finally { await w.close(); }
 });

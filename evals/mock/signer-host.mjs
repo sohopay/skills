@@ -1,32 +1,39 @@
 // Out-of-process host for the mock `sohopay-signer` in a LIVE run. The agent's PATH carries only a thin client
 // (evals/runner/adapters/cc-signer-client.mjs) that forwards argv / stdin / cwd here and replays the answer; the run
-// config (canaries, scenario hooks) stays in this process. Semantics are exactly signer-core.mjs run().
+// config (canaries, scenario hooks) stays in this process.
 //
-// Confinement (T15 fix N2): the host is confined exactly like a real signer inside the agent's sandbox. Every path
-// argument must resolve inside the run's sandbox set (`policy.roots`: workspace HOME + the sandbox TMPDIR, plus fresh
-// mktemp dirs matching `policy.mktemp`) or it is refused with the real signer's error for that flag
-// (`cannot read input file: X`, `cannot write header file: X`, KEY_PATH_INVALID for --key / --out). HOME and the key
-// roots come from the policy; forwarded env (SOHOPAY_SIGNER_KEY_ROOTS, …) is ignored.
-//
-// Evidence (I8): the host opens --input / --write-header ITSELF with O_NOFOLLOW (a final-component link is refused,
-// never followed) and identifies what it opened by the OPENED fd — fstat dev/ino against the key store's inodes, and
-// on Linux /proc/self/fd/N — never by a path realpath'd before or after the open. The signer core then reads /
-// writes host-private copies. EVERY /exec is logged in memory (argv, cwd, times, opens, refusals) and leaves this
-// process only over the backend's authenticated control channel.
-//
-// `/exec` requires the client token baked into the installed client (agent-readable by necessity: holding it equals
-// running the signer, which the agent may do anyway).
-import { closeSync, constants, existsSync, fchmodSync, fstatSync, lstatSync, mkdtempSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, rmSync, writeFileSync, writeSync } from "node:fs";
+// Confinement (T15 fixes N2, R2-1): every /exec runs signer-core in a CHILD process (signer-child.mjs) under the same
+// OS sandbox filesystem policy the agent's Bash gets (lib/signer-sandbox.mjs: macOS sandbox-exec, Linux bwrap). Path
+// races therefore hit kernel enforcement, exactly as for a real signer inside the agent's sandbox. Before that:
+//   * duplicated path flags (--key / --out / --input / --write-header) are refused with the usage-error shape (exit 2),
+//     and the child's argv is REBUILT from the parsed values, so nothing reaches the core unparsed;
+//   * a JS pre-check refuses, with the real signer's error for the flag, any path outside the sandbox set (HOME, the
+//     sandbox TMPDIR, mktemp dirs owned by us and created this run; minus denyRead, and minus denyWrite for writes),
+//     and any final-component link. Comparisons use realpathSync.native (on-disk case). This is a FAST refusal only;
+//     the boundary is the kernel.
+// HOME and the key roots come from the policy; forwarded env is ignored. No sandbox → refusal + sandboxFailed (the
+// adapter makes the sample an adapter error); never an unsandboxed run.
+// Evidence: EVERY /exec is logged in memory (argv, cwd, times, refusals, sandbox, and — Linux, under strace — every
+// file the child opened; macOS has no root-free tracing, so opens are `audit: unavailable`). Malformed, unparseable
+// and bad-token requests are logged too. The log leaves only over the backend's authenticated control channel.
+// `/exec` requires the client token baked into the installed client (agent-readable by necessity).
+import { spawnSync } from "node:child_process";
+import { lstatSync, mkdtempSync, readlinkSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { timingSafeEqual } from "node:crypto";
-import { makeContext, parseArgs, run as runSigner } from "./signer-core.mjs";
+import { parseArgs } from "./signer-core.mjs";
 import { diffSnapshots, snapshotTree } from "./lib/keystore-snapshot.mjs";
 import { resolveLoose } from "./lib/realpath-loose.mjs";
+import { runSandboxed, sandboxSupport } from "./lib/signer-sandbox.mjs";
+import { parseChildTrace } from "./lib/child-trace.mjs";
 
+export { sandboxSupport };
 export const HOST = "127.0.0.1";
 const MAX_BODY = 4 * 1024 * 1024;
-const MAX_INPUT = 1024 * 1024;
+const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
+// Child strace (Linux): the agent-tree syscall set plus io_uring (unobservable I/O must at least be seen).
+const CHILD_TRACE = "openat,?openat2,creat,open,newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,?io_uring_setup,?io_uring_enter";
 
 /** Constant-time string equality (false on any length mismatch). */
 export function tokenEquals(a, b) {
@@ -34,6 +41,171 @@ export function tokenEquals(a, b) {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+/** A fresh in-memory log set for one run. */
+export const newLogs = () => ({ journal: [], owned: [], execs: [], state: {} });
+
+const unprivate = (p) => p.replace(/^\/private(?=\/(?:tmp|var)\/)/, "");
+const norm = (p) => { const u = unprivate(resolveLoose(p)); return process.platform === "darwin" ? u.toLowerCase() : u; };
+const inside = (n, root) => { const c = norm(root); return n === c || n.startsWith(c + sep); };
+
+/** The mktemp dir (matching a policy pattern, owned by us, created during this run) that `p` lies in, or null. */
+function freshMktempDir(p, policy) {
+  const u = unprivate(resolveLoose(p));
+  for (const src of policy.mktemp ?? []) {
+    const m = new RegExp(`^(?:${src})(?=/|$)`).exec(u);
+    if (!m) continue;
+    try {
+      const st = lstatSync(m[0]);
+      const born = st.birthtimeMs > 0 ? st.birthtimeMs : st.ctimeMs;
+      if (st.isDirectory() && st.uid === process.getuid() && born >= policy.since - 2000) return resolveLoose(m[0]);
+    } catch { /* gone */ }
+  }
+  return null;
+}
+/** Fast-path policy: reads in the sandbox set minus denyRead; writes also minus denyWrite. */
+function allowedPath(p, policy, write) {
+  const n = norm(p);
+  const reallowed = (policy.allowRead ?? []).some((a) => inside(n, a));
+  if (!reallowed && (policy.denyRead ?? []).some((d) => inside(n, d))) return false;
+  if (write && (policy.denyWrite ?? []).some((d) => inside(n, d))) return false;
+  if ((policy.writeRoots ?? []).some((r) => inside(n, r))) return true;
+  return freshMktempDir(p, policy) !== null;
+}
+function linkTargetOrNull(p) {
+  try { if (lstatSync(p).isSymbolicLink()) return resolveLoose(resolve(dirname(p), readlinkSync(p))); } catch { /* gone */ }
+  return null;
+}
+const usage = (message) => ({ stdout: "", stderr: `${message}\n`, exitCode: 2 });
+const signerError = (code, message) => ({ stdout: "", stderr: `${JSON.stringify({ error: { code, message } })}\n`, exitCode: 1 });
+
+/** The duplicated path flag in argv, if any (`--flag v` and `--flag=v` both count). */
+function duplicatePathFlag(argv) {
+  for (const f of PATH_FLAGS) if (argv.filter((t) => t === f || t.startsWith(`${f}=`)).length > 1) return f;
+  return null;
+}
+/** argv rebuilt from parsed values only. */
+function rebuild(p) {
+  const out = p.command.split(" ");
+  for (const [k, f] of [["input", "--input"], ["key", "--key"], ["out", "--out"], ["writeHeader", "--write-header"]]) if (typeof p[k] === "string") out.push(f, p[k]);
+  if (p.envelope) out.push("--envelope");
+  out.push("--output", p.output);
+  return out;
+}
+
+/** Fast pre-check of every path argument; returns {refusal} or {extraWriteRoots, keyPath, outPath}. */
+function precheck(parsed, { cwd, policy, rec }) {
+  const refuse = (role, arg, code, message, extra) => { rec.refusals.push({ role, arg, code, ...extra }); return { refusal: signerError(code, message) }; };
+  const extraWriteRoots = [];
+  for (const [field, role, write] of [["key", "key", false], ["out", "out", true]]) {
+    const v = parsed[field];
+    if (typeof v !== "string" || v === "-") continue;
+    const abs = resolve(cwd, v);
+    if (!allowedPath(abs, policy, write)) return refuse(role, v, "KEY_PATH_INVALID", `${abs} is not under an allowed key root`, { path: abs });
+  }
+  if (typeof parsed.input === "string" && parsed.input !== "-") {
+    const abs = resolve(cwd, parsed.input);
+    const msg = `cannot read input file: ${parsed.input}`;
+    if (!allowedPath(abs, policy, false)) return refuse("input", parsed.input, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "outside sandbox" });
+    const target = linkTargetOrNull(abs);
+    if (target) return refuse("input", parsed.input, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "ELOOP", target });
+    const mk = freshMktempDir(abs, policy);
+    if (mk) extraWriteRoots.push(mk);
+  }
+  if (typeof parsed.writeHeader === "string") {
+    const abs = resolve(cwd, parsed.writeHeader);
+    const msg = `cannot write header file: ${parsed.writeHeader}`;
+    if (!allowedPath(abs, policy, true)) return refuse("write_header", parsed.writeHeader, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "outside sandbox" });
+    const target = linkTargetOrNull(abs);
+    if (target) return refuse("write_header", parsed.writeHeader, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "ELOOP", target });
+    const mk = freshMktempDir(abs, policy);
+    if (mk) extraWriteRoots.push(mk);
+  }
+  return { extraWriteRoots };
+}
+
+/**
+ * Execute one forwarded invocation under the policy (async: the signer runs in a sandboxed child).
+ * @param {object} config  run config
+ * @param {{argv:string[], stdin:string, cwd:string}} inv   (any forwarded env is ignored)
+ * @param {object} logs    newLogs()
+ * @param {{policy:object, privateDir:string, seam?:{precheck?:boolean, sandboxCommand?:string, brokenProfile?:boolean}}} o
+ */
+export async function execForwarded(config, inv, logs, { policy, privateDir, seam = {} }) {
+  const { argv, stdin, cwd } = inv ?? {};
+  if (!Array.isArray(argv) || argv.some((a) => typeof a !== "string") || typeof cwd !== "string" || !isAbsolute(cwd)) {
+    logs.execs.push({ malformed: "argv", at: Date.now() });
+    return { stdout: "", stderr: "malformed invocation\n", exitCode: 2 };
+  }
+  const rec = { argv: [...argv], cwd, at: Date.now(), done: null, command: null, opens: [], refusals: [], sandbox: null, audit: "unavailable" };
+  logs.execs.push(rec);
+  try {
+    const dup = duplicatePathFlag(argv);
+    if (dup) { rec.refusals.push({ role: "argv", arg: dup, code: "USAGE", reason: "duplicate flag" }); return usage(`duplicate flag: ${dup}`); }
+    let parsed = null;
+    try { parsed = parseArgs(argv); } catch { parsed = null; } // the core reports usage errors itself
+    rec.command = parsed?.command ?? null;
+    let extraWriteRoots = [];
+    if (parsed && seam.precheck !== false) {
+      const pc = precheck(parsed, { cwd, policy, rec });
+      if (pc.refusal) return pc.refusal;
+      extraWriteRoots = pc.extraWriteRoots;
+    } else if (parsed) {
+      for (const k of ["input", "writeHeader"]) if (typeof parsed[k] === "string") { const mk = freshMktempDir(resolve(cwd, parsed[k]), policy); if (mk) extraWriteRoots.push(mk); }
+    }
+    return await runChild(config, { argv: parsed ? rebuild(parsed) : argv, stdin, cwd, parsed }, { logs, rec, policy, privateDir, seam, extraWriteRoots });
+  } finally {
+    rec.done = Date.now();
+  }
+}
+
+async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, policy, privateDir, seam, extraWriteRoots }) {
+  const support = sandboxSupport();
+  rec.sandbox = support.kind;
+  const home = policy.home;
+  const work = mkdtempSync(join(privateDir, "x-"));
+  try {
+    const traceable = support.kind === "bwrap" && spawnSync("strace", ["-V"], { stdio: "ignore" }).status === 0;
+    const strace = traceable ? { file: join(work, "child.strace"), argv: ["strace", "-f", "-y", "-qq", "-ttt", "-s", "4096", "-o", join(work, "child.strace"), "-e", `trace=${CHILD_TRACE}`, "--"] } : null;
+    const childPolicy = { home, writeRoots: [...policy.writeRoots, ...extraWriteRoots], denyRead: policy.denyRead ?? [], denyWrite: policy.denyWrite ?? [], allowRead: policy.allowRead ?? [] };
+    const before = snapshotTree(join(home, ".agents"));
+    const out = await runSandboxed(support, { policy: childPolicy, cwd, request: { config, argv, stdin: typeof stdin === "string" ? stdin : "", home, state: logs.state }, strace, seam });
+    if (!out.ok) {
+      rec.sandboxFailed = true;
+      rec.sandboxError = out.error;
+      return signerError("MALFORMED_ENVELOPE", "signer sandbox unavailable");
+    }
+    logs.state = out.reply.state ?? logs.state;
+    for (const n of out.reply.notes ?? []) logs.journal.push({ source: "signer", condition: n.condition, at: n.at });
+    if (out.trace !== null) recordTrace(rec, out.trace, { home, parsed, cwd });
+    if (rec.command === "key generate") {
+      for (const c of diffSnapshots(before, snapshotTree(join(home, ".agents")))) logs.owned.push({ path: c.path, after: c.after, change: c.change, at: Date.now() });
+    }
+    return out.reply.result;
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/** Linux: the child's opens (kernel paths), with the sanctioned --key read / keygen --out write marked as such. */
+function recordTrace(rec, text, { home, parsed, cwd }) {
+  const { opens, ioUring } = parseChildTrace(text, process.execPath);
+  rec.audit = "available";
+  if (ioUring) rec.ioUring = true;
+  const store = resolveLoose(join(home, ".agents"));
+  const key = typeof parsed?.key === "string" && parsed.key !== "-" ? resolveLoose(resolve(cwd, parsed.key)) : null;
+  const outDir = rec.command === "key generate" && typeof parsed?.out === "string" ? dirname(resolveLoose(resolve(cwd, parsed.out))) : null;
+  for (const o of opens) {
+    const inStore = o.path === store || o.path.startsWith(store + sep);
+    if (!inStore && o.op === "open") continue; // reads outside the store (node, its libs, the input copy) are noise
+    // Sanctioned: reading / checking the --key file and its key-root ancestors; keygen's writes in (and checks of the
+    // ancestors of) the --out dir. Anything else in the store is the signer reaching where it was not pointed.
+    const readish = o.op === "open" || o.op === "stat" || o.op === "access";
+    const sanctioned = (key !== null && readish && (o.path === key || key.startsWith(o.path + sep)))
+      || (outDir !== null && (o.path === outDir || o.path.startsWith(outDir + sep) || outDir.startsWith(o.path + sep)));
+    rec.opens.push({ role: "child", path: o.path, op: o.op, storeHit: inStore, ...(sanctioned ? { sanctioned: true } : {}) });
+  }
 }
 
 function readJson(req) {
@@ -46,176 +218,22 @@ function readJson(req) {
   });
 }
 
-/** A fresh in-memory log set for one run. */
-export const newLogs = () => ({ journal: [], owned: [], execs: [], state: {} });
-
-const unprivate = (p) => p.replace(/^\/private(?=\/(?:tmp|var)\/)/, "");
-/** Is the canonical path p inside the policy's sandbox set (and outside what the sandbox denies within it)? */
-function allowed(p, policy) {
-  const n = unprivate(p);
-  const inside = (r) => { const c = unprivate(resolveLoose(r)); return n === c || n.startsWith(c + sep); };
-  if ((policy.deny ?? []).some(inside)) return false;
-  if (policy.roots.some(inside)) return true;
-  return (policy.mktemp ?? []).some((src) => new RegExp(`^(?:${src})(?:/|$)`).test(n));
-}
-
-/** dev:ino → path of everything in the key store (the identity an opened fd is compared against). */
-function storeInodes(home) {
-  const out = new Map();
-  const walk = (p) => {
-    let st;
-    try { st = lstatSync(p, { bigint: true }); } catch { return; }
-    out.set(`${st.dev}:${st.ino}`, p);
-    if (st.isDirectory()) for (const n of readdirSync(p)) walk(join(p, n));
-  };
-  walk(join(home, ".agents"));
-  return out;
-}
-
-/** What an opened fd IS: dev/ino, its key-store path if it is one, and (Linux) the kernel's path for the fd. */
-function fdIdentity(fd, inodes, home) {
-  const st = fstatSync(fd, { bigint: true });
-  let fdPath = null;
-  try { fdPath = readlinkSync(`/proc/self/fd/${fd}`); } catch { fdPath = null; }
-  const storePath = inodes.get(`${st.dev}:${st.ino}`) ?? null;
-  const path = fdPath ?? storePath;
-  return { dev: String(st.dev), ino: String(st.ino), path, storeHit: Boolean(storePath) || (fdPath ?? "").startsWith(join(home, ".agents") + sep) };
-}
-
-/** Where a refused final-component link points (observed at refusal time; the link itself was never followed). */
-function linkTargetOrNull(p) {
-  try { if (lstatSync(p).isSymbolicLink()) return resolveLoose(resolve(dirname(p), readlinkSync(p))); } catch { /* gone */ }
-  return null;
-}
-
-class Refused extends Error {
-  constructor(code, message) { super(message); this.code = code; }
-}
-
-/**
- * Execute one forwarded invocation under the policy.
- * @param {object} config  run config
- * @param {{argv:string[], stdin:string, cwd:string}} inv   (any forwarded env is ignored)
- * @param {object} logs    newLogs()
- * @param {{policy:{home:string, roots:string[], mktemp?:string[]}, privateDir:string, seam?:{beforeOpen?:Function, afterOpen?:Function}}} o
- */
-export function execForwarded(config, inv, logs, { policy, privateDir, seam = {} }) {
-  const { argv, stdin, cwd } = inv;
-  if (!Array.isArray(argv) || argv.some((a) => typeof a !== "string") || typeof cwd !== "string") {
-    return { stdout: "", stderr: "malformed invocation\n", exitCode: 2 };
-  }
-  const rec = { argv: [...argv], cwd, at: Date.now(), done: null, command: null, opens: [], refusals: [] };
-  logs.execs.push(rec);
-  const home = policy.home;
-  const refuse = (role, arg, code, message, extra = {}) => { rec.refusals.push({ role, arg, code, ...extra }); throw new Refused(code, message); };
-  const work = mkdtempSync(join(privateDir, "x-"));
-  try {
-    let parsed = null;
-    try { parsed = parseArgs(argv); } catch { parsed = null; } // usage errors are the signer's to report
-    rec.command = parsed?.command ?? null;
-    const newArgv = [...argv];
-    const swap = (flag, from, to) => {
-      for (let k = 0; k < newArgv.length; k++) {
-        if (newArgv[k] === flag && newArgv[k + 1] === from) { newArgv[k + 1] = to; return; }
-        if (newArgv[k] === `${flag}=${from}`) { newArgv[k] = `${flag}=${to}`; return; }
-      }
-    };
-    const header = parsed ? checkPaths(parsed, { cwd, home, policy, refuse, rec }) : null;
-    if (parsed && typeof parsed.input === "string" && parsed.input !== "-") swap("--input", parsed.input, readInputCopy(parsed.input, { cwd, home, policy, refuse, rec, seam, work }));
-    if (header) { header.copy = join(work, "hdr.txt"); swap("--write-header", header.arg, header.copy); }
-    const before = snapshotTree(join(home, ".agents"));
-    const ctx = makeContext({ ...config, journal: null, state_file: null }, { env: { HOME: home }, cwd, argv: newArgv });
-    ctx.note = (condition) => logs.journal.push({ source: "signer", condition, at: Date.now() });
-    ctx.readState = () => logs.state;
-    ctx.writeState = (s) => { logs.state = s; };
-    const result = runSigner(newArgv, typeof stdin === "string" ? stdin : "", ctx);
-    if (header && existsSync(header.copy) && result.exitCode === 0) placeHeader(header, { home, rec, seam });
-    if (header) result.stdout = result.stdout.split(header.copy).join(header.arg);
-    // Only `key generate` legitimately changes the key store; its post-states are signer-owned.
-    if (rec.command === "key generate") {
-      for (const c of diffSnapshots(before, snapshotTree(join(home, ".agents")))) logs.owned.push({ path: c.path, after: c.after, change: c.change, at: Date.now() });
-    }
-    return result;
-  } catch (e) {
-    if (e instanceof Refused) return { stdout: "", stderr: `${JSON.stringify({ error: { code: e.code, message: e.message } })}\n`, exitCode: 1 };
-    throw e;
-  } finally {
-    rec.done = Date.now();
-    rmSync(work, { recursive: true, force: true });
-  }
-}
-
-/** Policy checks for --key / --out (sanctioned; the signer core opens them) and --write-header (before signing). */
-function checkPaths(parsed, { cwd, policy, refuse, rec }) {
-  for (const [field, role] of [["key", "key"], ["out", "out"]]) {
-    const v = parsed[field];
-    if (typeof v !== "string" || v === "-") continue;
-    const abs = resolve(cwd, v);
-    if (!allowed(resolveLoose(abs), policy)) refuse(role, v, "KEY_PATH_INVALID", `${abs} is not under an allowed key root`, { path: abs });
-    rec.opens.push({ role, arg: v, path: abs, op: role === "key" ? "read" : "write", sanctioned: true });
-  }
-  if (typeof parsed.writeHeader !== "string") return null;
-  const arg = parsed.writeHeader;
-  const abs = resolve(cwd, arg);
-  const msg = `cannot write header file: ${arg}`;
-  if (!allowed(join(resolveLoose(dirname(abs)), abs.slice(dirname(abs).length + 1)), policy)) refuse("write_header", arg, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "outside sandbox" });
-  const target = linkTargetOrNull(abs);
-  if (target) refuse("write_header", arg, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "ELOOP", target });
-  return { arg, abs };
-}
-
-/** Open --input ourselves (O_NOFOLLOW), identify the fd, copy it host-privately; returns the copy's path. */
-function readInputCopy(arg, { cwd, home, policy, refuse, rec, seam, work }) {
-  const msg = `cannot read input file: ${arg}`;
-  const abs = resolve(cwd, arg);
-  if (!allowed(resolveLoose(abs), policy)) refuse("input", arg, "MALFORMED_ENVELOPE", msg, { path: abs, reason: "outside sandbox" });
-  const inodes = storeInodes(home);
-  seam.beforeOpen?.("input", abs);
-  let fd;
-  try { fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW); } catch (e) {
-    refuse("input", arg, "MALFORMED_ENVELOPE", msg, { path: abs, reason: e.code, target: linkTargetOrNull(abs) });
-  }
-  try {
-    seam.afterOpen?.("input", abs);
-    const id = fdIdentity(fd, inodes, home);
-    rec.opens.push({ role: "input", arg, op: "open", path: id.path ?? abs, lexical: !id.path, storeHit: id.storeHit, dev: id.dev, ino: id.ino });
-    const buf = Buffer.alloc(MAX_INPUT);
-    const n = readSync(fd, buf, 0, MAX_INPUT, 0);
-    const copy = join(work, "input.json");
-    writeFileSync(copy, buf.subarray(0, n), { mode: 0o600 });
-    return copy;
-  } finally { closeSync(fd); }
-}
-
-/** Write the header to its real target: O_NOFOLLOW, 0600, identified by the opened fd. */
-function placeHeader(header, { home, rec, seam }) {
-  const content = readFileSync(header.copy);
-  const inodes = storeInodes(home);
-  seam.beforeOpen?.("write_header", header.abs);
-  let fd;
-  try { fd = openSync(header.abs, constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW, 0o600); } catch (e) {
-    rec.refusals.push({ role: "write_header", arg: header.arg, code: "MALFORMED_ENVELOPE", path: header.abs, reason: e.code, target: linkTargetOrNull(header.abs) });
-    throw new Refused("MALFORMED_ENVELOPE", `cannot write header file: ${header.arg}`);
-  }
-  try {
-    seam.afterOpen?.("write_header", header.abs);
-    const id = fdIdentity(fd, inodes, home);
-    rec.opens.push({ role: "write_header", arg: header.arg, op: "write", path: id.path ?? header.abs, lexical: !id.path, storeHit: id.storeHit, dev: id.dev, ino: id.ino });
-    writeSync(fd, content);
-    fchmodSync(fd, 0o600);
-  } finally { closeSync(fd); }
-}
-
 /** HTTP host on 127.0.0.1 (random port): POST /exec {argv, stdin, cwd} with x-signer-client → {stdout, stderr, exitCode}. */
 export function createSignerHost(config, { logs, clientToken, policy, privateDir, seam }) {
   if (!policy || !isAbsolute(policy.home) || !privateDir) throw new Error("signer host needs a policy and a private dir");
   const server = createServer((req, res) => {
-    const reply = (status, body) => { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); };
-    if (req.method !== "POST" || req.url !== "/exec" || !tokenEquals(req.headers["x-signer-client"], clientToken)) return reply(404, { error: "not found" });
-    readJson(req).then(
-      (inv) => reply(200, execForwarded(config, inv, logs, { policy, privateDir, seam })),
-      () => reply(400, { stdout: "", stderr: "malformed invocation\n", exitCode: 2 }),
-    );
+    const reply = (status, body) => { if (!res.headersSent) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); } };
+    if (req.method !== "POST" || req.url !== "/exec") return reply(404, { error: "not found" });
+    if (!tokenEquals(req.headers["x-signer-client"], clientToken)) { logs.execs.push({ rejected: "token", at: Date.now() }); return reply(404, { error: "not found" }); }
+    // Every outcome is a reply: no rejection ever escapes to kill the backend (a crash is this call's error only).
+    (async () => {
+      let inv;
+      try { inv = await readJson(req); } catch { logs.execs.push({ malformed: "body", at: Date.now() }); return reply(400, { stdout: "", stderr: "malformed invocation\n", exitCode: 2 }); }
+      try { reply(200, await execForwarded(config, inv, logs, { policy, privateDir, seam })); } catch (e) {
+        logs.execs.push({ crashed: String(e?.message ?? e), at: Date.now() });
+        reply(200, signerError("MALFORMED_ENVELOPE", "signer host internal error"));
+      }
+    })();
   });
   return {
     server,

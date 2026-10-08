@@ -166,6 +166,10 @@ export const merchantUrl = (base) => `${base}${MERCHANT_PATH}`;
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (f) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : undefined; };
+  // R2-4: no stray rejection or exception may take the backend (MCP, merchant, signer host, control channel) down; the
+  // request that caused it already got its own error reply.
+  process.on("unhandledRejection", (e) => process.stderr.write(`backend: unhandled rejection: ${e?.message ?? e}\n`));
+  process.on("uncaughtException", (e) => process.stderr.write(`backend: uncaught exception: ${e?.message ?? e}\n`));
   const run = JSON.parse(readFileSync(arg("--run"), "utf8"));
   // --signer-host --tokens <file>: a live run. The signer is hosted here too (confined by tokens.policy); the journal,
   // signer-owned changes and every signer /exec stay in this process's memory and leave only through GET /__ctl/state with the control token. The

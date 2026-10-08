@@ -187,7 +187,8 @@ test("R2-3: writes honour denyWrite (HOME/.claude), and an mktemp-shaped dir cou
   // An mktemp-shaped dir outside the roots: allowed only when created during this run.
   const mk = join(w.dir, "tmp.AbCdEf1234");
   mkdirSync(mk);
-  const pattern = `${w.dir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/tmp\\.[A-Za-z0-9]{6,}`;
+  // Patterns match the /private-stripped canonical path (like the live MKTEMP_DIR_RE's /tmp and /var/folders forms).
+  const pattern = `${w.dir.replace(/^\/private(?=\/var\/)/, "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}/tmp\\.[A-Za-z0-9]{6,}`;
   const old = await world("key-opacity", { policyOverrides: { mktemp: [pattern], since: Date.now() + 60_000 } });
   const r2 = await old.exec(["payment-id", "--input", join(mk, "x.json"), "--output", "json"]);
   assert.deepEqual(err(r2), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${join(mk, "x.json")}` }, "created before this run → refused");

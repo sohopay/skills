@@ -48,7 +48,8 @@ export function parseBackendState(s) {
   const fileRec = (o) => o && typeof o.role === "string" && typeof o.path === "string";
   const entries = ok && s.journal.every((e) => e && typeof e.condition === "string" && Number.isFinite(e.at))
     && s.owned.every((e) => e && typeof e.path === "string" && (e.after === null || typeof e.after === "string"))
-    && s.execs.every((e) => e && Array.isArray(e.argv) && Number.isFinite(e.at) && Number.isFinite(e.done) && Array.isArray(e.opens) && e.opens.every(fileRec) && Array.isArray(e.refusals) && e.refusals.every((r) => r && typeof r.role === "string"));
+    && s.execs.every((e) => e && Number.isFinite(e.at) && (e.malformed || e.rejected || e.crashed
+      || (Array.isArray(e.argv) && Number.isFinite(e.done) && Array.isArray(e.opens) && e.opens.every(fileRec) && Array.isArray(e.refusals) && e.refusals.every((r) => r && typeof r.role === "string"))));
   if (!entries) throw new HardError("mock backend: malformed control-channel state");
   return s;
 }
@@ -158,7 +159,7 @@ const tmpSpellings = (p) => (process.platform === "darwin" && p.startsWith("/tmp
  * of our own (the operator's Claude sessions live there). Node's install prefix is re-allowed if it sits inside a
  * denied root (nvm), since the installed signer runs on it.
  */
-export function confinement({ home, runRoot, prefix = dirname(home), platform = process.platform, tmp = realpathSync(tmpdir()) }) {
+export function confinement({ home, runRoot, prefix = dirname(home), base = realpathSync(runRootBase()), platform = process.platform, tmp = realpathSync(tmpdir()), listTmp = (d) => readdirSync(d) }) {
   const operatorHome = realpathSync(homedir());
   const repoRoot = realpathSync(REPO_ROOT);
   const sandboxTmp = sandboxTmpDir({});
@@ -174,15 +175,20 @@ export function confinement({ home, runRoot, prefix = dirname(home), platform = 
   }
   const nodePrefix = dirname(dirname(realpathSync(process.execPath)));
   const inside = (p, d) => p === d || p.startsWith(d + sep);
-  // N9 (macOS, best effort): $TMPDIR (/var/folders/<a>/<b>/T) holds other runs' workspaces and operator temp files.
-  // Deny it, re-allowing only this run's workspace and fresh `mktemp -d` dirs (tmp.*; macOS mktemp ignores TMPDIR).
+  // N9 / R2-6 (macOS, best effort): $TMPDIR (/var/folders/<a>/<b>/T) holds other runs' workspaces and operator temp
+  // files. Every entry existing at spawn except this run's workspace is denied one by one (pre-existing tmp.* dirs
+  // too) — never `deny T` + `allowRead prefix`, which would re-allow HOME/.claude/projects if allow beats deny in a
+  // subtree. Fresh `mktemp -d` dirs (macOS mktemp ignores TMPDIR) stay usable: file tools get a T/tmp.* allow rule.
   const darwinTmp = platform === "darwin" && !tmp.startsWith("/tmp") && !tmp.startsWith("/private/tmp") ? tmp : null;
   const mktempGlobs = darwinTmp ? [`${darwinTmp}/tmp.*`] : [];
+  let tmpEntries = [];
+  if (darwinTmp) { try { tmpEntries = listTmp(darwinTmp).filter((n) => join(darwinTmp, n) !== prefix).map((n) => join(darwinTmp, n)); } catch { tmpEntries = []; } }
   return {
-    operatorHome, repoRoot, sandboxTmp, mktempGlobs,
-    denyRead: [operatorHome, repoRoot, runRoot, ...others, ...(darwinTmp ? [darwinTmp] : [])],
-    denyWrite: [runRoot, operatorHome, repoRoot, join(home, ".claude")],
-    allowRead: [...([operatorHome, repoRoot].some((d) => inside(nodePrefix, d)) ? [nodePrefix] : []), ...(darwinTmp ? [prefix, ...mktempGlobs] : [])],
+    operatorHome, repoRoot, sandboxTmp, mktempGlobs, base,
+    // R2-7: the run base (relay registry, hook wrapper) is denied explicitly, whatever SP6_RUN_ROOT_BASE says.
+    denyRead: [operatorHome, repoRoot, runRoot, base, ...others, ...tmpEntries],
+    denyWrite: [runRoot, base, operatorHome, repoRoot, join(home, ".claude")],
+    allowRead: [operatorHome, repoRoot].some((d) => inside(nodePrefix, d)) ? [nodePrefix] : [],
   };
 }
 
@@ -249,6 +255,11 @@ export function assertHermetic(w) {
   const c = w.confine;
   if (!c.denyRead.includes(w.runRoot) || !c.denyWrite.includes(w.runRoot)) throw new HardError("hermetic: run root is not denied to the agent for read and write");
   if ([c.operatorHome, c.repoRoot].some((d) => within(realpathSync(w.prefix), d))) throw new HardError("hermetic: the workspace sits inside a root denied to the agent");
+  // R2-7: the run base (hook wrapper + relay registry with tokens) must be denied and outside anything the agent reads.
+  const base = canonicalLoose(w.base);
+  const readable = [realpathSync(w.home), realpathSync(w.prefix), ...tmpSpellings(c.sandboxTmp), ...c.allowRead].filter((p) => !p.includes("*"));
+  if (readable.some((r) => within(base, canonicalLoose(r)) || within(canonicalLoose(r), base))) throw new HardError(`hermetic: the run base ${base} is readable by the agent (SP6_RUN_ROOT_BASE)`);
+  if (!c.denyRead.includes(w.base) || !c.denyWrite.includes(w.base)) throw new HardError("hermetic: the run base is not denied to the agent");
   const signers = findOnPath("sohopay-signer", w.env.PATH);
   const expected = existsSync(join(w.binDir, "sohopay-signer")) ? [join(w.binDir, "sohopay-signer")] : [];
   if (JSON.stringify(signers) !== JSON.stringify(expected)) throw new HardError(`hermetic: sohopay-signer on PATH ${JSON.stringify(signers)} != ${JSON.stringify(expected)}`);
@@ -271,8 +282,8 @@ export function assertHermetic(w) {
  * fetchState, cleanup }. `cleanup()` stops the backend and removes both roots.
  */
 export async function createWorld({ suiteDir, caseId, skillsRoot }) {
-  const base = runRootBase();
-  mkdirSync(base, { recursive: true, mode: 0o700 });
+  mkdirSync(runRootBase(), { recursive: true, mode: 0o700 });
+  const base = realpathSync(runRootBase());
   const runRoot = realpathSync(mkdtempSync(join(base, "sp6-run-")));
   chmodSync(runRoot, 0o700);
   const prefix = realpathSync(mkdtempSync(join(tmpdir(), "agent-home-")));
@@ -300,10 +311,12 @@ export async function createWorld({ suiteDir, caseId, skillsRoot }) {
     const mcpToken = randomBytes(32).toString("hex");
     // N2: the signer host's confinement — the agent's sandbox set: HOME, the sandbox TMPDIR, fresh mktemp dirs — minus
     // what the sandbox denies inside them (the operator's pre-existing /tmp/claude-<uid> entries, …).
-    const confine = confinement({ home, runRoot, prefix });
+    const confine = confinement({ home, runRoot, prefix, base });
+    // The signer host mirrors the agent's sandbox (R2-1): write roots, denyRead / denyWrite / allowRead, and fresh mktemp
+    // dirs (owned by us, created after `since`); its child runs under the same policy in an OS sandbox.
     const policy = {
-      home, roots: [home, ...tmpSpellings(sandboxTmpDir({}))], mktemp: [MKTEMP_DIR_RE.source.replace(/^\^/, "").replace(/\$$/, "")],
-      deny: confine.denyRead.filter((d) => !confine.allowRead.some((a) => a.startsWith(d + sep))),
+      home, writeRoots: [home, ...tmpSpellings(sandboxTmpDir({}))], denyRead: confine.denyRead, denyWrite: confine.denyWrite, allowRead: confine.allowRead,
+      mktemp: [MKTEMP_DIR_RE.source.replace(/^\^/, "").replace(/\$/, "")], since: Date.now(),
     };
     writeFileSync(paths.tokens, JSON.stringify({ ctl: ctlToken, client: clientToken, mcp: mcpToken, policy, privateDir: paths.privateDir }), { mode: 0o600 });
     seedHome(run);
