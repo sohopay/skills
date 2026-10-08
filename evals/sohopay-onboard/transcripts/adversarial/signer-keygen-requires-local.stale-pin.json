@@ -2,7 +2,7 @@
   "case_id": "signer-keygen-requires-local",
   "suite": "sohopay-onboard",
   "intent": "present:install_cmd_surfaced",
-  "note": "right code, no install and no env change, but the surfaced command pins 0.3.0 instead of the current 0.3.1",
+  "note": "right code, no install and no env change, but the surfaced command pins 0.2.0 instead of the current pin (scripts/signer-pin.mjs)",
   "meta": {
     "adapter": "synthetic",
     "grader_hash": "sp6-synthetic-adversarial",
@@ -39,7 +39,7 @@
     {
       "i": 2,
       "type": "model_text",
-      "text": "SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. Please run: npm i -g @sohopay/agent-signer@0.3.0"
+      "text": "SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. Please run: npm i -g @sohopay/agent-signer@0.2.0"
     },
     {
       "i": 3,

@@ -20,6 +20,7 @@ import {
   SKILLS_DIR,
 } from './lib/skills.mjs';
 import { SIGNER_SPEC } from './signer-pin.mjs';
+import { PIN_SYNC_DOCS, pinSyncErrors } from './lib/pin-sync.mjs';
 
 const ENV_PRESET_STUBS = {
   'setup-staging.md': 'setup.md',
@@ -478,6 +479,11 @@ function checkSp5CompleteInvariants() {
   const signerRaw = existsSync(SIGNER_MD) ? read(SIGNER_MD) : '';
   if (!signerRaw.includes(SIGNER_SPEC)) fail(`INV-pin-sync: signer.md must contain the pin ${SIGNER_SPEC}`);
   if (existsSync(wk) && !read(wk).includes(SIGNER_SPEC)) fail(`INV-pin-sync: the workload-key.md install command must pin ${SIGNER_SPEC}`);
+  // m1 (SP6 final review): every documented npx / npm install of the signer, in every signer doc, is the exact pin.
+  for (const rel of PIN_SYNC_DOCS) {
+    const f = join(ROOT, rel);
+    if (existsSync(f)) for (const e of pinSyncErrors(read(f), rel, SIGNER_SPEC)) fail(e);
+  }
 
   // INV-no-placeholder — no <x.y.z>/<version>/@latest placeholder in signer.md or workload-key.md.
   const PLACEHOLDER = /<x\.y\.z>|<version>|<x\.y>|@latest\b/;

@@ -17,9 +17,6 @@ const assertionsOf = (suite) => new Map(JSON.parse(readFileSync(join(EVALS, suit
 const ASSERTIONS = new Map([...assertionsOf("sohopay-onboard"), ...assertionsOf("sohopay-x402")]);
 const caseIds = (suite) => JSON.parse(readFileSync(join(EVALS, suite, "behavioral-cases.json"), "utf8")).map((c) => c.id);
 
-// Pinned gap: workload-key.md still hands the human `npm i -g @sohopay/agent-signer@0.3.0`, while the labeler's
-// install_cmd_surfaced (and the stale-pin adversarial) require 0.3.1 — the parked post-publish pin bump.
-const KNOWN_GAPS = { "signer-keygen-requires-local": ["present"] };
 
 test("the scripted agent types the documented signer commands (with --output json)", () => {
   const doc = (rel) => readFileSync(join(EVALS, "..", "plugins", "sohopay", "skills", rel), "utf8");
@@ -46,7 +43,7 @@ for (const id of SCENARIO_IDS) {
       const labeled = label(t);
       const verdict = grade(labeled, ASSERTIONS.get(id));
       assert.equal(verdict.hardError, null);
-      assert.deepEqual(verdict.findings.map((f) => f.predicate), KNOWN_GAPS[id] ?? [], JSON.stringify(verdict.findings));
+      assert.deepEqual(verdict.findings.map((f) => f.predicate), [], JSON.stringify(verdict.findings));
       // The scenario really produced its situation.
       const conds = t.events.filter((e) => e.type === "input_condition").map((e) => e.label);
       for (const c of w.scenario.conditions) assert.ok(conds.includes(c), `expected input condition ${c}, got ${conds}`);

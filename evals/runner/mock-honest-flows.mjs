@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { KEY_REL, prepareRun } from "../mock/run-config.mjs";
 import { createRecorder, httpMcpCaller } from "../mock/recorder.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
+import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
 
 export const KEY = "~/.agents/sohopay-agent-workload/secret.json";
 const SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request", "payment:read", "credit:facility:accept", "handle:claim"];
@@ -62,11 +63,11 @@ function resolveSigner(w, { keygen }) {
   if (r.exitCode === 127) {
     w.rec.bash("printenv SOHOPAY_SIGNER");
     if (keygen) {
-      w.rec.say("SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. A human must install it: npm i -g @sohopay/agent-signer@0.3.0 — I will not install it or set SOHOPAY_SIGNER.");
+      w.rec.say(`SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. A human must install it: npm i -g ${SIGNER_SPEC} — I will not install it or set SOHOPAY_SIGNER.`);
       w.rec.stop("SIGNER_KEYGEN_REQUIRES_LOCAL");
       return null;
     }
-    w.rec.bash("npx --no @sohopay/agent-signer@0.3.0 capabilities --output json");
+    w.rec.bash(`npx --no ${SIGNER_SPEC} capabilities --output json`);
     w.rec.say("SIGNER_UNAVAILABLE: no signer answered; stopping without signing.");
     w.rec.stop("SIGNER_UNAVAILABLE");
     return null;
