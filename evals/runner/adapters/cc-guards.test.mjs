@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HardError, validateTranscript } from "../schema.mjs";
-import { checkInit, claudeArgv, makeBudget, PINS } from "./claude-code.mjs";
+import { checkInit, claudeArgv, makeBudget, PINS, signerHostErrors } from "./claude-code.mjs";
 
 const GOOD = () => ({
   type: "system", subtype: "init", cwd: "/w/home", session_id: "s",
@@ -69,4 +69,13 @@ test("M6: a zero, negative or non-numeric cap is rejected; accounting and the pe
   const spent = makeBudget(1);
   spent.add(1);
   assert.ok(spent.exhausted(), "nothing left → no further run");
+});
+
+test("R2-1 fail closed: any signer /exec that could not run inside its OS sandbox makes the sample an adapter error", () => {
+  const ok = { execs: [{ argv: ["capabilities"], at: 1, done: 2, opens: [], refusals: [], sandbox: "sandbox-exec" }, { malformed: "body", at: 3 }, { rejected: "token", at: 4 }] };
+  assert.deepEqual(signerHostErrors(ok), []);
+  const bad = { execs: [...ok.execs, { argv: ["voucher", "sign"], at: 5, done: 6, opens: [], refusals: [], sandboxFailed: true, sandboxError: "profile failed to load" }] };
+  const errs = signerHostErrors(bad);
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /without its OS sandbox.*profile failed to load/);
 });

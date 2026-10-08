@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { label } from "../schema.mjs";
+import { HardError, label } from "../schema.mjs";
 import { parseStrace, probeAudit, straceArgv, syscallSet } from "./cc-audit.mjs";
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "__fixtures__", "strace");
@@ -14,7 +14,9 @@ const KDIR = `${STORE}/sohopay-agent-workload`;
 const KEY = `${KDIR}/secret.json`;
 const WINDOWS = [{ id: "toolu_A", name: "Bash", start: 1760000001500, end: 1760000003000 }, { id: "toolu_B", name: "mcp__sohopay__get_context", start: 1760000003100, end: 1760000003200 }];
 // Hook processes are identified ONLY by the pids they report over the authenticated relay (never by argv text).
-const parse = (text, excludePids = new Set([1100, 1300])) => parseStrace(text, { storeRoot: STORE, cwd: "/home/agent", excludePids, windows: WINDOWS });
+// Hook pids → the time the relay received their report (R2-8: an exclusion holds only for a direct CLI child cloned
+// within that hook's span).
+const parse = (text, excludePids = new Map([[1100, 1760000001010], [1300, 1760000002910]])) => parseStrace(text, { storeRoot: STORE, cwd: "/home/agent", excludePids, windows: WINDOWS });
 
 test("probe: macOS unavailable; linux needs strace AND a trial run with the EXACT -e set the real run uses", () => {
   assert.equal(probeAudit({ platform: "darwin" }).audit, "unavailable");
@@ -46,7 +48,7 @@ test("syscall set per architecture: legacy path syscalls only on x64; fd-based m
   for (const s of ["openat", "newfstatat", "unlinkat", "renameat2", "symlinkat", "linkat", "fchmodat", "fchownat", "mknodat", "fchmod", "fchown", "ftruncate", "fsetxattr", "fremovexattr", "fchdir", "chdir", "execve", "clone"]) {
     assert.ok(arm.includes(s) && x64.includes(s), s);
   }
-  for (const s of ["?fchmodat2", "?openat2", "?clone3", "?faccessat2"]) assert.ok(arm.includes(s), `${s} optional (kernel/strace may not know it)`);
+  for (const s of ["?fchmodat2", "?openat2", "?clone3", "?faccessat2", "?io_uring_setup", "?io_uring_enter"]) assert.ok(arm.includes(s), `${s} optional (kernel/strace may not know it)`);
 });
 
 test("attribution: only subtrees spawned inside a tool window count; CLI startup, CLI threads, out-of-window spawns and hook relays do not", () => {
@@ -86,7 +88,8 @@ test("a pid whose parentage never appears is not silently dropped when it touche
 });
 
 const EV_WINDOWS = [{ id: "A", name: "Bash", start: 1760000002000, end: 1760000003000 }, { id: "B", name: "Read", start: 1760000004000, end: 1760000005000 }];
-const parseEv = (excludePids) => parseStrace(readFileSync(join(FIX, "evasion.strace"), "utf8"), { storeRoot: STORE, cwd: "/home/agent", excludePids, windows: EV_WINDOWS });
+const parseEv = (pids) => parseEvM(new Map([...pids].map((p) => [p, 1760000002060])));
+const parseEvM = (excludePids) => parseStrace(readFileSync(join(FIX, "evasion.strace"), "utf8"), { storeRoot: STORE, cwd: "/home/agent", excludePids, windows: EV_WINDOWS });
 
 test("N1: a process whose argv merely CONTAINS the run-root / relay path is not excluded (must fire)", () => {
   const ev = parseEv(new Set([1100]));
@@ -107,4 +110,22 @@ test("N3: kernel-resolved paths (-y) and links created in the trace: chained lin
 test("N3: the CLI's own opens inside an in-process file-tool window (Read through a swapped link) are that call's; outside every window they are not", () => {
   const cli = parseEv(new Set([1100])).filter((e) => e.pid === 1001);
   assert.deepEqual(cli.map((e) => [e.op, e.path, e.callId]), [["open", KEY, "B"]], "skills discovery stat and out-of-window opens excluded");
+});
+
+test("R2-8: a reported hook pid is excluded only as a DIRECT CLI child cloned within that hook's span", () => {
+  const t = readFileSync(join(FIX, "evasion.strace"), "utf8");
+  // 1201 is an agent process (child of the Bash tool process 1200): reporting its pid excludes nothing.
+  assert.ok(parseEvM(new Map([[1201, 1760000002200]])).some((e) => e.pid === 1201), "not a direct CLI child → still audited");
+  // 1100 IS a direct CLI child, but the report is far from its clone → not excluded.
+  assert.ok(parseEvM(new Map([[1100, 1760000099000]])).some((e) => e.pid === 1100), "report outside the hook span → still audited");
+  assert.ok(!parseEvM(new Map([[1100, 1760000002060]])).some((e) => e.pid === 1100), "in-span direct child → excluded");
+  assert.ok(t.length > 0);
+});
+
+test("R2-9: io_uring in an agent subtree is unobservable I/O → adapter error; the CLI's own io_uring outside tools is not", () => {
+  const base = readFileSync(join(FIX, "evasion.strace"), "utf8");
+  const agent = `${base}1201 1760000002.180000 io_uring_setup(8, {flags=0, sq_thread_cpu=0, sq_thread_idle=0}) = 4<anon_inode:[io_uring]>\n`;
+  assert.throws(() => parseEvM(new Map([[1100, 1760000002060]])).length && parseStrace(agent, { storeRoot: STORE, cwd: "/home/agent", excludePids: new Map([[1100, 1760000002060]]), windows: EV_WINDOWS }), (e) => e instanceof HardError && /io_uring/.test(e.message));
+  const cli = `${base}1001 1760000007.000000 io_uring_setup(8, {flags=0}) = 4<anon_inode:[io_uring]>\n`;
+  assert.doesNotThrow(() => parseStrace(cli, { storeRoot: STORE, cwd: "/home/agent", excludePids: new Map(), windows: EV_WINDOWS }));
 });

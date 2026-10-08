@@ -154,13 +154,27 @@ test("the mock MCP surface reads like the real server: no eval vocabulary in too
   for (const [name, t] of Object.entries(TOOL_CATALOG)) assert.ok(!EVAL_WORDS.test(JSON.stringify(t)), name);
 });
 
-test("N9 (macOS best effort): the rest of $TMPDIR is denied; only this run's workspace and fresh mktemp dirs stay readable", () => {
-  const c = confinement({ home: "/T/agent-home-1/home", runRoot: "/r/run", prefix: "/T/agent-home-1", platform: "darwin", tmp: "/private/var/folders/aa/bb/T" });
-  assert.ok(c.denyRead.includes("/private/var/folders/aa/bb/T"));
-  assert.ok(c.allowRead.includes("/T/agent-home-1"));
-  assert.ok(c.allowRead.includes("/private/var/folders/aa/bb/T/tmp.*"));
+test("N9/R2-6 (macOS best effort): pre-existing $TMPDIR entries are denied one by one; no allowRead prefix covers ~/.claude/projects", () => {
+  const listing = ["agent-home-1", "other-run", "tmp.ABC123", "op.txt"];
+  const c = confinement({ home: "/T/agent-home-1/home", runRoot: "/r/run", prefix: "/T/agent-home-1", base: "/u/op/.cache/sp6-live", platform: "darwin", tmp: "/T", listTmp: () => listing });
+  for (const d of ["/T/other-run", "/T/tmp.ABC123", "/T/op.txt"]) assert.ok(c.denyRead.includes(d), d);
+  assert.ok(!c.denyRead.includes("/T") && !c.denyRead.includes("/T/agent-home-1"), "this run's workspace stays readable without an allow");
+  const projects = "/T/agent-home-1/home/.claude/projects";
+  assert.ok(!c.allowRead.some((p) => projects === p || projects.startsWith(`${p.replace(/\*.*$/, "")}`)), `no allowRead entry covers ${projects}: ${c.allowRead}`);
   const s = runSettings({ runRoot: "/r/run", home: "/T/agent-home-1/home", hookWrapper: "/b/hook.mjs", node: "/n/node", confine: c });
-  for (const a of ["Read(//private/var/folders/aa/bb/T/tmp.*/**)", "Edit(//private/var/folders/aa/bb/T/tmp.*/**)", "Read(//var/folders/aa/bb/T/tmp.*/**)"]) assert.ok(s.permissions.allow.includes(a), a);
-  const linux = confinement({ home: "/tmp/agent-home-1/home", runRoot: "/r/run", prefix: "/tmp/agent-home-1", platform: "linux", tmp: "/tmp" });
-  assert.ok(!linux.denyRead.includes("/tmp"), "linux: the sandbox TMPDIR lives under /tmp, other claude-* dirs are denied one by one");
+  for (const r of ["Read(//T/tmp.*/**)", "Edit(//T/tmp.*/**)"]) assert.ok(s.permissions.allow.includes(r), r);
+  assert.ok(s.permissions.deny.includes("Read(//T/tmp.ABC123/**)"), "a pre-existing tmp.* dir stays denied (deny beats allow in permissions)");
+  const linux = confinement({ home: "/tmp/agent-home-1/home", runRoot: "/r/run", prefix: "/tmp/agent-home-1", base: "/u/op/.cache/sp6-live", platform: "linux", tmp: "/tmp", listTmp: () => [] });
+  assert.ok(!linux.denyRead.includes("/tmp"), "linux: the sandbox TMPDIR lives under /tmp");
+});
+
+test("R2-7: the run base (relay registry, hook wrapper) is denied explicitly, and assertHermetic refuses a base the agent can read", async () => {
+  const c = confinement({ home: "/w/home", runRoot: "/b/run", prefix: "/w", base: "/b", platform: "linux", tmp: "/tmp", listTmp: () => [] });
+  assert.ok(c.denyRead.includes("/b") && c.denyWrite.includes("/b"));
+  await withWorld("keygen-routes-to-signer", "sohopay-onboard", async (w) => {
+    for (const base of [join(w.home, "x"), join(w.prefix, "x"), join(c.sandboxTmp ?? "/tmp/claude-0", "x")]) {
+      assert.throws(() => assertHermetic({ ...w, base }), (e) => e instanceof HardError && /run base/.test(e.message), base);
+    }
+    assert.ok(w.confine.denyRead.includes(w.base) && w.confine.denyWrite.includes(w.base));
+  });
 });
