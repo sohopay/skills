@@ -21,5 +21,3 @@ export function buildPrompt(suiteDir, caseId, world) {
   else throw new HardError(`no operator task for suite ${suiteDir}`);
   return EXTRA[caseId] ? `${task}\n\n${EXTRA[caseId]}` : task;
 }
-
-export const PROMPT_EXTRAS = Object.freeze({ ...EXTRA });

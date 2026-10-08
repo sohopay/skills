@@ -67,7 +67,7 @@ function resolvedPathsErrors(e, idx) {
   return errs;
 }
 
-const GLOB_CHARS_RE = /[*?[]|\{[^}]*,/;
+export const GLOB_CHARS_RE = /[*?[]|\{[^}]*,/;
 /** A non-glob arg token can resolve to one path per occurrence in the text; extra pairs are a forged attribution. */
 function pairMultiplicityErrors(e, at) {
   if (typeof e.args_text !== "string") return [];
@@ -375,7 +375,6 @@ function deriveStopCode(t, stopEvent, labelsSoFar) {
   return { code: stopEvent.code ?? null, at: stopEvent.i };
 }
 
-const POST_FLAG_RE = /(?:^|\s)(?:-X\s*POST|--request(?:=|\s+)POST)(?=\s|$)/;
 const BODY_FLAG_RE = /(?:^|\s)(?:-d|--data(?:-raw|-binary|-urlencode|-ascii)?|--json)(?=[\s=]|$)/;
 const REGISTER_URL_RE = /\/api\/v\d+\/agents\/[A-Za-z0-9_.-]+\/keys\/?(?=$|[?\s"'#])/;
 /** n3: a REST register is an HTTP POST (explicit, or implied by a body flag) to /api/v<N>/agents/<id>/keys exactly. */

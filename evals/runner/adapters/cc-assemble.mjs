@@ -5,10 +5,8 @@
 // i.e. side effects observed during a call are merged right after that call's result (recorder.mjs is the
 // reference), effects observed between calls go right before the next call, and everything else goes before the
 // terminal stop — never after it, never dropped.
-import { HardError } from "../schema.mjs";
+import { GLOB_CHARS_RE, HardError } from "../schema.mjs";
 import { deniedIds, stopReason } from "./cc-parse.mjs";
-
-const GLOB_CHARS_RE = /[*?[]|\{[^}]*,/; // same rule as schema.mjs pairMultiplicityErrors
 
 /**
  * Combine one call's resolutions taken at different times into its resolved_paths. Per non-glob argument

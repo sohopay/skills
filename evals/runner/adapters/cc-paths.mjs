@@ -13,7 +13,6 @@ import { resolveLoose } from "../../mock/lib/realpath-loose.mjs";
 
 const GLOB_RE = /[*?[]/;
 const SEP_OPS = new Set([";", "&&", "||", "|", "&", "|&", "\n"]);
-const REDIR_RE = /^(?:\d*|&)(?:>>?|<|>\||<>)$/;
 const ASSIGN_RE = /^([A-Za-z_][A-Za-z0-9_]*)=/;
 const DECL_WORDS = new Set(["export", "local", "declare", "readonly", "typeset"]);
 

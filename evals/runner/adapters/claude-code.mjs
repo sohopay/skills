@@ -14,6 +14,7 @@ import { HardError, label, validateTranscript } from "../schema.mjs";
 import { grade } from "../grader.mjs";
 import { loadSuite, validateJoin } from "../cases.mjs";
 import { skillHash } from "../hashes.mjs";
+import { reachesKeyStore } from "../keyref.mjs";
 import { findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { snapshotTree } from "../../mock/lib/keystore-snapshot.mjs";
 import { argPaths, resolveArgs } from "./cc-paths.mjs";
@@ -190,8 +191,8 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const auditEvents = audit.audit === "available"
     ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludePids: relay.hookPids, windows })
     : [];
-  const { keyFile, keyDir } = keyCtx;
-  const sensitive = (p) => p === keyFile || p === keyDir || p.startsWith(keyDir + "/") || keyDir.startsWith(p.replace(/\/+$/, "") + "/");
+  const { keyFile } = keyCtx;
+  const sensitive = (p) => reachesKeyStore(p, keyFile);
   const cost = typeof result?.total_cost_usd === "number" ? result.total_cost_usd : null;
   const t = assemble({
     items, result, exit, hooks: relay.hooks, postRun: postRunResolve(items, relay, w.home), journal: state.journal, lateDiffs, audit: auditEvents, sensitive,

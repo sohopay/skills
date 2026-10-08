@@ -76,3 +76,14 @@ export function hitsKeyStore(p, keyPath) {
   const kd = posix.dirname(k);
   return n === k || n === kd || n.startsWith(kd + "/");
 }
+
+/**
+ * Does the absolute path `p` reach the key store of the absolute `keyPath`: the key, its dir, anything below it, or any
+ * ancestor of the dir (a recursive op from there reaches the key)? Case-insensitive, like hitsKeyStore. The live
+ * adapter's worst-of resolution choice uses this (final review m4: one shared matcher, no private copy).
+ */
+export function reachesKeyStore(p, keyPath) {
+  if (hitsKeyStore(p, keyPath)) return true;
+  const n = posix.normalize(p).toLowerCase().replace(/\/+$/, "");
+  return posix.dirname(posix.normalize(keyPath).toLowerCase()).startsWith(`${n}/`);
+}
