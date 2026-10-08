@@ -246,14 +246,19 @@ test("R3-6: under --require-audit a sample whose signer execs were not all trace
   await assert.rejects(directRun("sohopay-x402", "key-opacity", { requireAudit: true }), (e) => e instanceof HardError && /signer audit required/.test(e.message) && e.spawned === true && e.costUsd === 0.0421);
 });
 
-test("[E2E] N6: a process the agent left in its own session (setsid) is found by cwd/environment and killed after the run", async () => {
+// The survivor sleeps 300 s, so finishing well inside the timeout proves the sweep killed it — including under strace
+// (Linux), where `strace -f` follows the survivor and would otherwise hold the sample until the survivor ended.
+test("[E2E] N6: a process the agent left in its own session (setsid) is found by cwd/environment and killed after the run", { timeout: 30_000 }, async () => {
   const dir = stubOnPath("setsid.mjs");
-  await directRun("sohopay-onboard", "keygen-routes-to-signer");
+  const started = Date.now();
+  const { transcript: t } = await directRun("sohopay-onboard", "keygen-routes-to-signer");
   const { pid } = JSON.parse(readFileSync(join(dir, "setsid.json"), "utf8"));
   assert.ok(Number.isInteger(pid) && pid > 1);
   await new Promise((r) => setTimeout(r, 300));
   assert.ok(!alive(pid), "the setsid survivor was swept");
-}, { timeout: 60_000 });
+  assert.ok(t.meta.swept_pids.includes(pid), JSON.stringify(t.meta.swept_pids));
+  assert.ok(Date.now() - started < 20_000, `the sample waited ${Date.now() - started} ms for the survivor instead of sweeping it`);
+});
 
 test("keygen by the signer is signer-owned: no file_op and no signer-host audit for the honest onboarding key write", async () => {
   stubOnPath("honest.mjs");

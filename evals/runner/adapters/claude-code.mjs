@@ -25,7 +25,7 @@ import { parseStrace, probeAudit, straceArgv } from "./cc-audit.mjs";
 import { buildPrompt } from "./cc-prompts.mjs";
 import { checkInit, DENIED_TOOLS, harnessLeak, harnessSecrets, makeBudget, persistedReader, PINS, redactSecrets } from "./cc-guards.mjs";
 import { captureErrors, checkHooksApplied, startHookRelay } from "./cc-relay.mjs";
-import { sweepWorkspace } from "./cc-sweep.mjs";
+import { sweepWorkspace, watchTracedCli } from "./cc-sweep.mjs";
 import { childTraceSupport } from "../../mock/lib/signer-sandbox.mjs";
 
 export { checkInit, makeBudget, persistedReader, PINS, captureErrors, startHookRelay };
@@ -167,7 +167,7 @@ const killGroup = (pid, sig) => { try { process.kill(-pid, sig); } catch { /* gr
  * SIGKILL after the grace period; after any exit the group is SIGKILLed so no agent background process outlives the
  * sample.
  */
-function spawnCli(argv0, argv, w, { timeoutMs, killGraceMs }) {
+function spawnCli(argv0, argv, w, { timeoutMs, killGraceMs, traced = false }) {
   return new Promise((done) => {
     const out = createWriteStream(w.paths.stream, { mode: 0o600 });
     const err = createWriteStream(w.paths.stderr, { mode: 0o600 });
@@ -176,6 +176,11 @@ function spawnCli(argv0, argv, w, { timeoutMs, killGraceMs }) {
     w.lifecycle?.trackGroup(child.pid);
     child.stdout.pipe(out);
     child.stderr.pipe(err);
+    // N6 under strace: sweep survivors when the CLI exits, not when strace does (strace waits for every tracee).
+    let swept = [];
+    const stopWatch = traced && process.platform === "linux" && child.pid
+      ? watchTracedCli(child.pid, { prefix: w.prefix, home: w.home }, { onSweep: (pids) => { swept = pids; } })
+      : () => Promise.resolve();
     let timedOut = false;
     let grace = null;
     const timer = setTimeout(() => {
@@ -184,10 +189,11 @@ function spawnCli(argv0, argv, w, { timeoutMs, killGraceMs }) {
       grace = setTimeout(() => killGroup(child.pid, "SIGKILL"), killGraceMs);
     }, timeoutMs);
     const finish = (code, signal, error) => {
+      const watched = stopWatch();
       clearTimeout(timer);
       if (grace) clearTimeout(grace);
       if (child.pid) killGroup(child.pid, "SIGKILL");
-      Promise.all([new Promise((r) => out.end(r)), new Promise((r) => err.end(r))]).then(() => done({ code, signal, timedOut, error }));
+      Promise.all([watched, new Promise((r) => out.end(r)), new Promise((r) => err.end(r))]).then(() => done({ code, signal, timedOut, error, swept }));
     };
     child.once("error", (e) => finish(null, null, e.message));
     child.once("close", (code, signal) => finish(code, signal, null));
@@ -303,8 +309,9 @@ export async function run(ref, opts) {
     assertHermetic(w);
     const args = claudeArgv({ prompt: buildPrompt(ref.suiteDir, ref.caseId, w), sessionId, settings: w.paths.settings, mcpConfig: w.paths.mcp, budgetLeftUsd: opts.budgetLeftUsd });
     const [argv0, ...argv] = audit.audit === "available" ? [...straceArgv(w.paths.audit, { killOnExit: audit.killOnExit }), opts.claudeBin, ...args] : [opts.claudeBin, ...args];
-    const exit = await spawnCli(argv0, argv, w, { timeoutMs: opts.timeoutMs ?? PINS.RUN_TIMEOUT_MS, killGraceMs: opts.killGraceMs ?? PINS.KILL_GRACE_MS });
-    exit.swept = await sweepWorkspace({ prefix: w.prefix, home: w.home }); // N6: survivors outside the process group
+    const exit = await spawnCli(argv0, argv, w, { timeoutMs: opts.timeoutMs ?? PINS.RUN_TIMEOUT_MS, killGraceMs: opts.killGraceMs ?? PINS.KILL_GRACE_MS, traced: audit.audit === "available" });
+    // N6: survivors outside the process group (those already swept at CLI exit under strace are kept in the record).
+    exit.swept = [...new Set([...exit.swept, ...(await sweepWorkspace({ prefix: w.prefix, home: w.home }))])];
     let result = null;
     try {
       return await capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, onResult: (r) => { result = r; } });

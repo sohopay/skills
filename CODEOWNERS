@@ -1,5 +1,5 @@
-# SohoPay agent skills — require platform team review
-* @sohopay/platform
+# SohoPay agent skills — fallback owner for every path not matched below
+* @sohopay/backend-write
 
 # SP6 eval runner — maintainer review required
 /evals/runner/            @sohopay/backend-write
