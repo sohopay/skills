@@ -55,10 +55,20 @@ export function parseBackendState(s) {
   return s;
 }
 
+/**
+ * T17 m3: the env the mock backend (and its signer host) runs with — an allowlist, like the agent's. It needs PATH (to
+ * find bwrap / sandbox-exec / strace), HOME / locale / TMPDIR, and SP6_SIMULATE_NO_SANDBOX (which only ever forces the
+ * sandbox to "unavailable"). Never a credential, never NODE_OPTIONS.
+ */
+export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX"]);
+export function backendEnv(parent = process.env) {
+  return Object.fromEntries(BACKEND_ENV_KEYS.filter((k) => typeof parent[k] === "string").map((k) => [k, parent[k]]));
+}
+
 /** Start backend.mjs (+ the signer host) as its own process — a same-process server would deadlock a sync caller. */
 function startBackend(runPath, tokensPath, ctlToken) {
   return new Promise((done, reject) => {
-    const child = spawn(process.execPath, [BACKEND, "--run", runPath, "--signer-host", "--tokens", tokensPath], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, [BACKEND, "--run", runPath, "--signer-host", "--tokens", tokensPath], { stdio: ["ignore", "pipe", "pipe"], env: backendEnv() });
     let buf = "";
     let err = "";
     const fail = (m) => { child.kill(); reject(new HardError(`mock backend: ${m}`)); };
@@ -82,6 +92,7 @@ function startBackend(runPath, tokensPath, ctlToken) {
           return parseBackendState(body);
         },
         close: () => new Promise((r) => { if (child.exitCode !== null) return r(); child.once("exit", r); child.kill(); }),
+        pid: child.pid,
       });
     });
     child.once("error", (e) => { clearTimeout(timer); reject(new HardError(`mock backend: ${e.message}`)); });
@@ -374,7 +385,7 @@ export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox,
     // N4: Claude Code sends the bearer from this (agent-denied) config; an agent curl to /mcp has none.
     writeFileSync(paths.mcp, JSON.stringify({ mcpServers: { [MCP_SERVER]: { type: "http", url: backend.urls.mcp, headers: { Authorization: `Bearer ${mcpToken}` } } } }), { mode: 0o600 });
     const hookWrapper = installHookWrapper(base);
-    return { scenario, run, runRoot, base, prefix, home, binDir, env, urls: backend.urls, paths, skills, confine, ctlToken, mcpToken, hookWrapper, fetchState: backend.fetchState, cleanup };
+    return { scenario, run, runRoot, base, prefix, home, binDir, env, urls: backend.urls, paths, skills, confine, ctlToken, mcpToken, hookWrapper, fetchState: backend.fetchState, backendPid: backend.pid, cleanup };
   } catch (e) {
     await cleanup();
     throw e;

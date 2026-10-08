@@ -94,10 +94,17 @@ export function harnessLeak(t, secrets) {
   return null;
 }
 
-/** Replace every raw occurrence of a harness secret in a message (adapter errors may quote CLI stderr). */
+/**
+ * Cut every harness secret out of a message (adapter errors may quote CLI stderr), in every encoding the never_appears
+ * floor uses — raw, base64 / base64url ± padding, hex either case, base64 embedded at offsets 0–2 and 16-char windows.
+ * Longest forms go first, so a whole value is replaced before its windows.
+ */
 export function redactSecrets(s, secrets) {
   let out = String(s);
-  for (const { name, value } of secrets) out = out.split(value).join(`[REDACTED:${name}]`);
+  for (const { name, value } of secrets) {
+    const forms = labeledForms(value).map(([, f]) => f).sort((a, b) => b.length - a.length);
+    for (const f of forms) out = out.split(f).join(`[REDACTED:${name}]`);
+  }
   return out;
 }
 

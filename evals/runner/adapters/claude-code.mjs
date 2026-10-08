@@ -75,22 +75,24 @@ export function resolveClaude(pathValue = process.env.PATH ?? "") {
   return bin;
 }
 
-/** Marks a test stub `claude` (in its first bytes). Only a marked stub may be spawned without SP6_LIVE=1. */
+/** Marks a test stub `claude` (in its first bytes). Only a marked stub may be spawned outside a --live run. */
 export const TEST_STUB_MARKER = "SP6-TEST-STUB-CLAUDE";
 
 /**
- * T17 M4: structural guard against an accidental paid session. A real `claude` is spawned only when SP6_LIVE=1 — which
- * run.mjs sets only for `--adapter claude-code --live` (the live workflow passes it; tests never do). Without it, only
- * a `claude` carrying TEST_STUB_MARKER in its first 512 bytes may be executed (the stub E2E tests).
+ * T17 M4 / m4: structural guard against an accidental paid session. A real `claude` is spawned only when the caller
+ * passes `live: true` — which run.mjs does only for `--adapter claude-code --live` (the live workflow passes it; tests
+ * never do). It is an in-process option: NO environment variable (SP6_LIVE or any other) is consulted, so a value
+ * inherited from an operator's shell cannot authorise a spawn. Otherwise only a `claude` carrying TEST_STUB_MARKER in
+ * its first 512 bytes may be executed (the stub E2E tests).
  */
-export function assertSpawnAllowed(bin, env = process.env) {
-  if (env.SP6_LIVE === "1") return;
+export function assertSpawnAllowed(bin, { live = false } = {}) {
+  if (live === true) return;
   let head = "";
   try {
     const fd = openSync(bin, "r");
     try { const buf = Buffer.alloc(512); head = buf.subarray(0, readSync(fd, buf, 0, 512, 0)).toString("latin1"); } finally { closeSync(fd); }
   } catch { /* unreadable → not a marked stub */ }
-  if (!head.includes(TEST_STUB_MARKER)) throw new HardError(`claude-code adapter: refusing to spawn ${bin}: it is not a marked test stub and SP6_LIVE=1 is not set (a live run is run.mjs --adapter claude-code --live)`);
+  if (!head.includes(TEST_STUB_MARKER)) throw new HardError(`claude-code adapter: refusing to spawn ${bin}: it is not a marked test stub and this is not a --live run (a live run is run.mjs --adapter claude-code --live)`);
 }
 
 /** Refuse anything but the pinned exact CLI version. */
@@ -230,7 +232,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
 export async function run(ref, opts) {
   const seams = opts.testSeams;
   if (seams !== undefined && (typeof seams !== "object" || seams === null || Object.keys(seams).some((k) => k !== "signerSandbox"))) throw new HardError("claude-code adapter: unknown test seam");
-  assertSpawnAllowed(opts.claudeBin); // M4: before anything is built or spawned
+  assertSpawnAllowed(opts.claudeBin, { live: opts.live }); // M4: before anything is built or spawned
   const audit = opts.audit ?? probeAudit();
   const w = await createWorld({ suiteDir: ref.suiteDir, caseId: ref.caseId, skillsRoot: opts.skillsRoot, signerSandbox: seams?.signerSandbox, ...(opts.signerCallTimeoutMs !== undefined ? { signerCallTimeoutMs: opts.signerCallTimeoutMs } : {}) });
   let relay = null;
@@ -290,12 +292,12 @@ function saveTranscript(t, suiteDir, caseId, sample) {
  * `runSample` is a JS-only injection for tests of the loop (budget); run.mjs never passes one. Test seams are refused
  * here outright (R3-1): the fake sandbox cannot reach a live run through this entry.
  */
-export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter, samples, requireAudit, testSeams, runSample = run }) {
+export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter, samples, requireAudit, testSeams, live = false, runSample = run }) {
   if (testSeams !== undefined) throw new HardError("claude-code adapter: test seams (e.g. the fake signer sandbox) are refused on a live run");
   const k = samples ?? PINS.DEFAULT_SAMPLES;
   if (!Number.isInteger(k) || k < 1 || k > 20) throw new HardError(`claude-code adapter: --samples must be an integer 1..20, got ${samples}`);
   const claudeBin = resolveClaude();
-  assertSpawnAllowed(claudeBin); // M4: even `claude --version` is a spawn
+  assertSpawnAllowed(claudeBin, { live }); // M4: even `claude --version` is a spawn
   const cliVersion = checkCliVersion(claudeBin);
   const budget = makeBudget(process.env.SP6_LIVE_BUDGET_USD ? Number(process.env.SP6_LIVE_BUDGET_USD) : PINS.BUDGET_USD);
   const timeoutMs = process.env.SP6_LIVE_RUN_TIMEOUT_MS ? Number(process.env.SP6_LIVE_RUN_TIMEOUT_MS) : PINS.RUN_TIMEOUT_MS;
@@ -315,7 +317,7 @@ export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilt
         if (refusal) { results.push({ ...base, pass: false, findings: [], hardError: `not run: ${refusal}`, costUsd: null }); continue; }
         if (budget.exhausted()) { results.push({ ...base, pass: false, findings: [], hardError: `not run: ${budget.reason()}`, costUsd: null }); continue; }
         try {
-          const { transcript, costUsd } = await runSample({ suiteDir: dir, caseId: id }, { sample_index: s, skillsRoot, claudeBin, cliVersion, budgetLeftUsd: budget.left, timeoutMs, audit, requireAudit: mustAudit, ...(signerCallTimeoutMs !== undefined ? { signerCallTimeoutMs } : {}) });
+          const { transcript, costUsd } = await runSample({ suiteDir: dir, caseId: id }, { sample_index: s, skillsRoot, claudeBin, cliVersion, budgetLeftUsd: budget.left, timeoutMs, audit, requireAudit: mustAudit, live: live === true, ...(signerCallTimeoutMs !== undefined ? { signerCallTimeoutMs } : {}) });
           budget.add(costUsd);
           const g = grade(label(transcript), assertion, waivers);
           results.push({ ...base, pass: g.pass && !g.hardError, findings: g.findings, hardError: g.hardError, costUsd, transcriptPath: saveTranscript(transcript, dir, id, s) });

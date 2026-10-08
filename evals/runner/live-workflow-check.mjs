@@ -18,11 +18,15 @@ export const REGEN_PATH_GUARD = `[[ "$p" =~ ^evals/sohopay-(onboard|x402)/transc
 export const PUSH_LINE = 'git push origin "HEAD:refs/heads/${HEAD_REF}"';
 const ARTIFACT_PATHS = ["${{ runner.temp }}/sp6-live", "${{ runner.temp }}/sp6-verdict"];
 
-/** null when `text` hashes to the committed pin (sha256sum format: `<hex>  <path>`), else the INV failure. */
-export function livePinError(text, pinText) {
+/**
+ * null when the workflow's raw BYTES hash to the committed pin (sha256sum format: `<hex>  <path>`), else the INV failure.
+ * m8: bytes only — a decoded string would map distinct invalid UTF-8 sequences to the same U+FFFD text.
+ */
+export function livePinError(bytes, pinText) {
+  if (!Buffer.isBuffer(bytes)) throw new TypeError("livePinError hashes the workflow's raw bytes: pass the Buffer from readFileSync(path)");
   const want = /^([0-9a-f]{64})\b/.exec(String(pinText ?? "").trim())?.[1];
   if (!want) return "INV-sp6-live-workflow: evals/live-workflow.sha256 holds no sha256 pin";
-  const got = createHash("sha256").update(text).digest("hex");
+  const got = createHash("sha256").update(bytes).digest("hex");
   return got === want ? null : `INV-sp6-live-workflow: .github/workflows/evals-live.yml sha256 ${got} != pinned ${want} (evals/live-workflow.sha256): update the pin in the same change — CODEOWNERS reviews both`;
 }
 
@@ -174,7 +178,45 @@ export function liveWorkflowErrors(text) {
   injectionAndScopeRules({ top, jobs, gate, runJob, clean }, no);
   if (runJob) runJobRules(runJob, no);
   writeJobRules(jobs, no);
+  roundTwoRules({ jobs, gate, runJob, clean }, no);
   return errs;
+}
+
+/** Free-text event data an attacker can set (titles, bodies, comments, branch names, commit messages). */
+const EVENT_TEXT = /github\.event\.(?:pull_request\.(?:title|body|head\.ref|head\.label)|issue\.|comment\.|review\.|head_commit\.|commits)|github\.head_ref|toJSON\(\s*github\.event/;
+const STATUS_FN = /always\(\)|cancelled\(\)|failure\(\)/;
+
+/** T17 fix round 2 (m1): status functions, HEAD_REF provenance, script injection outside run:, eval, continue-on-error, event data to GITHUB_*. */
+function roundTwoRules({ jobs, gate, runJob, clean }, no) {
+  for (const j of [gate, runJob].filter(Boolean)) {
+    if (STATUS_FN.test(blockText(get(j.keys, "if")))) no(`job ${j.id} if: uses a status function (always() / cancelled() / failure()), which runs it whatever its needs did`);
+  }
+  for (const m of clean.matchAll(/^\s*HEAD_REF:[ \t]*([^\n]*)$/gm)) {
+    if (m[1].trim() !== "${{ github.event.pull_request.head.ref }}") no(`HEAD_REF must come from \${{ github.event.pull_request.head.ref }} (got ${m[1].trim()})`);
+  }
+  if (/continue-on-error/.test(clean)) no("continue-on-error is forbidden (it turns the gate, fork refusal or egress scan into advice)");
+  if (/toJSON\(\s*github\.event/.test(clean)) no("toJSON(github.event…) is forbidden (it carries attacker text)");
+  for (const j of jobs) {
+    for (const s of stepsOf(j)) {
+      const label = `job ${j.id} step ${s.id ?? s.name ?? "?"}`;
+      const w = get(s.keys, "with");
+      const script = w && get(blocks(w.body, 10), "script");
+      if (script && /\$\{\{/.test(blockText(script))) no(`${label}: \${{ }} in a with: script: body (github-script injection)`);
+      const run = s.run ?? "";
+      if (/(^|[\s;&|(])eval\s/.test(run) || /\b(?:ba|z|da)?sh\s+-c\s+["']?\$/.test(run)) no(`${label}: eval / sh -c "$VAR" in a run: body (re-parses data as code)`);
+      if (/GITHUB_ENV|GITHUB_PATH/.test(run)) no(`${label}: writes GITHUB_ENV / GITHUB_PATH (poisons every later step)`);
+      if (/GITHUB_OUTPUT/.test(run) && EVENT_TEXT.test(blockText(get(s.keys, "env")))) no(`${label}: writes GITHUB_OUTPUT from a step holding event text in its env`);
+    }
+  }
+  // m2 (defence in depth beyond the exact push-line check): any push — `git push`, `git -c … push` — and any forced
+  // refspec or push config in a contents: write job is refused, even when the literal push line is the allowed one.
+  for (const j of jobs) {
+    const grants = Object.fromEntries(blocks(get(j.keys, "permissions")?.body ?? [], 6).map((b) => [b.key, b.value]));
+    if (grants.contents !== "write") continue;
+    const runs = stepsOf(j).map((s) => s.run ?? "").join("\n");
+    if (/--force|(^|\s)-f(\s|$)|["'\s]\+(?:HEAD|refs\/)|remote\.[\w.-]+\.push|push\.(?:default|followTags)/m.test(runs)) no(`job ${j.id}: force push / forced refspec / push config is forbidden`);
+    for (const m of runs.matchAll(/^\s*git\b[^\n]*\bpush\b[^\n]*$/gm)) if (m[0].trim() !== PUSH_LINE) no(`job ${j.id}: unexpected push ${m[0].trim()} (only ${PUSH_LINE})`);
+  }
 }
 
 /** I2 (review): script injection, flow-style permissions, secrets scope, the fork / label gate's exact form. */

@@ -8,3 +8,6 @@
 /evals/floor-waivers.json @sohopay/maintainers
 /.github/workflows/evals-live.yml @sohopay/maintainers
 /evals/live-workflow.sha256 @sohopay/maintainers
+# The code that ENFORCES the live-workflow pin and its rules (T17 m7).
+/scripts/validate-skills.mjs @sohopay/maintainers
+/.github/workflows/validate.yml @sohopay/maintainers

@@ -33,11 +33,6 @@ export function parseArgs(argv) {
   return out;
 }
 
-/** T17 M4: the env a parsed run adds for its duration — SP6_LIVE=1 only for an explicit `--adapter claude-code --live`. */
-export function liveEnv(args) {
-  return args.adapter === "claude-code" && args.live === true ? { SP6_LIVE: "1" } : {};
-}
-
 /** Resolve requested suite names to dirs; only suites with an assertions.json exist (absent ones are skipped for "all"). */
 function resolveSuites(suite, suites, evalsRoot) {
   const names = suite === "all" ? Object.keys(suites) : [suite];
@@ -105,16 +100,10 @@ export async function main(argv, opts = {}) {
   } else {
     // Loaded lazily: the live adapter must never be reachable from the static import graph.
     const live = await import("./adapters/claude-code.mjs");
-    // M4: SP6_LIVE=1 (the adapter's permission to spawn a real CLI) only for --live, only for this call, then restored.
-    const added = liveEnv(args);
-    const prior = Object.fromEntries(Object.keys(added).map((k) => [k, process.env[k]]));
-    Object.assign(process.env, added);
-    try {
-      // opts.liveSampleRunner: a JS-only injection for tests of the sample loop; the CLI below never passes one.
-      cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit, ...(opts.liveSampleRunner ? { runSample: opts.liveSampleRunner } : {}) });
-    } finally {
-      for (const [k, v] of Object.entries(prior)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
-    }
+    // M4 / m4: `live` (from --live only) is the adapter's sole permission to spawn a real CLI — an in-process option,
+    // never an environment variable, so nothing inherited from the operator's shell can grant it.
+    // opts.liveSampleRunner: a JS-only injection for tests of the sample loop; the CLI below never passes one.
+    cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit, live: args.live, ...(opts.liveSampleRunner ? { runSample: opts.liveSampleRunner } : {}) });
   }
   const failed = cases.filter((c) => !c.pass).length;
   const report = {

@@ -613,11 +613,11 @@ function checkSp6Invariants() {
 function checkSp6LiveWorkflow() {
   const f = join(ROOT, '.github/workflows/evals-live.yml');
   if (!existsSync(f)) { fail('INV-sp6-live-workflow: .github/workflows/evals-live.yml missing'); return; }
-  const text = readFileSync(f, 'utf8');
+  const raw = readFileSync(f); // m8: the pin covers the raw bytes, not a decoded string
   const pinFile = join(ROOT, 'evals/live-workflow.sha256');
-  const pinErr = livePinError(text, existsSync(pinFile) ? readFileSync(pinFile, 'utf8') : '');
+  const pinErr = livePinError(raw, existsSync(pinFile) ? readFileSync(pinFile, 'utf8') : '');
   if (pinErr) fail(pinErr);
-  const errs = liveWorkflowErrors(text);
+  const errs = liveWorkflowErrors(raw.toString('utf8'));
   for (const e of errs) fail(`INV-sp6-live-workflow: ${e}`);
   if (!pinErr && !errs.length) pass('INV-sp6-live-workflow (hash pin + rules)');
 }

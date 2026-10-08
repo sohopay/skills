@@ -62,13 +62,20 @@ jobs:
         run: |
           echo "::error::refusing a fork PR (${HEAD_REPO}): live evals run only on same-repo branches"
           exit 1
+      # Its own step, with no outputs: the branch name (attacker-settable text) never shares a step with GITHUB_OUTPUT.
+      - name: Refuse a protected head branch
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          case "$HEAD_REF" in
+            develop|main) echo "::error::refusing a PR whose head branch is $HEAD_REF"; exit 1 ;;
+          esac
       - name: Validate the request
         id: check
         env:
           EVENT: ${{ github.event_name }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REPO: ${{ github.repository }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
           IN_CASE: ${{ inputs.case }}
           IN_SAMPLES: ${{ inputs.samples }}
         run: |
@@ -76,9 +83,6 @@ jobs:
           if [ "$EVENT" = "pull_request" ]; then
             # Belt and braces with the step above: a fork never gets past this job.
             [ "$HEAD_REPO" = "$REPO" ] || { echo "::error::refusing a fork PR ($HEAD_REPO)"; exit 1; }
-            case "$HEAD_REF" in
-              develop|main) echo "::error::refusing a PR whose head branch is $HEAD_REF"; exit 1 ;;
-            esac
             { echo "allow_regen=true"; echo "case="; echo "samples=5"; } >> "$GITHUB_OUTPUT"
           else
             [[ "$IN_CASE" =~ ^([a-z0-9][a-z0-9-]{0,80})?$ ]] || { echo "::error::invalid case id"; exit 1; }
@@ -182,7 +186,8 @@ jobs:
         if: ${{ always() }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
+          # The PR NUMBER, not its branch name: this step writes GITHUB_OUTPUT, so it holds no attacker-settable text.
+          REF: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           ALLOW_REGEN: ${{ needs.gate.outputs.allow_regen }}
           CASE: ${{ needs.gate.outputs.case }}
