@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { parseChildTrace } from "../mock/lib/child-trace.mjs";
 import { IO_URING_INJECT } from "../mock/lib/strace-records.mjs";
 import { childStraceArgv } from "../mock/signer-host.mjs";
+import { straceArgv } from "./adapters/cc-audit.mjs";
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "adapters", "__fixtures__", "strace");
 const NODE = "/usr/bin/node";
@@ -43,6 +44,22 @@ test("R2-9: the signer child's strace fails io_uring_setup (ENOSYS); a failed se
   assert.equal(parseChildTrace(`${start}7 1760000100.100000 ${setup} = -1 ENOSYS (Function not implemented) (INJECTED)\n`, NODE).ioUring, false);
   assert.equal(parseChildTrace(`${start}7 1760000100.100000 ${setup} = 4<anon_inode:[io_uring]>\n`, NODE).ioUring, true);
   assert.equal(parseChildTrace(`${start}7 1760000100.100000 io_uring_enter(4, 1, 0, 0, NULL, 0) = -1 EBADF (Bad file descriptor)\n`, NODE).ioUring, true);
+});
+
+// Syscalls an architecture may lack (legacy path calls only x86-64 still has; renameat / newfstatat that newer
+// asm-generic ports dropped; newer calls an older kernel or strace may not know). An unknown name in `-e trace=` aborts
+// strace, so each must carry `?` in every set that is not x64-only.
+const ARCH_OPTIONAL = ["open", "creat", "stat", "lstat", "access", "readlink", "unlink", "rename", "link", "symlink", "chmod", "chown", "lchown", "mkdir", "rmdir", "mknod", "utimes", "fork", "vfork", "renameat", "newfstatat", "openat2", "faccessat2", "fchmodat2", "clone3", "io_uring_setup", "io_uring_enter"];
+const traceSet = (argv) => argv.find((a) => a.startsWith("trace=")).slice("trace=".length).split(",");
+
+test("aarch64: every arch-optional syscall in the signer-child and agent (non-x64) trace sets is marked `?`", () => {
+  for (const [name, set] of [["signer child", traceSet(childStraceArgv("/w/c.strace"))], ["agent arm64", traceSet(straceArgv("/r/a.strace", { arch: "arm64" }))]]) {
+    for (const s of set) assert.ok(!ARCH_OPTIONAL.includes(s), `${name}: ${s} must be ?${s}`);
+    assert.ok(set.includes("openat") && set.includes("?io_uring_setup"), `${name}: core calls traced`);
+  }
+  const child = traceSet(childStraceArgv("/w/c.strace"));
+  for (const s of ["?open", "?creat", "?renameat", "?newfstatat"]) assert.ok(child.includes(s), `signer child traces ${s}`);
+  assert.ok(traceSet(straceArgv("/r/a.strace", { arch: "x64" })).includes("open"), "x64-only legacy calls stay required on x64");
 });
 
 test("R3-5: a trace where node's execve never succeeded is NOT started — no opens, never 'available'", () => {

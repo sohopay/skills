@@ -36,8 +36,10 @@ export { sandboxSupport };
 export const HOST = "127.0.0.1";
 const MAX_BODY = 4 * 1024 * 1024;
 const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
-// Child strace (Linux): the agent-tree syscall set plus io_uring (unobservable I/O must at least be seen).
-const CHILD_TRACE = "openat,?openat2,creat,open,newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,?io_uring_setup,?io_uring_enter";
+// Child strace (Linux): the agent-tree syscall set plus io_uring (unobservable I/O must at least be seen). `?` marks
+// every call an architecture (or an older kernel / strace) may lack — open / creat exist only on x86-64, renameat /
+// newfstatat not on every asm-generic port — since an unknown name in `-e trace=` aborts strace.
+const CHILD_TRACE = "openat,?openat2,?creat,?open,?newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,?renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,?io_uring_setup,?io_uring_enter";
 
 /** argv prefix wrapping the sandboxed child in strace; io_uring_setup fails with ENOSYS there too (R2-9). */
 export function childStraceArgv(file) {

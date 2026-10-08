@@ -18,9 +18,10 @@ import { IO_URING_INJECT, ioUringRing, straceRecords } from "../../mock/lib/stra
 
 export { IO_URING_INJECT, ioUringRing };
 
-// *at / fd forms exist on every Linux arch; `?name` = optional (strace or the kernel may not know it).
+// *at / fd forms exist on every Linux arch; `?name` = optional (strace, the kernel or the arch may not know it —
+// renameat / newfstatat are absent on some asm-generic ports).
 const COMMON = [
-  "openat", "?openat2", "newfstatat", "statx", "faccessat", "?faccessat2", "readlinkat", "unlinkat", "renameat", "renameat2",
+  "openat", "?openat2", "?newfstatat", "statx", "faccessat", "?faccessat2", "readlinkat", "unlinkat", "?renameat", "renameat2",
   "linkat", "symlinkat", "fchmodat", "?fchmodat2", "fchownat", "mkdirat", "mknodat", "utimensat", "truncate", "ftruncate",
   "fchmod", "fchown", "setxattr", "lsetxattr", "fsetxattr", "removexattr", "lremovexattr", "fremovexattr",
   "execve", "execveat", "chdir", "fchdir", "clone", "?clone3",

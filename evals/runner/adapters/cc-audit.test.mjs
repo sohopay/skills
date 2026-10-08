@@ -45,10 +45,10 @@ test("syscall set per architecture: legacy path syscalls only on x64; fd-based m
     assert.ok(!arm.includes(s), `arm64 has no ${s}`);
     assert.ok(x64.includes(s), `x64 traces ${s}`);
   }
-  for (const s of ["openat", "newfstatat", "unlinkat", "renameat2", "symlinkat", "linkat", "fchmodat", "fchownat", "mknodat", "fchmod", "fchown", "ftruncate", "fsetxattr", "fremovexattr", "fchdir", "chdir", "execve", "clone"]) {
+  for (const s of ["openat", "unlinkat", "renameat2", "symlinkat", "linkat", "fchmodat", "fchownat", "mknodat", "fchmod", "fchown", "ftruncate", "fsetxattr", "fremovexattr", "fchdir", "chdir", "execve", "clone"]) {
     assert.ok(arm.includes(s) && x64.includes(s), s);
   }
-  for (const s of ["?fchmodat2", "?openat2", "?clone3", "?faccessat2", "?io_uring_setup", "?io_uring_enter"]) assert.ok(arm.includes(s), `${s} optional (kernel/strace may not know it)`);
+  for (const s of ["?fchmodat2", "?openat2", "?clone3", "?faccessat2", "?io_uring_setup", "?io_uring_enter", "?newfstatat", "?renameat"]) assert.ok(arm.includes(s) && x64.includes(s), `${s} optional (kernel/strace/arch may not know it)`);
 });
 
 test("attribution: only subtrees spawned inside a tool window count; CLI startup, CLI threads, out-of-window spawns and hook relays do not", () => {
