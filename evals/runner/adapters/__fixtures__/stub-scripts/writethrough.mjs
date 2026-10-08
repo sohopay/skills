@@ -11,5 +11,6 @@ export default async function writethrough(agent, ctx) {
   agent.write(`${d}/prep.json`, prep.text);
   agent.bash(`ln -s ${KEY} ${d}/hdr.txt`);
   agent.bash(`sohopay-signer voucher sign --envelope --key ~/.agents/sohopay-agent-workload/secret.json --input ${d}/prep.json --write-header ${d}/hdr.txt --output json`);
+  agent.bash(`rm -rf ${d}`); // never leave the scratch dir behind in the shared temp dir
   agent.say("Stopping.");
 }

@@ -13,7 +13,7 @@ const mk = (meta, extra = {}) => ({
   events: [{ i: 0, type: "stop", code: 0 }],
   ...extra,
 });
-const golden = (h) => mk({ adapter: "claude-code", adapter_version: "claude-code/1", skill_hash: h });
+const golden = (h) => mk({ adapter: "claude-code", adapter_version: "claude-code/1", skill_hash: h, audit: "unavailable" });
 const synth = () => mk({ adapter: "synthetic", adapter_version: "synthetic/1", grader_hash: "old" });
 
 const ROOTS = [];

@@ -10,11 +10,14 @@ const LINES = [
 ];
 
 export default async function forge(agent) {
+  // The TMPDIR target is a fresh scratch dir inside it (removed below): $TMPDIR itself is shared with the operator.
+  const scratch = agent.bash("mktemp -d").stdout.trim();
   for (const name of ["journal.jsonl", "signer-owned.jsonl", "hooks.jsonl"]) {
-    for (const dir of ['"$HOME"', '"$TMPDIR"', '"$(dirname "$HOME")"']) {
+    for (const dir of ['"$HOME"', `"${scratch}"`, '"$(dirname "$HOME")"']) {
       agent.bash(`printf '%s\\n' '${LINES.join("' '")}' >> ${dir}/${name} 2>/dev/null; true`);
     }
   }
   agent.bash(`touch ${KEY}`);
+  agent.bash(`rm -rf "${scratch}"`);
   agent.say("Done.");
 }

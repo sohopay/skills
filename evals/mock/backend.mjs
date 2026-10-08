@@ -13,11 +13,10 @@
 //   CLI: node evals/mock/backend.mjs --run <run.json> [--port <n>]   → prints {"url": "..."} once listening.
 import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
-import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { initialState, merchantChallenge, ToolError, TOOLS } from "./lib/backend-tools.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "./lib/tool-catalog.mjs";
-import { createSignerHost } from "./signer-host.mjs";
+import { createSignerHost, newLogs, tokenEquals } from "./signer-host.mjs";
 
 export const HOST = "127.0.0.1";
 const PROTOCOL_VERSION = "2025-06-18";
@@ -46,11 +45,18 @@ function send(res, status, body, headers = {}) {
   res.end(text);
 }
 
-/** Create (not yet listening) the mock backend for one run config. */
-export function createBackend(run) {
+/**
+ * Create (not yet listening) the mock backend for one run config.
+ * @param {object} run
+ * @param {{sink?: object[], ctl?: {token: string, state: () => object}}} [opts]  sink: keep input conditions in
+ *   memory instead of the run.journal file (live runs); ctl: serve GET /__ctl/state to the holder of the token.
+ */
+export function createBackend(run, opts = {}) {
   const state = initialState(run);
   const emit = (condition, ref = {}) => {
-    if (run.journal) appendFileSync(run.journal, `${JSON.stringify({ source: "backend", condition, ...ref, at: Date.now() })}\n`);
+    const entry = { source: "backend", condition, ...ref, at: Date.now() };
+    if (opts.sink) opts.sink.push(entry);
+    else if (run.journal) appendFileSync(run.journal, `${JSON.stringify(entry)}\n`);
   };
   const ctx = { ...run, publicBase: "" };
 
@@ -92,6 +98,10 @@ export function createBackend(run) {
 
   async function handle(req, res) {
     const url = new URL(req.url, `http://${HOST}`);
+    // Control channel for the harness only: without the token it is indistinguishable from any unknown path.
+    if (url.pathname === "/__ctl/state" && req.method === "GET" && opts.ctl && tokenEquals(req.headers["x-ctl-token"], opts.ctl.token)) {
+      return send(res, 200, opts.ctl.state());
+    }
     if (url.pathname === "/mcp") {
       if (req.method !== "POST") return send(res, 405, { error: "method not allowed" }, { allow: "POST" });
       let parsed;
@@ -151,11 +161,15 @@ export const merchantUrl = (base) => `${base}${MERCHANT_PATH}`;
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (f) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : undefined; };
-  const runPath = arg("--run");
-  const run = JSON.parse(readFileSync(runPath, "utf8"));
-  const backend = createBackend(run);
-  // --signer-host: also serve the out-of-process signer for a live run (its owned-change log sits beside run.json).
-  const signer = process.argv.includes("--signer-host") ? createSignerHost(run, { ownedLog: join(dirname(runPath), "signer-owned.jsonl") }) : null;
+  const run = JSON.parse(readFileSync(arg("--run"), "utf8"));
+  // --signer-host --tokens <file>: a live run. The signer is hosted here too; the journal, signer-owned changes and
+  // signer opens stay in this process's memory and leave only through GET /__ctl/state with the control token. The
+  // tokens file ({ctl, client}, 0600) sits in the harness-only run root, so no token is ever on an argv.
+  const live = process.argv.includes("--signer-host");
+  const tokens = live ? JSON.parse(readFileSync(arg("--tokens"), "utf8")) : null;
+  const logs = live ? newLogs() : null;
+  const backend = createBackend(run, live ? { sink: logs.journal, ctl: { token: tokens.ctl, state: () => ({ journal: logs.journal, owned: logs.owned, opens: logs.opens }) } } : {});
+  const signer = live ? createSignerHost(run, { logs, clientToken: tokens.client }) : null;
   Promise.all([backend.listen(Number(arg("--port") ?? 0)), signer ? signer.listen(0) : null]).then(([url, signerUrl]) =>
     process.stdout.write(`${JSON.stringify({ url, mcp: `${url}/mcp`, merchant: merchantUrl(url), ...(signerUrl ? { signer: signerUrl } : {}) })}\n`));
 }

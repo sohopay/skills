@@ -55,6 +55,24 @@ function blockText(content) {
 }
 
 const RESULT_BLOCK_RE = /(?:^|_)tool_result$/;
+const SAVED_RE = /<persisted-output>[\s\S]*?Full output saved to: (\S+)/;
+
+/**
+ * M3: Claude Code persists a large output to a file and keeps only a preview in the message (and possibly in
+ * toolUseResult.stdout). The full file is read into `stdout` so never_appears scans everything the tool produced; a
+ * referenced output that cannot be obtained is an adapter error, never a silently shorter transcript.
+ */
+function fillPersisted(r, tur, readPersisted) {
+  const obj = tur && typeof tur === "object" && !Array.isArray(tur) ? tur : {};
+  const path = typeof obj.persistedOutputPath === "string" ? obj.persistedOutputPath : SAVED_RE.exec(r.text)?.[1] ?? null;
+  const truncated = Number.isFinite(obj.persistedOutputSize) && (r.stdout ?? "").length < obj.persistedOutputSize;
+  if (!path && !truncated) return;
+  if (!path) throw new HardError(`session: truncated output for ${r.id} names no persisted file`);
+  if (typeof readPersisted !== "function") throw new HardError(`session: persisted output ${path} cannot be read`);
+  try { r.stdout = readPersisted(path); } catch (e) {
+    throw e instanceof HardError ? e : new HardError(`session: persisted output ${path} cannot be read: ${e.message}`);
+  }
+}
 
 /**
  * Session JSONL → ordered raw items:
@@ -64,7 +82,7 @@ const RESULT_BLOCK_RE = /(?:^|_)tool_result$/;
  * Duplicate tool_use ids (a re-emitted block) keep the first; a result for an unknown id is kept (the assembler
  * turns it into an adapter error rather than guessing).
  */
-export function parseSession(text) {
+export function parseSession(text, { readPersisted } = {}) {
   const items = [];
   const seenCalls = new Set();
   const seenResults = new Set();
@@ -92,6 +110,7 @@ export function parseSession(text) {
           if (typeof tur.stderr === "string") r.stderr = tur.stderr;
         }
         if (typeof o.toolDenialKind === "string" && o.toolDenialKind !== "") r.denialKind = o.toolDenialKind;
+        fillPersisted(r, tur, readPersisted);
         items.push(r);
       }
     }

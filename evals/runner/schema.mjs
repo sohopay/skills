@@ -90,6 +90,8 @@ export function validateTranscript(t) {
   if (!["claude-code", "synthetic"].includes(m.adapter)) bad("meta.adapter must be claude-code|synthetic");
   if (!ADAPTER_VERSIONS.has(m.adapter_version)) bad(`unknown adapter_version: ${m.adapter_version}`);
   if (m.adapter === "claude-code" && typeof m.skill_hash !== "string") bad("golden must carry skill_hash");
+  // A live capture (and so every golden) says whether a process-tree file audit backed it (T15 fix I10).
+  if (m.adapter === "claude-code" && !["available", "unavailable"].includes(m.audit)) bad("claude-code transcript must record meta.audit as available|unavailable");
   if (m.adapter === "synthetic" && typeof m.grader_hash !== "string") bad("synthetic must carry grader_hash");
   if (!t.secrets || typeof t.secrets.private_key !== "string" || typeof t.secrets.header_value !== "string")
     bad("secrets.private_key and secrets.header_value required");

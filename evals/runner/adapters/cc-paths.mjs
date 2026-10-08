@@ -7,8 +7,9 @@
 // What it cannot: `$(...)` / backtick output, variables set by an earlier call, functions, aliases, eval, `pushd`,
 // paths built inside an interpreter (`python -c`, `node -e`). Those tokens get no pair; the labeler's text
 // over-approximation and the key-store audit cover them.
-import { existsSync, globSync, lstatSync, readlinkSync, realpathSync } from "node:fs";
-import { dirname, isAbsolute, join, resolve } from "node:path";
+import { globSync, lstatSync } from "node:fs";
+import { isAbsolute, join, resolve } from "node:path";
+import { resolveLoose } from "../../mock/lib/realpath-loose.mjs";
 
 const GLOB_RE = /[*?[]/;
 const SEP_OPS = new Set([";", "&&", "||", "|", "&", "|&", "\n"]);
@@ -218,17 +219,7 @@ export function argPaths(name, input, { cwd, home }) {
   return out;
 }
 
-/** realpath that also follows a dangling symlink to where it points and resolves a missing leaf by its parent. */
-export function resolveLoose(p, depth = 0) {
-  try { return realpathSync(p); } catch { /* missing or dangling */ }
-  if (depth > 40) return p;
-  try {
-    if (lstatSync(p).isSymbolicLink()) return resolveLoose(resolve(dirname(p), readlinkSync(p)), depth + 1);
-  } catch { /* does not exist */ }
-  const parent = dirname(p);
-  if (parent === p) return p;
-  return join(resolveLoose(parent, depth + 1), p.slice(parent.length + (parent.endsWith("/") ? 0 : 1)));
-}
+export { resolveLoose };
 
 /** Resolve path-bearing args to [{arg, path}]: one pair per non-glob arg occurrence, one per glob match. */
 export function resolveArgs(args) {

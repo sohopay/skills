@@ -14,11 +14,13 @@ const DEFAULT_SUITES = { onboard: "sohopay-onboard", x402: "sohopay-x402" };
 
 /** Parse `--flag value` pairs; unknown flags are rejected so typos never silently widen a run. */
 function parseArgs(argv) {
-  const out = { adapter: "replay", suite: "all", case: undefined, samples: undefined };
+  const out = { adapter: "replay", suite: "all", case: undefined, samples: undefined, requireAudit: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
+    // Boolean flag: a live sample without a process-tree file audit is an adapter error (CI live mode; also SP6_AUDIT=require).
+    if (a === "--require-audit") { out.requireAudit = true; continue; }
     const key = a.startsWith("--") ? a.slice(2) : null;
-    if (!key || !(key in out)) throw new HardError(`unknown argument: ${a}`);
+    if (!key || !(key in out) || key === "requireAudit") throw new HardError(`unknown argument: ${a}`);
     const v = argv[++i];
     if (v === undefined) throw new HardError(`missing value for ${a}`);
     out[key] = v;
@@ -93,7 +95,7 @@ export async function main(argv, opts = {}) {
   } else {
     // Loaded lazily: the live adapter must never be reachable from the static import graph.
     const live = await import("./adapters/claude-code.mjs");
-    cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples) });
+    cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit });
   }
   const failed = cases.filter((c) => !c.pass).length;
   const report = {

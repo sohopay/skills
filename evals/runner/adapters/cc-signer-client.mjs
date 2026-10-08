@@ -1,24 +1,22 @@
 #!/usr/bin/env node
 // @sohopay/agent-signer CLI entry, as installed into a live-eval workspace. The adapter copies this file to
-// <prefix>/lib/node_modules/@sohopay/agent-signer/dist/cli/index.js with the ENDPOINT placeholder replaced by
-// the signer host's 127.0.0.1 URL. It forwards argv / stdin / cwd / env and replays stdout, stderr and the exit code
-// exactly, so the agent sees the real CLI contract while the run config stays out of its reach.
+// <prefix>/lib/node_modules/@sohopay/agent-signer/dist/cli/index.js (comment lines stripped) with the ENDPOINT and
+// CLIENT placeholders filled in. It forwards argv / stdin / cwd and an env ALLOWLIST (HOME and SOHOPAY_* — never API
+// keys or tokens) and replays stdout, stderr and the exit code exactly.
 import { readFileSync } from "node:fs";
 import { request } from "node:http";
 
 const ENDPOINT = "__SIGNER_ENDPOINT__";
+const CLIENT = "__SIGNER_CLIENT__";
 const argv = process.argv.slice(2);
-const needsStdin = argv.some((t) => t === "-" || t === "--input=-" || t === "--key=-");
 let stdin = "";
-if (needsStdin) { try { stdin = readFileSync(0, "utf8"); } catch { stdin = ""; } }
-
+if (argv.some((t) => t === "-" || t === "--input=-" || t === "--key=-")) { try { stdin = readFileSync(0, "utf8"); } catch { stdin = ""; } }
+const env = {};
+for (const [k, v] of Object.entries(process.env)) if (k === "HOME" || /^SOHOPAY_[A-Z0-9_]+$/.test(k)) env[k] = v;
 const url = new URL(ENDPOINT);
-if (url.hostname !== "127.0.0.1") {
-  process.stderr.write("sohopay-signer: invalid local endpoint\n");
-  process.exit(1);
-}
-const body = JSON.stringify({ argv, stdin, cwd: process.cwd(), env: { ...process.env } });
-const req = request({ host: "127.0.0.1", port: Number(url.port), path: "/exec", method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) } }, (res) => {
+if (url.hostname !== "127.0.0.1") { process.stderr.write("sohopay-signer: invalid local endpoint\n"); process.exit(1); }
+const body = JSON.stringify({ argv, stdin, cwd: process.cwd(), env });
+const req = request({ host: "127.0.0.1", port: Number(url.port), path: "/exec", method: "POST", headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-signer-client": CLIENT } }, (res) => {
   const chunks = [];
   res.on("data", (c) => chunks.push(c));
   res.on("end", () => {

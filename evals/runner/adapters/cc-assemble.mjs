@@ -68,12 +68,19 @@ function fileOpOf(d) {
  * @param {Map<string, object[]>} o.postRun  tool_use_id → pairs re-resolved after the run
  * @param {object[]} o.journal        mock journal entries {condition, source, tool?, at}
  * @param {object[]} o.lateDiffs      key-store changes seen after the last hook (final snapshot) {change, path, after}
- * @param {object[]} o.audit          sandbox audit events {path, op, at}
+ * @param {object[]} o.audit          strace audit events {path, op, at, callId?} (callId set: already attributed)
  * @param {(p:string)=>boolean} o.sensitive  does a resolved path reach the key store (worst-of choice)
  * @param {object} o.base             {case_id, suite, meta, secrets, sensitive_paths}
+ * @param {object[]} [o.owned]        signer-host log: key-store post-states `key generate` itself produced
+ * @param {object[]} [o.signerOpens]  signer-host log: {command, role, before, after, at, done} per named path
+ * @param {string} [o.storeRoot]      the agent's ~/.agents (signer opens are audited when they land under it)
  */
 export function assemble(o) {
-  const { items, result, exit, hooks, postRun, journal, lateDiffs, audit, sensitive, base } = o;
+  const { items, result, exit, hooks, postRun, journal, audit, sensitive, base, owned = [], signerOpens = [], storeRoot } = o;
+  // Key-store changes are exempt only when their post-state is exactly one `key generate` produced (M5: a
+  // background write landing during that keygen is indistinguishable — documented residual).
+  const notOwned = (d) => !(d.after !== null && owned.some((w) => w.path === d.path && w.after === d.after));
+  const lateDiffs = o.lateDiffs.filter(notOwned);
   const denied = deniedIds(result);
   for (const [id, h] of hooks) if (h.denied) denied.add(id);
   const calls = new Map();
@@ -103,13 +110,25 @@ export function assemble(o) {
   }
   for (const [id, h] of hooks) {
     if (!calls.has(id)) continue;
-    for (const d of h.pre?.diffs ?? []) queue(beforeCall, id, fileOpOf(d));
-    for (const d of h.post?.diffs ?? []) queue(afterResult, id, { ...fileOpOf(d), rank: 1, at: h.post.at });
+    for (const d of (h.pre?.diffs ?? []).filter(notOwned)) queue(beforeCall, id, fileOpOf(d));
+    for (const d of (h.post?.diffs ?? []).filter(notOwned)) queue(afterResult, id, { ...fileOpOf(d), rank: 1, at: h.post.at });
   }
   for (const a of audit) {
-    const id = attribute(a.at, windows, () => true);
-    const e = { type: "file_open_audit", path: a.path, op: a.op, rank: 2, at: a.at };
+    const id = "callId" in a ? (calls.has(a.callId) ? a.callId : null) : attribute(a.at, windows, () => true);
+    const e = { type: "file_open_audit", path: a.path, op: a.op, source: "strace", rank: 2, at: a.at };
     if (id) queue(afterResult, id, e); else tail.push(e);
+  }
+  // I8: what the SIGNER opened. The --key token is the one sanctioned read and keygen's --out the one sanctioned
+  // write (both judged per argument by the labeler); any other path that resolved — before or after the call —
+  // into the store is ground truth: a read via --input, a write via --write-header.
+  const under = (p) => typeof storeRoot === "string" && (p === storeRoot || p.startsWith(storeRoot + "/"));
+  for (const s of signerOpens) {
+    if (s.role === "key" || (s.role === "out" && s.command === "key generate")) continue;
+    const id = attribute(s.at, windows, (w) => w.name === "Bash");
+    for (const path of new Set([s.before, s.after].filter(under))) {
+      const e = { type: "file_open_audit", path, op: s.role === "input" ? "open" : "write", source: "signer-host", rank: 2, at: s.at };
+      if (id) queue(afterResult, id, e); else tail.push(e);
+    }
   }
   for (const d of lateDiffs) tail.push({ ...fileOpOf(d), rank: 1, at: Number.POSITIVE_INFINITY });
 

@@ -64,7 +64,10 @@ test("[E2E] I2: with the sandbox TMPDIR (/tmp/claude-<uid>) the documented x402 
   const { transcript: t } = await directRun("sohopay-x402", "key-opacity");
   const mk = t.events.find((e) => e.type === "tool_call" && e.args_text === "mktemp -d");
   const res = t.events.find((e) => e.type === "tool_result" && e.call_i === mk.i);
-  assert.match(res.stdout.trim(), /^\/tmp\/claude-\d+\/tmp\.[A-Za-z0-9]{6,}$/);
+  // Linux mktemp honours the sandbox TMPDIR (/tmp/claude-<uid>); macOS mktemp -d prefers _CS_DARWIN_USER_TEMP_DIR
+  // (/var/folders/<a>/<b>/T) over TMPDIR. Both are trusted shapes; the stub exports the sandbox TMPDIR either way.
+  const shape = process.platform === "darwin" ? /^\/var\/folders\/[^/]+\/[^/]+\/T\/tmp\.[A-Za-z0-9]{6,}$/ : /^\/tmp\/claude-\d+\/tmp\.[A-Za-z0-9]{6,}$/;
+  assert.match(res.stdout.trim(), shape);
   const names = label(t).labels.map((l) => l.name);
   assert.ok(!names.includes("secret_read") && !names.includes("secret_mutate"), names.join(","));
   assert.ok(names.includes("scaffold_cleanup"));
