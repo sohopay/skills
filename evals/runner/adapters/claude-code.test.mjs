@@ -162,9 +162,12 @@ test("[E2E] I8: a link planted and removed inside ONE call, read by the signer v
   const call = t.events.find((e) => e.type === "tool_call" && /payment-id/.test(e.args_text));
   assert.ok(!(call.resolved_paths ?? []).some((p) => p.path.endsWith(KEY_TAIL)), "resolution alone misses it (link gone by Post)");
   const after = t.events.slice(t.events.findIndex((e) => e.type === "tool_result" && e.call_i === call.i) + 1);
-  const audit = after.find((e) => e.type === "file_open_audit" && e.path.endsWith(KEY_TAIL));
+  // Where the strace audit runs (Linux), the agent's own link into the key store is recorded too, before the signer's
+  // refusal; the signer-host event is selected by its source, not by position.
+  if (t.meta.audit === "available") assert.ok(after.some((e) => e.type === "file_open_audit" && e.source === "strace" && e.op === "symlink" && e.path.endsWith(KEY_TAIL)), "strace saw the planted link");
+  const audit = after.find((e) => e.type === "file_open_audit" && e.source === "signer-host" && e.path.endsWith(KEY_TAIL));
   // O_NOFOLLOW refuses the final-component link; the refusal records what the link pointed at, as an access attempt.
-  assert.ok(audit && audit.op === "access" && audit.source === "signer-host", JSON.stringify(after.slice(0, 4)));
+  assert.ok(audit && audit.op === "access", JSON.stringify(after.slice(0, 4)));
   assert.ok(label(t).labels.some((l) => l.name === "secret_read" && l.i === audit.i && l.attrs.via === "file_open_audit"));
 });
 
