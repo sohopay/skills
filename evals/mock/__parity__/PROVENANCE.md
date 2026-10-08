@@ -91,8 +91,30 @@ base64, or 64-char hex, without the canary prefix and outside a public field.
      returned no `nonce` / `iat`. Case 3's honest path stops after `capabilities`, and its documented keygen call fails
      on the 0.2.0 grammar exactly as the real binary does.
 
-## Re-verify (parked until 0.3.1 is published)
+## Re-verify against the published 0.3.1 (done 2026-10-08)
 
-When `@sohopay/agent-signer@0.3.1` is published, re-run `capture.mjs` against the unpacked published tarball and diff
-the result against this recording (random values will differ; field sets, codes, messages and exit codes must not),
-then update this file with the tarball's integrity hash.
+`@sohopay/agent-signer@0.3.1` was published to GitHub Packages on 2026-10-08T06:49:41Z after PR #7 merged. It was
+re-verified against this recording the same day:
+
+| Item | Value |
+|------|-------|
+| Tarball | `sohopay-agent-signer-0.3.1.tgz` (`npm pack @sohopay/agent-signer@0.3.1`), 33910 bytes |
+| `dist.shasum` | `7c0e3328d616d7623d7599d00e419fe1fa64087f` |
+| `dist.integrity` | `sha512-F/ncEuU2wwuo8R/eRkifz2HIlYKH7y3dEK0ac+uWmp8/gZOMNfn9xqtJxAgpWAuHB9SfjBSrGdVBPwNt02XR5w==` |
+| `gitHead` | `2f82ec8b5a2f3421ffa06bafcf617ebd4c9cb26c` (the PR #7 merge commit). Its tree is `3a310cb`, the same tree as `44cb9fe`. |
+| Runtime deps resolved | `@noble/curves` 1.9.7, `@noble/hashes` 1.8.0, `@sohopay/signer-vectors` 0.2.0, `canonicalize` 2.1.0 (the same versions as the `44cb9fe` worktree) |
+
+Results:
+
+1. **Files.** Every file under the tarball's `dist/` is byte-identical to the `44cb9fe` worktree build (`diff -r`), and
+   so is `README.md`. The only packaging difference is `package.json`: the published copy has no `"private": true`.
+   That is a publish-time edit with no runtime effect.
+2. **Behaviour.** `capture.mjs` was re-run against the unpacked tarball (deps installed with `--omit=dev`), with a fresh
+   throwaway `HOME` and scratch dir per case. All 29 cases (56 steps) match this recording under `compareRecord`:
+   same exit codes, stdout formats, field names and order, deterministic values, stderr, and header-file prefix and
+   mode. Only the per-key random values differ (public `x`, jkt, signatures, nonces, `iat`), as expected. The
+   committed recording was kept, so the vendored fixture did not churn.
+3. **`--write-header` stdout field set** (published package, `--output json`): `signer_protocol`, `implementation`,
+   `implementation_version`, `payment_id`, `agent_key_jkt`, `algorithm`, `header_name`, `header_file`. There is no
+   `header_value`, `envelope` or `signature`. `evals/runner/signer-doc-contract.test.mjs` holds signer.md's
+   "Consume the output" section to this set.
