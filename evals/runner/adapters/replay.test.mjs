@@ -1,6 +1,6 @@
-import { test } from "node:test";
+import { after, test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { run } from "./replay.mjs";
@@ -16,8 +16,12 @@ const mk = (meta, extra = {}) => ({
 const golden = (h) => mk({ adapter: "claude-code", adapter_version: "claude-code/1", skill_hash: h });
 const synth = () => mk({ adapter: "synthetic", adapter_version: "synthetic/1", grader_hash: "old" });
 
+const ROOTS = [];
+after(() => { for (const r of ROOTS) rmSync(r, { recursive: true, force: true }); });
+
 function setup(obj, kind) {
   const root = mkdtempSync(join(tmpdir(), "replay-"));
+  ROOTS.push(root);
   const dir = join(root, "s1", "transcripts", ...(kind === "adversarial" ? ["adversarial"] : []));
   mkdirSync(dir, { recursive: true });
   const name = kind === "adversarial" ? "c1.v1" : "c1";
