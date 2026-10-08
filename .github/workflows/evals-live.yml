@@ -101,10 +101,11 @@ jobs:
     environment: sp6-live-evals
     permissions:
       contents: read
-    # Downstream jobs act only on a verdict that passed the egress scan (C1).
+    # Downstream jobs act only on a verdict that passed the egress scan (C1); regen also needs a clean golden scan (I1).
     outputs:
       safety_failures: ${{ steps.egress.outcome == 'success' && steps.verdict.outputs.safety_failures || 'false' }}
-      regen_count: ${{ steps.egress.outcome == 'success' && steps.verdict.outputs.regen_count || '0' }}
+      regen_count: ${{ steps.egress.outcome == 'success' && steps.goldenscan.outcome == 'success' && steps.verdict.outputs.regen_count || '0' }}
+      golden_scan_rejects: ${{ steps.egress.outcome == 'success' && steps.goldenscan.outputs.rejects || '0' }}
     env:
       # Kernel-enforcement and child-evidence tests must RUN here (none skipped); see the test step below.
       SP6_REQUIRE_SANDBOX: "1"
@@ -204,6 +205,22 @@ jobs:
           node evals/runner/live-ci.mjs --report "$RUNNER_TEMP/sp6-live/report.json" --live-dir "$RUNNER_TEMP/sp6-live/transcripts" \
             --out "$RUNNER_TEMP/sp6-verdict" --samples "$SAMPLES" "${flags[@]}" | tee -a "$GITHUB_OUTPUT"
 
+      # I1: every staged golden must pass the merge gate's committed-secrets scan (committed-secrets.test.mjs) BEFORE it
+      # can be committed. live-ci.mjs already refuses failing candidates (and writes a golden-scan-<case> issue); this is
+      # the independent re-check of the exact staged bytes. A hit quarantines the whole regen set (nothing is committed)
+      # and writes the issue; the regen job runs only when this step succeeded.
+      - name: Committed-secrets scan of the staged goldens (before any commit)
+        id: goldenscan
+        if: ${{ always() && steps.verdict.outcome == 'success' }}
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REF: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          if [ ! -d "$RUNNER_TEMP/sp6-verdict" ]; then echo "rejects=0" >> "$GITHUB_OUTPUT"; exit 0; fi
+          node evals/runner/live-ci.mjs --scan-verdict-dir "$RUNNER_TEMP/sp6-verdict" | tee -a "$GITHUB_OUTPUT"
+
       # C1 egress: nothing leaves this job unless it is free of the real key. The adapter already quarantines any
       # sample whose capture holds a harness secret (in any never_appears encoding); this is the independent last
       # check over everything about to be uploaded (transcripts, report, issue bodies, golden candidates). A hit
@@ -252,10 +269,11 @@ jobs:
           echo "::error::live evals: at least one sample failed or was not run (see the report artifact)"
           exit 1
 
+  # One issue per failing safety case id, plus one per golden candidate refused by the committed-secrets scan (I1).
   issues:
     name: Open / update sp6-live-regression issues
     needs: [gate, live]
-    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures == 'true' }}
+    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.live.outputs.safety_failures == 'true' || needs.live.outputs.golden_scan_rejects != '0') }}
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -319,7 +337,7 @@ jobs:
         with:
           name: sp6-live-verdict-${{ github.run_id }}
           path: ${{ runner.temp }}/verdict
-      # No PR code runs in this job (only git): the candidates were audited and replayed green in the live job.
+      # No PR code runs in this job (only git): the candidates were audited, secrets-scanned and replayed green in the live job.
       - name: Commit and push (GITHUB_TOKEN, bot author, no trailer)
         env:
           HEAD_REF: ${{ github.event.pull_request.head.ref }}

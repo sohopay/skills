@@ -17,6 +17,7 @@ const wf = readWorkflow(YML);
 const job = (id) => wf.jobs.find((j) => j.id === id);
 const key = (j, k) => j.keys.find((b) => b.key === k);
 const steps = (id) => stepsOf(job(id));
+const blockIf = (id) => `${key(job(id), "if").value}\n${key(job(id), "if").body.join("\n")}`;
 
 test("INV-sp6-live-workflow: the committed evals-live.yml satisfies every ruling", () => {
   assert.deepEqual(liveWorkflowErrors(YML), []);
@@ -87,7 +88,7 @@ test("C1 egress: a scan for the literal key (and its base64) runs after the verd
   }
   // Downstream jobs act only on a verdict that passed the scan.
   assert.match(job("live").text, /safety_failures: \$\{\{ steps\.egress\.outcome == 'success' && steps\.verdict\.outputs\.safety_failures \|\| 'false' \}\}/);
-  assert.match(job("live").text, /regen_count: \$\{\{ steps\.egress\.outcome == 'success' && steps\.verdict\.outputs\.regen_count \|\| '0' \}\}/);
+  assert.match(job("live").text, /regen_count: \$\{\{ steps\.egress\.outcome == 'success' && steps\.goldenscan\.outcome == 'success' && steps\.verdict\.outputs\.regen_count \|\| '0' \}\}/);
 });
 
 test("M2: the live step has its own timeout below the job's; verdict always runs, so spend never goes unreported", () => {
@@ -165,8 +166,25 @@ test("regen pushes only to the PR head branch, refuses develop/main, checks the 
   assert.ok(!/Co-Authored-By|Generated with/i.test(regen));
 });
 
+test("final review I1: staged goldens are re-scanned (committed-secrets) after the verdict and before egress; regen needs a clean scan; rejects open issues", () => {
+  const ids = steps("live").map((s) => s.id ?? s.name);
+  assert.ok(ids.indexOf("verdict") < ids.indexOf("goldenscan") && ids.indexOf("goldenscan") < ids.indexOf("egress"), ids.join(" → "));
+  const scan = steps("live").find((s) => s.id === "goldenscan");
+  assert.equal(scan.if, "${{ always() && steps.verdict.outcome == 'success' }}");
+  assert.match(scan.run, /node evals\/runner\/live-ci\.mjs --scan-verdict-dir "\$RUNNER_TEMP\/sp6-verdict" \| tee -a "\$GITHUB_OUTPUT"/);
+  assert.match(scan.run, /set -euo pipefail/);
+  assert.match(job("live").text, /golden_scan_rejects: \$\{\{ steps\.egress\.outcome == 'success' && steps\.goldenscan\.outputs\.rejects \|\| '0' \}\}/);
+  assert.match(blockIf("issues"), /needs\.live\.outputs\.golden_scan_rejects != '0'/);
+});
+
 // Teeth: each ruling, broken once, must be reported.
 const MUTATIONS = [
+  ["I1: golden scan step removed", (y) => y.replace(/      - name: Committed-secrets scan of the staged goldens[\s\S]*?tee -a "\$GITHUB_OUTPUT"\n/, ""), /golden scan/],
+  ["I1: golden scan after the egress scan", (y) => { const m = /      # I1: every staged golden[\s\S]*?tee -a "\$GITHUB_OUTPUT"\n\n/.exec(y); return y.replace(m[0], "").replace("      # Transcripts carry only", `${m[0]}      # Transcripts carry only`); }, /golden scan/],
+  ["I1: regen not gated on the golden scan", (y) => y.replace("steps.egress.outcome == 'success' && steps.goldenscan.outcome == 'success' && steps.verdict.outputs.regen_count", "steps.egress.outcome == 'success' && steps.verdict.outputs.regen_count"), /regen_count .*goldenscan/],
+  ["I1: golden scan fails open", (y) => y.replace('node evals/runner/live-ci.mjs --scan-verdict-dir "$RUNNER_TEMP/sp6-verdict" | tee -a "$GITHUB_OUTPUT"', 'node evals/runner/live-ci.mjs --scan-verdict-dir "$RUNNER_TEMP/sp6-verdict" | tee -a "$GITHUB_OUTPUT" || true'), /golden scan/],
+  ["I1: issues ignore golden-scan rejects", (y) => y.replace(" || needs.live.outputs.golden_scan_rejects != '0'", ""), /golden_scan_rejects/],
+
   ["pull_request_target", (y) => y.replace("  pull_request:\n", "  pull_request_target:\n"), /pull_request_target|triggers/],
   ["push trigger", (y) => y.replace("  pull_request:\n", "  push:\n  pull_request:\n"), /triggers must be exactly/],
   ["synchronize type", (y) => y.replace("types: [labeled]", "types: [labeled, synchronize]"), /types must be exactly \[labeled\]/],
@@ -182,7 +200,7 @@ const MUTATIONS = [
   ["environment on gate", (y) => y.replace("    runs-on: ubuntu-latest\n    permissions: {}\n    outputs:", "    runs-on: ubuntu-latest\n    environment: sp6-live-evals\n    permissions: {}\n    outputs:"), /first job gate must not load an environment|exactly one job/],
   ["fork refusal removed", (y) => y.split(FORK_EXPR).join("false"), /must refuse a fork PR/],
   ["label gate removed", (y) => y.replace("contains(github.event.pull_request.labels.*.name, 'run-live-evals') &&\n", "true &&\n"), /run-live-evals label/],
-  ["issues job skips the gate", (y) => y.replace("    needs: [gate, live]\n    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures", "    needs: [live]\n    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures"), /job issues must need the gate job/],
+  ["issues job skips the gate", (y) => y.replace("    needs: [gate, live]\n    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.live.outputs.safety_failures", "    needs: [live]\n    if: ${{ !cancelled() && needs.gate.result == 'success' && (needs.live.outputs.safety_failures"), /job issues must need the gate job/],
   ["secret in issues job", (y) => y.replace("          GH_REPO: ${{ github.repository }}", "          GH_REPO: ${{ github.repository }}\n          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}"), /references ANTHROPIC_API_KEY outside/],
   ["write on live job", (y) => y.replace("    permissions:\n      contents: read\n", "    permissions:\n      contents: write\n"), /environment job live/],
   ["two writes on regen", (y) => y.replace("    permissions:\n      contents: write\n", "    permissions:\n      contents: write\n      issues: write\n"), /more than one write/],
@@ -226,7 +244,7 @@ const MUTATIONS = [
   ["C1: egress scan removed", (y) => y.replace(/      - name: Egress scan[\s\S]*?(?=      # Transcripts carry)/, ""), /egress/],
   ["C1: transcript upload not gated on the scan", (y) => y.replace("if: ${{ always() && steps.egress.outcome == 'success' }}\n        uses: actions/upload-artifact", "if: ${{ always() }}\n        uses: actions/upload-artifact"), /egress/],
   ["M2: no live-step timeout", (y) => y.replace("        timeout-minutes: 300\n", ""), /step timeout/],
-  ["M5: issues without gate success", (y) => y.replace("${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures", "${{ !cancelled() && needs.live.outputs.safety_failures"), /needs\.gate\.result/],
+  ["M5: issues without gate success", (y) => y.replace("${{ !cancelled() && needs.gate.result == 'success' && (needs.live.outputs.safety_failures", "${{ !cancelled() && (needs.live.outputs.safety_failures"), /needs\.gate\.result/],
   ["M3: set -e in the issues loop", (y) => y.replace("          set -uo pipefail\n          gh label create", "          set -euo pipefail\n          gh label create"), /set -e/],
   // ── fix round 2, m1 (re-review mutations A–G and the ruling's list) ──
   ["m1: always() on the live job (a paid run even when the gate is skipped / fails)", (y) => y.replace("  live:\n    name: Live run (protected environment)\n    needs: gate\n", "  live:\n    name: Live run (protected environment)\n    needs: gate\n    if: ${{ always() }}\n"), /status function/],

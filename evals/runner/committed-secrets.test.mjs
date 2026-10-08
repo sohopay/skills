@@ -1,129 +1,14 @@
-// Task 14 review I1 / N1 / N2: nothing committed under evals/ may look like real key material.
-//
-// Key-shaped tokens: base64 / base64url runs of 43–44 chars (a 32-byte Ed25519 seed, padded or not) or 86–88 chars
-// (64-byte material: an expanded private key or a signature), and 64-char hex runs (a 32-byte secret in hex). PEM
-// headers are never allowed. A key-shaped token passes only if it carries the FAKE-SP6-CANARY- prefix, or sits in a
-// field that is PUBLIC by construction (PUBLIC_FIELDS, each with its reason) AND no enclosing key is secret-ish
-// (`secret`, `private`, `d`, `key_material`, …), AND, for a JWK `x`, the JWK carries no `d`.
-// JSON files are walked structurally (strings holding embedded JSON are parsed and walked too), so the ancestor rule is
-// exact. Other text (signer human output inside a JSON string, .mjs/.md files) is matched on the field name written
-// right before the token, and the token's line must not mention a secret-ish name.
+// Task 14 review I1 / N1 / N2 (scanner in committed-secrets.mjs): nothing committed under evals/ may look like real key
+// material.
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ANT_KEY_RE, scanCommitted, scanText } from "./committed-secrets.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const B64_RUN_RE = /(?<![A-Za-z0-9_+/=-])[A-Za-z0-9_+/-]+={0,2}(?![A-Za-z0-9_+/=-])/g;
-const HEX64_RE = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64}(?![0-9A-Fa-f])/g;
-const KEY_LENGTHS = new Set([43, 44, 86, 87, 88]);
-const PEM_RE = /-----BEGIN [A-Z0-9 ]*-----/;
-// Anthropic API keys (`sk-ant-api03-…`, `sk-ant-admin01-…`): flagged in any context, whatever field holds them.
-const ANT_KEY_RE = /sk-ant-[A-Za-z0-9_-]{20,}/;
-const CANARY = "FAKE-SP6-CANARY-";
-const SECRETISH_RE = /secret|private|^d$|key_material/i;
-
-const PUBLIC_FIELDS = {
-  x: "Ed25519 public JWK coordinate (only inside a JWK that carries no d)",
-  jkt: "RFC 7638 thumbprint of a public JWK",
-  agent_key_jkt: "RFC 7638 thumbprint the signer echoes from the voucher",
-  agentKeyJkt: "RFC 7638 thumbprint inside a voucher (public, sent to the merchant)",
-  nonce: "PoP nonce the signer mints and the agent sends to the backend in the clear",
-  pop_signature: "Ed25519 PoP signature, sent to the backend in the clear",
-  signature: "Ed25519 voucher signature, carried in the public payment envelope",
-  payment_id: "keccak256 payment id (0x-hex), public on-chain identifier",
-  paymentId: "keccak256 payment id inside a voucher (0x-hex), public",
-  merchantId: "bytes32 merchant registry id inside a voucher (0x-hex), public on-chain",
-  orderRef: "bytes32 merchant order reference inside a voucher (0x-hex), public",
-  expect_hash: "sha256 of a case's expect text (assertions.json)",
-  skill_hash: "sha256 of a suite's skill closure (golden meta)",
-};
-
-/** Key-shaped tokens in a string, each with its offset. */
-function keyShaped(s) {
-  const out = [];
-  for (const m of s.matchAll(B64_RUN_RE)) {
-    const t = m[0];
-    // Random key material mixes cases and digits; this keeps word-ish runs (paths, identifiers) out.
-    if (KEY_LENGTHS.has(t.length) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) out.push({ t, at: m.index, kind: `${t.length}-char base64` });
-  }
-  for (const m of s.matchAll(HEX64_RE)) out.push({ t: m[0], at: m.index, kind: "64-char hex" });
-  return out;
-}
-const fieldBefore = (text, at) => {
-  const head = text.slice(Math.max(0, at - 48), at);
-  const m = /(?:\\?"([A-Za-z_]+)\\?"\s*:\s*\\?"(?:0x)?|(?:^|\\n|\n)([A-Za-z_]+): (?:0x)?)$/.exec(head);
-  return m ? m[1] ?? m[2] : null;
-};
-const lineOf = (text, at) => text.slice(text.lastIndexOf("\n", at) + 1, (text.indexOf("\n", at) + 1 || text.length + 1) - 1);
-const tryJson = (s) => { const t = s.trim(); if (!/^[[{]/.test(t)) return undefined; try { return JSON.parse(t); } catch { return undefined; } };
-
-/** Flat text (non-JSON): field-name allowlist, and no secret-ish name on the token's line. */
-function scanFlat(text, ancestors, bad) {
-  for (const { t, at, kind } of keyShaped(text)) {
-    if (t.startsWith(CANARY)) continue;
-    const f = fieldBefore(text, at);
-    const ok = f && Object.hasOwn(PUBLIC_FIELDS, f) && f !== "x" && !ancestors.some((a) => SECRETISH_RE.test(a)) &&
-      !SECRETISH_RE.test(lineOf(text, at).replace(/\b(?:secret\.json|sohopay-agent-workload)\b/g, ""));
-    if (!ok) bad.push(`${t.slice(0, 6)}… (${kind}${f ? ` after ${f}` : ""}${ancestors.length ? ` under ${ancestors.join(".")}` : ""})`);
-  }
-}
-
-/** Structural walk: `ancestors` are the enclosing keys, `parent` the object holding the current value. */
-function walk(v, ancestors, parent, bad) {
-  if (Array.isArray(v)) { v.forEach((x) => walk(x, ancestors, null, bad)); return; }
-  if (v && typeof v === "object") { for (const [k, x] of Object.entries(v)) walk(x, [...ancestors, k], v, bad); return; }
-  if (typeof v !== "string") return;
-  const embedded = tryJson(v);
-  if (embedded !== undefined) { walk(embedded, ancestors, null, bad); return; }
-  const key = ancestors[ancestors.length - 1];
-  // Signer human output: `field: <json>` lines carry structured values (e.g. `public_jwk: {"kty":…,"x":…}`).
-  if (v.includes("\n") || /^[A-Za-z_]+: [[{]/.test(v)) {
-    const flat = [];
-    for (const line of v.split("\n")) {
-      const m = /^([A-Za-z_]+): ([[{].*)$/.exec(line);
-      const inner = m && tryJson(m[2]);
-      if (inner !== undefined && inner !== null) walk(inner, [...ancestors, m[1]], null, bad);
-      else flat.push(line);
-    }
-    scanFlat(flat.join("\n"), ancestors, bad);
-    return;
-  }
-  const whole = keyShaped(v);
-  if (whole.length === 1 && whole[0].t.length === v.replace(/^0x/, "").length) {
-    if (v.startsWith(CANARY)) return;
-    const above = ancestors.slice(0, -1);
-    const publicField = Object.hasOwn(PUBLIC_FIELDS, key) && !above.some((a) => SECRETISH_RE.test(a));
-    const jwkOk = key !== "x" || (parent && parent.kty !== undefined && !("d" in parent));
-    if (!(publicField && jwkOk)) bad.push(`${v.slice(0, 6)}… (${whole[0].kind} at ${ancestors.join(".")})`);
-    return;
-  }
-  scanFlat(v, ancestors, bad);
-}
-
-/**
- * A committed file's findings. One path is allowlisted, with its reason: evals/live-workflow.sha256 is the T17 hash pin
- * of the live workflow (a PUBLIC digest of a committed file), accepted only in exact `sha256sum` format.
- */
-const PIN_PATH = "evals/live-workflow.sha256";
-const PIN_RE = /^[0-9a-f]{64} {2}\.github\/workflows\/evals-live\.yml\n?$/;
-export function scanCommitted(rel, text) {
-  if (rel === PIN_PATH && PIN_RE.test(text)) return [];
-  return scanText(text, { json: rel.endsWith(".json") });
-}
-
-/** Offending tokens in one file's text (empty = clean). JSON is walked structurally. */
-export function scanText(text, { json = false } = {}) {
-  const bad = [];
-  if (PEM_RE.test(text)) bad.push("PEM block");
-  for (const _ of text.matchAll(new RegExp(ANT_KEY_RE.source, "g"))) bad.push("Anthropic API key (sk-ant-…)");
-  const doc = json ? tryJson(text) : undefined;
-  if (doc !== undefined) walk(doc, [], null, bad);
-  else scanFlat(text, [], bad);
-  return bad;
-}
 
 // A 43-char key-shaped test token, assembled at runtime so this file does not itself carry one.
 const SEED = ["Kq3Zr8Lm2Q", "p5Tn7Vb3Xc", "9Hd1Jf4Kg6", "Sw0Ya8Eu2I", "o5P"].join("");
@@ -199,4 +84,48 @@ test("I1/N1: no committed file under evals/ carries real-looking key material", 
   assert.ok(files.length > 50);
   const findings = files.flatMap((f) => { const hits = scanFile(f); return hits.length ? [`${f}: ${hits.join(", ")}`] : []; });
   assert.deepEqual(findings, []);
+});
+
+// Final review I1: honest live goldens must pass. The public MCP / x402 identifiers appear in both casings (MCP args and
+// signer stdout are snake_case, vouchers camelCase); a public field still passes only with no secret-ish ancestor.
+// Model prose (model_text) passes an id-shaped token only when the SAME value sits in a public field elsewhere in the
+// transcript, so a model summarising its payment passes while an unexplained key-shaped token in prose is flagged.
+const H1 = "a1".repeat(32);
+const H2 = "b2".repeat(32);
+const H3 = "c3".repeat(32);
+const jt = (o) => scanText(JSON.stringify(o), { json: true });
+const call = (args) => ({ i: 0, type: "tool_call", name: "mcp__sohopay__prepare_x402_payment", args, args_text: JSON.stringify(args) });
+
+test("I1: public MCP / x402 id fields pass in snake_case and camelCase, structurally", () => {
+  const ids = { order_ref: `0x${H1}`, orderRef: `0x${H1}`, payment_id: `0x${H2}`, paymentId: `0x${H2}`, merchant_id: `0x${H3}`, merchantId: `0x${H3}`,
+    agent_key_jkt: SEED, agentKeyJkt: SEED, jkt: SEED, nonce: SEED, pop_signature: `${SEED}${SEED}`, settlement_id: `0x${H2}`, tx_hash: `0x${H1}`, txHash: `0x${H1}` };
+  assert.deepEqual(jt({ events: [call(ids)] }), []);
+  for (const [k, v] of Object.entries(ids)) assert.equal(jt({ events: [call({ secrets: { [k]: v } })] }).length, 2, `${k} under a secret-ish ancestor (args + args_text)`);
+});
+
+test("I1: the reviewer's flagged cases pass — order_ref in prepare args, and a model summary naming the payment id and jkt", () => {
+  const t = {
+    meta: { adapter: "claude-code" },
+    events: [
+      call({ merchant: "m", amount: "1", order_ref: `0x${H1}` }),
+      { i: 1, type: "tool_result", call_i: 0, text: JSON.stringify({ status: "VOUCHER_ISSUED", payment_id: `0x${H2}`, voucher: { paymentId: `0x${H2}`, agentKeyJkt: SEED, orderRef: `0x${H1}` } }) },
+      { i: 2, type: "model_text", text: `Paid. payment_id 0x${H2} for order ${H1}; signed with key ${SEED}.\nDone.` },
+    ],
+  };
+  assert.deepEqual(jt(t), []);
+});
+
+test("I1: a planted seed under order_ref inside a secrets ancestor still fails, and so does its echo in prose", () => {
+  assert.equal(jt({ secrets: { order_ref: SEED } }).length, 1);
+  const t = { events: [{ i: 0, type: "tool_result", call_i: 0, text: JSON.stringify({ secrets: { order_ref: `0x${H1}` } }) }, { i: 1, type: "model_text", text: `order 0x${H1}` }] };
+  assert.equal(jt(t).length, 2, "the secret-ancestor value is not admitted as a public value for prose");
+});
+
+test("I1: a key-shaped token in prose fails unless its value appears in a public field", () => {
+  assert.equal(jt({ events: [{ i: 0, type: "model_text", text: `The key is ${H3}.` }] }).length, 1, "random 64-hex");
+  assert.equal(jt({ events: [{ i: 0, type: "model_text", text: `payment_id: 0x${H3}` }] }).length, 1, "a public-looking label in prose does not excuse it");
+  assert.equal(jt({ events: [{ i: 0, type: "model_text", text: `seed ${SEED}` }] }).length, 1, "43-char base64");
+  assert.equal(jt({ events: [{ i: 0, type: "model_text", text: `{"jkt":"${SEED}"}` }] }).length, 1, "JSON pasted in prose is still prose");
+  assert.deepEqual(jt({ events: [call({ jkt: SEED }), { i: 1, type: "model_text", text: `{"jkt":"${SEED}"}` }] }), []);
+  assert.equal(jt({ events: [call({ jkt: SEED }), { i: 1, type: "model_text", text: `0x${SEED}` }] }).length, 0, "an 0x prefix in prose is normalized away");
 });

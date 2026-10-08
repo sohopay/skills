@@ -259,11 +259,34 @@ function runJobRules(runJob, no) {
   const uploads = steps.filter((s) => /actions\/upload-artifact@/.test(s.text));
   if (!egress || egress.if !== "${{ always() }}" || !/grep -rqF -e "\$ANTHROPIC_API_KEY"/.test(egress.run ?? "") || !/rm -rf "\$\{dirs\[@\]\}"/.test(egress.run ?? "")) no(`job ${runJob.id}: an always() egress scan step (id egress) must grep for the key and quarantine on a hit`);
   else if (!(ids.indexOf("verdict") < ids.indexOf("egress") && uploads.every((u) => steps.indexOf(u) > steps.indexOf(egress)))) no(`job ${runJob.id}: the egress scan must run after the verdict and before every upload`);
+  goldenScanRules(runJob, steps, ids, no);
   for (const u of uploads) {
     if (!/steps\.egress\.outcome == 'success'/.test(u.if ?? "")) no(`job ${runJob.id}: upload "${u.name}" must be gated on a clean egress scan`);
     const path = /\n\s*path:[ \t]*([^\n]+)/.exec(u.text)?.[1].trim();
     if (!ARTIFACT_PATHS.includes(path)) no(`job ${runJob.id}: artifact path ${path} is not one of ${ARTIFACT_PATHS.join(", ")}`);
   }
+}
+
+export const GOLDEN_SCAN_IF = "${{ always() && steps.verdict.outcome == 'success' }}";
+export const GOLDEN_SCAN_LINE = 'node evals/runner/live-ci.mjs --scan-verdict-dir "$RUNNER_TEMP/sp6-verdict" | tee -a "$GITHUB_OUTPUT"';
+export const REGEN_OUTPUT = "regen_count: ${{ steps.egress.outcome == 'success' && steps.goldenscan.outcome == 'success' && steps.verdict.outputs.regen_count || '0' }}";
+export const SCAN_REJECTS_OUTPUT = "golden_scan_rejects: ${{ steps.egress.outcome == 'success' && steps.goldenscan.outputs.rejects || '0' }}";
+
+/**
+ * Final review I1: the staged goldens are re-scanned (committed-secrets) by a fail-closed step after the verdict and
+ * before the egress scan; regen acts only on a clean scan, and its rejects open issues.
+ */
+function goldenScanRules(runJob, steps, ids, no) {
+  const scan = steps.find((s) => s.id === "goldenscan");
+  const lines = (scan?.run ?? "").split("\n").map((l) => l.trim());
+  if (!scan || scan.if !== GOLDEN_SCAN_IF || !lines.includes(GOLDEN_SCAN_LINE) || !lines.includes("set -euo pipefail")) {
+    no(`job ${runJob.id}: a golden scan step (id goldenscan, if: ${GOLDEN_SCAN_IF}) must run, fail-closed, \`${GOLDEN_SCAN_LINE}\``);
+  } else if (!(ids.indexOf("verdict") < ids.indexOf("goldenscan") && ids.indexOf("goldenscan") < ids.indexOf("egress"))) {
+    no(`job ${runJob.id}: the golden scan must run after the verdict and before the egress scan`);
+  }
+  const text = runJob.text.split("\n").map((l) => l.trim());
+  if (!text.includes(REGEN_OUTPUT)) no(`job ${runJob.id}: output regen_count must be gated on a clean egress AND golden scan (steps.goldenscan.outcome == 'success')`);
+  if (!text.includes(SCAN_REJECTS_OUTPUT)) no(`job ${runJob.id}: output golden_scan_rejects must come from the golden scan, behind the egress scan`);
 }
 
 /** The write-token jobs: issues (no checkout, per-id errors) and regen (git only, exact push, path guard, same-repo). */
@@ -274,6 +297,7 @@ function writeJobRules(jobs, no) {
     if (Object.values(grants).includes("write") && !/needs\.gate\.result == 'success'/.test(ifText)) no(`job ${j.id} holds a write token but its if: lacks needs.gate.result == 'success' (M5)`);
     if (grants.issues === "write") {
       if (/actions\/checkout@/.test(j.text)) no(`job ${j.id} (issues: write) must not check out the repository`);
+      if (!ifText.includes("needs.live.outputs.golden_scan_rejects != '0'")) no(`job ${j.id}: its if: must also fire on golden_scan_rejects (a golden refused by the committed-secrets scan opens an issue)`);
       if (stepsOf(j).some((s) => /\bset -[a-z]*e/.test(s.run ?? ""))) no(`job ${j.id}: set -e in the issue loop (one gh failure would skip the remaining case ids)`);
     }
     if (grants.contents === "write") {

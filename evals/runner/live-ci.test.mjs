@@ -10,6 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillHash } from "./hashes.mjs";
 import { escapeFinding, issueBody, liveVerdict, MAX_ISSUE_BODY, writeVerdict } from "./live-ci.mjs";
+import { verdictDirScan } from "./live-ci.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "__fixtures__", "runnable");
@@ -123,9 +124,82 @@ test("writeVerdict: issue bodies + a manifest of repo-relative golden paths + GI
   const v = await liveVerdict(allPass(), { ...w, samples: 5, allowRegen: true });
   const out = join(w.root, "verdict");
   const lines = writeVerdict(v, { outDir: out, ...CTX });
-  assert.deepEqual(lines, ["safety_failures=false", "safety_cases=0", "regen_count=1", "adapter_errors=0"]);
+  assert.deepEqual(lines, ["safety_failures=false", "safety_cases=0", "regen_count=1", "adapter_errors=0", "golden_scan_rejects=0"]);
   assert.equal(readFileSync(join(out, "regen-manifest.txt"), "utf8"), "evals/runnable/transcripts/leak-case.json\n");
   const staged = JSON.parse(readFileSync(join(out, "regen", "evals", "runnable", "transcripts", "leak-case.json"), "utf8"));
   assert.equal(staged.meta.sample_index, 0);
   assert.ok(existsSync(join(out, "issues.json")));
+});
+
+// Final review I1: a golden candidate must pass the committed-secrets scan BEFORE it is staged for commit — otherwise
+// node --test in validate.yml turns red only after the paid run and the push. A rejected candidate is skipped with the
+// reason and opens an issue (findings without token text); the workflow re-scans the staged dir independently.
+const H64 = "d4".repeat(32);
+function plant(w, sample = 0) {
+  const f = join(w.liveDir, "runnable", `leak-case.s${sample}.json`);
+  const t = JSON.parse(readFileSync(f, "utf8"));
+  t.events.splice(1, 0, { i: 0.5, type: "model_text", text: `here: ${H64}` });
+  writeFileSync(f, JSON.stringify(t));
+}
+
+test("I1: a candidate that fails the committed-secrets scan is not staged; it is skipped with the reason and listed for an issue", async () => {
+  const w = world();
+  plant(w);
+  const v = await liveVerdict(allPass(), { ...w, samples: 5, allowRegen: true });
+  assert.deepEqual(v.regen, []);
+  assert.match(v.skipped[0].reason, /committed-secrets scan/);
+  assert.deepEqual(v.goldenScan.map((g) => [g.caseId, g.suite, g.path]), [["leak-case", "runnable", "evals/runnable/transcripts/leak-case.json"]]);
+  assert.ok(!existsSync(join(w.evalsRoot, "runnable", "transcripts", "leak-case.json.bak")));
+  const out = join(w.root, "verdict");
+  const lines = writeVerdict(v, { outDir: out, ...CTX });
+  assert.ok(lines.includes("golden_scan_rejects=1") && lines.includes("regen_count=0"), lines.join(","));
+  const body = readFileSync(join(out, "issues", "golden-scan-leak-case.md"), "utf8");
+  assert.match(body, /committed-secrets/);
+  assert.match(body, /model prose/);
+  assert.ok(!body.includes(H64.slice(0, 6)), "the issue never carries token text");
+  assert.equal(readFileSync(join(out, "regen-manifest.txt"), "utf8"), "");
+});
+
+test("I1: the scan runs before the replay check (a scan reject never touches the checked-out transcripts dir)", async () => {
+  const w = world();
+  const dest = join(w.evalsRoot, "runnable", "transcripts", "leak-case.json");
+  const before = readFileSync(dest, "utf8");
+  plant(w);
+  await liveVerdict(allPass(), { ...w, samples: 5, allowRegen: true });
+  assert.equal(readFileSync(dest, "utf8"), before);
+});
+
+test("I1: verdictDirScan (workflow step) re-scans every staged candidate: clean → rejects counted from the verdict, exit 0", async () => {
+  const w = world();
+  const out = join(w.root, "verdict");
+  writeVerdict(await liveVerdict(allPass(), { ...w, samples: 5, allowRegen: true }), { outDir: out, ...CTX });
+  const r = verdictDirScan(out, CTX);
+  assert.deepEqual([r.code, r.lines], [0, ["rejects=0"]]);
+  assert.equal(readFileSync(join(out, "regen-manifest.txt"), "utf8"), "evals/runnable/transcripts/leak-case.json\n");
+});
+
+test("I1: verdictDirScan quarantines on a hit the verdict missed: regen dir removed, manifest emptied, an issue written, exit 1", async () => {
+  const w = world();
+  const out = join(w.root, "verdict");
+  writeVerdict(await liveVerdict(allPass(), { ...w, samples: 5, allowRegen: true }), { outDir: out, ...CTX });
+  const staged = join(out, "regen", "evals", "runnable", "transcripts", "leak-case.json");
+  const t = JSON.parse(readFileSync(staged, "utf8"));
+  t.secrets_dump = H64;
+  writeFileSync(staged, JSON.stringify(t));
+  const r = verdictDirScan(out, CTX);
+  assert.equal(r.code, 1);
+  assert.deepEqual(r.lines, ["rejects=1"]);
+  assert.ok(!existsSync(join(out, "regen")));
+  assert.equal(readFileSync(join(out, "regen-manifest.txt"), "utf8"), "");
+  const body = readFileSync(join(out, "issues", "golden-scan-leak-case.md"), "utf8");
+  assert.ok(!body.includes(H64.slice(0, 6)));
+});
+
+test("I1: verdictDirScan refuses a manifest path outside evals/<suite>/transcripts/<id>.json (exit 2, quarantined)", () => {
+  const out = mkdtempSync(join(tmpdir(), "live-ci-vd-"));
+  ROOTS.push(out);
+  writeFileSync(join(out, "regen-manifest.txt"), "../../etc/passwd\n");
+  const r = verdictDirScan(out, CTX);
+  assert.equal(r.code, 2);
+  assert.equal(readFileSync(join(out, "regen-manifest.txt"), "utf8"), "");
 });
