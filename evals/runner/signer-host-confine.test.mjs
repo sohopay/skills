@@ -6,7 +6,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { buildRun, seedHome } from "../mock/run-config.mjs";
@@ -143,16 +143,58 @@ test("N2: --write-header outside the sandbox set (an operator dotfile) is refuse
   assert.ok(w.logs.execs[0].refusals.some((f) => f.role === "write_header" && f.arg === rc));
 });
 
+/** Everything in the world dir OUTSIDE the sandbox write set (home, sbx) and the host's private dir: path → content. */
+function outsideState(w) {
+  const out = new Map();
+  const walk = (d) => {
+    for (const n of readdirSync(d)) {
+      const p = join(d, n);
+      if ([w.home, w.sbx, w.priv].includes(p)) continue;
+      const st = lstatSync(p);
+      if (st.isDirectory()) { out.set(p, "dir"); walk(p); } else out.set(p, st.isSymbolicLink() ? `link:${readlinkSync(p)}` : readFileSync(p, "utf8"));
+    }
+  };
+  walk(w.dir);
+  return out;
+}
+
+// The invariant is the host's state, not an exit code. The child's sandbox mirrors the agent's (Claude Code's
+// sandbox-runtime): a denyRead DIRECTORY is masked with a fresh writable tmpfs on Linux (bwrap), so a write there
+// "succeeds" into a throwaway mount the host never sees — exactly what the agent's own Bash experiences — while
+// Seatbelt (macOS) refuses it. Any other path outside the write set is read-only on both.
 test("R2-1(a) KERNEL boundary: with the JS pre-check disabled, the sandboxed child still cannot write outside the sandbox set", { skip: KERNEL_SKIP }, async () => {
   needReal();
   const w = await world("key-opacity", { sandbox: REAL });
   const rc = join(w.operator, ".zshrc");
   writeFileSync(rc, "export PATH=/usr/bin\n");
-  const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", rc, "--output", "json"], { seam: { precheck: false } });
-  assert.equal(r.exitCode, 1, r.stdout);
-  assert.equal(err(r).code, "MALFORMED_ENVELOPE");
-  assert.equal(readFileSync(rc, "utf8"), "export PATH=/usr/bin\n", "the kernel refused the write");
-  assert.equal(w.logs.execs[0].sandbox, REAL.kind);
+  const input = prep(w); // the test's own backend journals into the run root: done before the snapshot
+  const before = outsideState(w);
+  const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", input, "--write-header", rc, "--output", "json"], { seam: { precheck: false } });
+  assert.equal(readFileSync(rc, "utf8"), "export PATH=/usr/bin\n", "the operator canary is untouched");
+  if (REAL.kind === "sandbox-exec") {
+    assert.equal(r.exitCode, 1, r.stdout);
+    assert.equal(err(r).code, "MALFORMED_ENVELOPE");
+  }
+  // A path outside the write set that no deny rule masks: read-only on every platform, so the write is refused.
+  const loose = join(w.dir, "loose.txt");
+  const r2 = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", input, "--write-header", loose, "--output", "json"], { seam: { precheck: false } });
+  assert.equal(r2.exitCode, 1, r2.stdout);
+  assert.equal(err(r2).code, "MALFORMED_ENVELOPE");
+  assert.deepEqual(outsideState(w), before, "nothing outside the sandbox set changed on the host");
+  assert.ok(w.logs.execs.every((x) => x.sandbox === REAL.kind));
+});
+
+test("R2-1(a): the Linux child masks a denyRead directory with a tmpfs (as Claude Code's sandbox does), a denyRead file with /dev/null, and binds write roots writable", () => {
+  const dir = realpathSync(mkdtempSync(join(ROOT, "bw-")));
+  for (const d of ["w", "op", "ro"]) mkdirSync(join(dir, d));
+  writeFileSync(join(dir, "secret.txt"), "x");
+  const a = bwrapArgs({ writeRoots: [join(dir, "w")], denyRead: [join(dir, "op"), join(dir, "secret.txt")], denyWrite: [join(dir, "ro")], allowRead: [], cwd: dir });
+  const triple = (flag, src, dst) => a.some((x, i) => x === flag && a[i + 1] === src && (dst === undefined || a[i + 2] === dst));
+  assert.ok(triple("--ro-bind", "/", "/"), "everything else read-only");
+  assert.ok(triple("--bind", join(dir, "w"), join(dir, "w")));
+  assert.ok(triple("--tmpfs", join(dir, "op")));
+  assert.ok(triple("--ro-bind", "/dev/null", join(dir, "secret.txt")));
+  assert.ok(triple("--ro-bind", join(dir, "ro"), join(dir, "ro")));
 });
 
 test("R2-1(a) race: a flip loop on the --write-header parent never touches an operator canary outside the sandbox set", { skip: KERNEL_SKIP, timeout: 120_000 }, async () => {
