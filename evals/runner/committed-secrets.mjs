@@ -1,18 +1,28 @@
 // The committed-secrets scan (Task 14 review I1 / N1 / N2): nothing committed under evals/ may look like real key
 // material. Shared by committed-secrets.test.mjs (every committed file) and live-ci.mjs (every golden candidate).
 //
-// Key-shaped tokens: base64 / base64url runs of 43–44 chars (a 32-byte Ed25519 seed, padded or not) or 86–88 chars
-// (64-byte material: an expanded private key or a signature), and 64-char hex runs (a 32-byte secret in hex). PEM
-// headers are never allowed. A key-shaped token passes only if it carries the FAKE-SP6-CANARY- prefix, or sits in a
+// Key-shaped tokens: base64 / base64url runs at an exact key length (43–44 for a 32-byte Ed25519 seed, 86–88 for 64-byte
+// material) and hex runs of >= 64 chars (a 32-byte secret is 64, an expanded private key 128 — K2). A key glued to a
+// prefix via `=` (`KEY=<seed>`, `--key=<seed>`, `d=<seed>`) is now matched too, since `=` is base64 padding, not a run
+// boundary (K1). PEM headers are never allowed. A key-shaped token passes only if it carries the FAKE-SP6-CANARY- prefix, or sits in a
 // field that is PUBLIC by construction (PUBLIC_FIELDS, each with its reason) AND no enclosing key is secret-ish
 // (`secret`, `private`, `d`, `key_material`, …), AND, for a JWK `x`, the JWK carries no `d`.
 // JSON files are walked structurally (strings holding embedded JSON are parsed and walked too), so the ancestor rule is
 // exact. Model prose (a model_text event's text) passes a token only when the same value sits in an accepted public
 // field elsewhere in the same file (final review I1). Other text (signer human output inside a JSON string, .mjs/.md files) is matched on the field name written
 // right before the token, and the token's line must not mention a secret-ish name.
-const B64_RUN_RE = /(?<![A-Za-z0-9_+/=-])[A-Za-z0-9_+/-]+={0,2}(?![A-Za-z0-9_+/=-])/g;
-const HEX64_RE = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64}(?![0-9A-Fa-f])/g;
-const KEY_LENGTHS = new Set([43, 44, 86, 87, 88]);
+// K1: `=` is NOT a boundary char. It is only base64 padding (trailing), so excluding it on the LEFT made the scanner
+// blind to a key glued to a prefix via `=` (`KEY=<seed>`, `--key=<seed>`, `d=<seed>`); a run starting right after a `=`
+// is now matched. `_ - /` stay inside the class (they are base64url/base64 alphabet), so a key glued via one of them
+// is matched as one slightly-longer run and caught by the length-floor below rather than fragmented.
+const B64_RUN_RE = /(?<![A-Za-z0-9_+/-])[A-Za-z0-9_+/-]+={0,2}(?![A-Za-z0-9_+/-])/g;
+// K2: hex >= 64 (so a 128-char expanded private key in hex is caught, not only a 64-char seed).
+const HEX64_RE = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64,}(?![0-9A-Fa-f])/g;
+// Base64 key sizes are exact: a 32-byte seed is 43 (unpadded) / 44 (padded); 64-byte material is 86–88. We do NOT widen
+// to "any run >= 43": the committed corpus legitimately carries longer base64 by design (sha512 provenance digests,
+// voucher/header envelopes in parity fixtures, DER-prefixed blobs inside `teeth` *fail* fixtures, assembled test
+// tokens), none of which is standalone key material. Glued keys are caught by the `=`-boundary fix above (K1).
+const KEY_B64_LENGTHS = new Set([43, 44, 86, 87, 88]);
 const PEM_RE = /-----BEGIN [A-Z0-9 ]*-----/;
 // Anthropic API keys (`sk-ant-api03-…`, `sk-ant-admin01-…`): flagged in any context, whatever field holds them.
 export const ANT_KEY_RE = /sk-ant-[A-Za-z0-9_-]{20,}/;
@@ -52,10 +62,12 @@ function keyShaped(s) {
   const out = [];
   for (const m of s.matchAll(B64_RUN_RE)) {
     const t = m[0];
+    // A pure-hex run is reported by the hex pass below; skip it here so a mixed-case 64-hex token is not double-counted.
+    if (/^[0-9A-Fa-f]+={0,2}$/.test(t)) continue;
     // Random key material mixes cases and digits; this keeps word-ish runs (paths, identifiers) out.
-    if (KEY_LENGTHS.has(t.length) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) out.push({ t, at: m.index, kind: `${t.length}-char base64` });
+    if (KEY_B64_LENGTHS.has(t.length) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) out.push({ t, at: m.index, kind: `${t.length}-char base64` });
   }
-  for (const m of s.matchAll(HEX64_RE)) out.push({ t: m[0], at: m.index, kind: "64-char hex" });
+  for (const m of s.matchAll(HEX64_RE)) out.push({ t: m[0], at: m.index, kind: `${m[0].length}-char hex` });
   return out;
 }
 const fieldBefore = (text, at) => {

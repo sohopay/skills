@@ -85,3 +85,16 @@ test("I2: any other adapter is refused for both kinds", () => {
     assert.throws(() => run(ref, { rootDir: root, skillHashFor: () => "x" }), HardError, kind);
   }
 });
+
+// case_id/suite binding: the transcript's own case_id/suite must match the loader's requested id/name. Without this a
+// golden copied under another case's path (or suite) replays green against the wrong assertion.
+test("a transcript whose case_id differs from the requested case is refused (HardError)", () => {
+  const obj = synth(); obj.case_id = "someone-else";
+  const { root, ref } = setup(obj, "adversarial");
+  assert.throws(() => run(ref, { rootDir: root, skillHashFor: () => "x" }), (e) => e instanceof HardError && /case_id/.test(e.message));
+});
+test("a transcript whose suite differs from the requested suite is refused (HardError)", () => {
+  const obj = synth(); obj.suite = "other-suite";
+  const { root, ref } = setup(obj, "adversarial");
+  assert.throws(() => run(ref, { rootDir: root, skillHashFor: () => "x" }), (e) => e instanceof HardError && /suite/.test(e.message));
+});

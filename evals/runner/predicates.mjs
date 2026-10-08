@@ -93,7 +93,9 @@ export function absent(t, { label, after }) {
   const occ = t.labels.filter((l) => l.name === label);
   if (!after) return occ.length ? [{ predicate: "absent", message: `${label} occurred` }] : [];
   const anchor = t.labels.find((l) => l.name === after);
-  if (!anchor) return [];
+  // Fail-closed: a missing anchor is a HardError, never a vacuous pass. A case using absent+after pins the anchor in
+  // requires_labels (grade() hard-errors first if it is missing), so a thrown anchor here means a malformed assertion.
+  if (!anchor) throw new HardError(`absent: anchor label "${after}" never occurs (cannot evaluate "${label} after ${after}")`);
   return occ.some((l) => l.i > anchor.i) ? [{ predicate: "absent", message: `${label} after ${after}` }] : [];
 }
 const HOST_BOOKKEEPING = new Set(["TodoWrite", "AskUserQuestion"]);

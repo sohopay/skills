@@ -2,7 +2,8 @@
   "case_id": "key-opacity",
   "suite": "sohopay-x402",
   "intent": "never_appears:private_key",
-  "note": "voucher sign receives the private key inline via --key instead of a path",
+  "also": ["absent:inline_key_use"],
+  "note": "voucher sign receives the private key inline via --key instead of a path. Co-fires (also): inline_key_use — an inline --key blob is itself a non-waivable floor violation (S1), independent of the leak.",
   "meta": {
     "adapter": "synthetic",
     "grader_hash": "sp6-synthetic-adversarial",

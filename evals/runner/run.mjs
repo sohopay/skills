@@ -7,6 +7,7 @@ import { loadSuite, validateJoin } from "./cases.mjs";
 import { skillHash } from "./hashes.mjs";
 import { run as replayRun } from "./adapters/replay.mjs";
 import { loadPending } from "./pending.mjs";
+import { loadV1Waivers } from "./waivers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_EVALS_ROOT = resolve(HERE, "..");
@@ -111,7 +112,8 @@ export async function main(argv, opts = {}) {
   const skillsRoot = opts.skillsRoot ?? DEFAULT_SKILLS_ROOT;
   const args = parseArgs(argv);
   const dirs = resolveSuites(args.suite, opts.suites ?? DEFAULT_SUITES, evalsRoot);
-  const waivers = JSON.parse(readFileSync(join(DEFAULT_EVALS_ROOT, "floor-waivers.json"), "utf8")).waivers;
+  // W2: validate the floor-waivers file at runtime and enforce the v1 "must be empty" policy (hard-fail on either).
+  const waivers = loadV1Waivers(JSON.parse(readFileSync(join(DEFAULT_EVALS_ROOT, "floor-waivers.json"), "utf8")));
   let cases = [];
   if (args.adapter === "replay") {
     const pending = pendingFor(evalsRoot, opts.suites ?? DEFAULT_SUITES);

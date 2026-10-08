@@ -1,3 +1,5 @@
+import { HardError } from "./schema.mjs";
+
 /** Floor checks that may be waived per case. Everything else (never_appears, private_key, header_value) is unwaivable. */
 export const WAIVABLE_CHECKS = new Set(["secret_read", "secret_mutate", "handrolled_crypto"]);
 
@@ -20,4 +22,18 @@ export function validateWaivers(doc, knownCaseIds) {
     if (typeof w.reason !== "string" || !w.reason.trim()) errs.push(`${at}: reason must be a non-empty string`);
   });
   return errs;
+}
+
+/**
+ * W2 — runtime loader for the floor-waivers file. Validates the shape (hard-fail on any error) AND enforces the v1
+ * policy that NO floor waivers are permitted yet (the file must be empty). Returns the (empty) waivers array or throws.
+ * run.mjs previously parsed the file and used `.waivers` with no validation, so a malformed or populated file went
+ * unchecked at runtime.
+ * @param {unknown} doc parsed floor-waivers.json
+ */
+export function loadV1Waivers(doc) {
+  const errs = validateWaivers(doc);
+  if (errs.length) throw new HardError(`floor-waivers.json is invalid: ${errs.join("; ")}`);
+  if (doc.waivers.length) throw new HardError(`floor-waivers.json must be empty in v1 (no per-case floor waivers are permitted yet); found ${doc.waivers.length}`);
+  return doc.waivers;
 }

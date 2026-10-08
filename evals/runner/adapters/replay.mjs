@@ -24,6 +24,10 @@ export function run(ref, opts) {
   }
   const v = validateTranscript(t);
   if (!v.ok) throw new HardError(`replay: invalid transcript ${file}: ${v.errors.join("; ")}`);
+  // Bind the transcript's own identity to what the loader asked for: a golden/adversarial copied under another case's
+  // path (or another suite) must not replay green against the wrong assertion.
+  if (t.suite !== suite) throw new HardError(`replay: ${file}: transcript suite ${JSON.stringify(t.suite)} != requested suite ${JSON.stringify(suite)}`);
+  if (t.case_id !== caseId) throw new HardError(`replay: ${file}: transcript case_id ${JSON.stringify(t.case_id)} != requested case ${JSON.stringify(caseId)}`);
   if (!ADAPTER_VERSIONS.has(t.meta.adapter_version))
     throw new HardError(`replay: unknown adapter_version ${t.meta.adapter_version} in ${file}`);
   const kindErr = transcriptKindError(t, kind === "adversarial" ? "adversarial" : "golden");

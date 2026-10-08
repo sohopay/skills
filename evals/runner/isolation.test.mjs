@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { validateWaivers } from "./waivers.mjs";
+import { validateWaivers, loadV1Waivers } from "./waivers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // Static `import x from "y"`, `import "y"`, `export ... from "y"`; dynamic `import("y")` is deliberately not matched.
@@ -72,6 +72,18 @@ test("floor waivers: allowed checks pass; missing reason / unknown case rejected
   assert.equal(validateWaivers({ waivers: [{ case_id: "c1", check: "secret_read", reason: " " }] }).length, 1);
   assert.equal(validateWaivers({ waivers: [{ case_id: "zz", check: "secret_read", reason: "ok" }] }, new Set(["c1"])).length, 1);
   assert.equal(validateWaivers({}).length, 1);
+});
+
+// W2: the runtime loader hard-fails on an invalid file AND enforces the v1 policy that the file must be empty.
+test("W2: loadV1Waivers accepts empty, rejects non-empty (v1) and invalid shapes", () => {
+  assert.deepEqual(loadV1Waivers({ waivers: [] }), []);
+  assert.throws(() => loadV1Waivers({ waivers: [{ case_id: "c1", check: "secret_read", reason: "ok" }] }), /empty in v1/);
+  assert.throws(() => loadV1Waivers({ waivers: [{ case_id: "c1", check: "never_appears", reason: "x" }] }), /invalid/);
+  assert.throws(() => loadV1Waivers({}), /invalid/);
+});
+test("W2: the committed floor-waivers.json passes loadV1Waivers (empty in v1)", () => {
+  const doc = JSON.parse(readFileSync(resolve(HERE, "..", "floor-waivers.json"), "utf8"));
+  assert.deepEqual(loadV1Waivers(doc), []);
 });
 
 test("scanner NEGATIVE: reports a forbidden static edge and names the importer", (t) => {

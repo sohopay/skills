@@ -28,6 +28,26 @@ test("scanner: flags key-shaped tokens (43/44, 86–88 base64, 64 hex) and PEM; 
   assert.deepEqual(scanText("evals/sohopay-onboard/transcripts/adversarial/register-fails"), [], "paths are not key material");
 });
 
+test("K1: a base64 key glued to a prefix via `=` is flagged (boundary no longer blind to the `=` glue)", () => {
+  // The old B64 boundary excluded `=`, so a key run immediately after a `=` was never matched. `=` is only base64
+  // padding (trailing), never a run start, so there is no legitimate reason to blind the scanner to a run after it.
+  assert.equal(scanText(`KEY=${SEED}`).length, 1, "assignment glue");
+  assert.equal(scanText(`--key=${SEED}`).length, 1, "flag=value glue");
+  assert.equal(scanText(`d=${SEED}`).length, 1, "secret-ish field via =");
+  assert.equal(scanText(`SIGNER_PRIVATE_KEY=${SEED44}`).length, 1, "env-var glue, padded");
+  // The offset-based public-field allowlist must survive the boundary change: a public id in its recognized
+  // `field: value` form stays exempt (the scanner recognizes `:`-delimited public fields, not `=`).
+  assert.deepEqual(scanText(`jkt: ${SEED}`), [], "public field in recognized form is still exempt");
+});
+
+test("K2: hex runs of 64+ chars are flagged, including a 128-char expanded key", () => {
+  const HEX128 = "9f".repeat(64);
+  assert.equal(scanText(`priv=${HEX128}`).length, 1, "128-char hex");
+  assert.equal(scanText(`sig: ${HEX128}`).length, 1, "128-char hex after a colon label (no public hex128 field)");
+  // A 40-char hex (an eth address) is below the floor and still ignored.
+  assert.deepEqual(scanText(`addr=${"ab".repeat(20)}`), []);
+});
+
 test("scanner: public fields pass only in their public form (N2)", () => {
   const j = (o) => scanText(JSON.stringify(o), { json: true });
   assert.deepEqual(j({ public_jwk: { kty: "OKP", crv: "Ed25519", x: SEED }, jkt: SEED, nonce: SEED, payment_id: `0x${HEX}` }), []);

@@ -120,7 +120,10 @@ test("absent without after, and with anchor absent", () => {
   const t = lt([{ name: "m", i: 1, attrs: {} }], []);
   assert.equal(P.absent(t, { label: "m" }).length, 1);
   assert.equal(P.absent(lt([], []), { label: "m" }).length, 0);
-  assert.equal(P.absent(t, { label: "m", after: "never" }).length, 0);
+  // A missing `after` anchor is a HardError, never a vacuous pass: fail-closed so a mis-named/absent anchor can't
+  // silently excuse the check (cases that use absent+after pin the anchor in requires_labels, so this never fires
+  // for a well-formed suite).
+  assert.throws(() => P.absent(t, { label: "m", after: "never" }), HardError);
 });
 test("not_before when b is absent", () => {
   assert.equal(P.not_before(lt([{ name: "a", i: 1, attrs: {} }], []), { a: "a", b: "b" }).length, 1);
