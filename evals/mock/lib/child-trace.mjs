@@ -3,8 +3,9 @@
 // caller must not treat it as an audit (R3-5). Records are joined across `<unfinished ...>` / `<... resumed>` halves
 // (node is multithreaded under -f) by the same joiner the agent-tree audit uses. Kernel-resolved paths are used where
 // strace prints them (`= N</path>` for opens, `N</path>` for fd arguments); other path syscalls are taken as the
-// absolute strings. io_uring use is reported (its I/O would be unobservable).
-import { straceRecords } from "./strace-records.mjs";
+// absolute strings. A usable io_uring is reported (its I/O would be unobservable); the tracer fails io_uring_setup
+// with ENOSYS (IO_URING_INJECT), so a setup that returned an error made no ring.
+import { ioUringRing, straceRecords } from "./strace-records.mjs";
 
 const WRITE_FLAGS = /O_(WRONLY|RDWR|CREAT|TRUNC|APPEND)/;
 const PATH_SYS = /^(newfstatat|statx|faccessat2?|readlinkat|unlinkat|renameat2?|linkat|symlinkat|fchmodat2?|fchownat|mkdirat|mknodat|utimensat|truncate|stat|lstat|access|unlink|rename|link|symlink|chmod|chown|mkdir|rmdir)$/;
@@ -24,7 +25,7 @@ export function parseChildTrace(text, nodePath) {
   let ioUring = false;
   for (const { sys, args, ret, kpath, at } of straceRecords(text)) {
     if (!started) { if (sys === "execve" && args.startsWith(JSON.stringify(nodePath)) && ret === "0") started = true; continue; }
-    if (/^io_uring_(setup|enter)$/.test(sys)) { ioUring = true; continue; }
+    if (/^io_uring_(setup|enter)$/.test(sys)) { if (ioUringRing(sys, ret)) ioUring = true; continue; } // R2-9: a failed setup made no ring
     if (/^(open|openat|openat2|creat)$/.test(sys)) {
       const p = kpath ?? (/"(\/[^"]*)"/.exec(args)?.[1] ?? null);
       if (p) opens.push({ path: p, op: opOf(sys, args), at });

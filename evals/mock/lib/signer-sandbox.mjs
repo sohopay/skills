@@ -125,6 +125,12 @@ function childArgv(support, { policy, cwd, strace, seam }) {
 const killGroup = (pid) => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } };
 
 /**
+ * The signer child's whole environment. UV_USE_IO_URING=0 keeps libuv's file-op io_uring off (R2-9: its I/O would be
+ * unobservable); the child's strace additionally fails io_uring_setup, which also covers libuv's epoll ring.
+ */
+export const signerChildEnv = (home) => ({ HOME: home, PATH: "/usr/bin:/bin", UV_USE_IO_URING: "0" });
+
+/**
  * Run one signer invocation in the sandboxed child.
  * @returns {Promise<{ok:true, reply:object, trace:string|null, pid:number} | {ok:false, error:string, pid?:number, timedOut?:boolean}>}
  */
@@ -136,7 +142,7 @@ export function runSandboxed(support, { policy, cwd, request, strace = null, sea
     let settled = false;
     const finish = (r) => { if (!settled) { settled = true; done(r); } };
     // detached: the child leads its own process group, so a timeout kills the wrapper and everything under it.
-    const c = spawn(argv[0], argv.slice(1), { cwd, env: { HOME: policy.home, PATH: "/usr/bin:/bin" }, stdio: ["pipe", "pipe", "pipe"], detached: true });
+    const c = spawn(argv[0], argv.slice(1), { cwd, env: signerChildEnv(policy.home), stdio: ["pipe", "pipe", "pipe"], detached: true });
     const out = [];
     const err = [];
     let timedOut = false;

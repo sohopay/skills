@@ -13,7 +13,9 @@
 import { spawnSync } from "node:child_process";
 import { posix } from "node:path";
 import { HardError } from "../schema.mjs";
-import { straceRecords } from "../../mock/lib/strace-records.mjs";
+import { IO_URING_INJECT, ioUringRing, straceRecords } from "../../mock/lib/strace-records.mjs";
+
+export { IO_URING_INJECT, ioUringRing };
 
 // *at / fd forms exist on every Linux arch; `?name` = optional (strace or the kernel may not know it).
 const COMMON = [
@@ -32,10 +34,11 @@ export function syscallSet(arch = process.arch) {
   return arch === "x64" ? [...COMMON, ...X64_ONLY] : [...COMMON];
 }
 
-/** argv prefix that wraps the CLI in strace; the probe runs the same `-e` set. */
+/** argv prefix that wraps the CLI in strace; the probe runs the same `-e` set and injection. */
 export function straceArgv(outFile, { arch = process.arch, killOnExit = false } = {}) {
-  return ["strace", "-f", "-ttt", "-qq", "-y", "-s", "4096", ...(killOnExit ? ["--kill-on-exit"] : []), "-o", outFile, "-e", `trace=${syscallSet(arch).join(",")}`, "--"];
+  return ["strace", "-f", "-ttt", "-qq", "-y", "-s", "4096", ...(killOnExit ? ["--kill-on-exit"] : []), "-o", outFile, "-e", `trace=${syscallSet(arch).join(",")}`, "-e", IO_URING_INJECT, "--"];
 }
+
 
 /**
  * Which audit backend this host supports; never throws. On linux a trial run uses the EXACT syscall set of the real
@@ -190,7 +193,10 @@ export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), win
       return;
     }
     if (info.kind === "excluded") return;
-    if (/^io_uring_(setup|enter)$/.test(sys) && info.kind !== "cli") throw new HardError(`strace: io_uring used by agent process ${pid} — its file I/O is unobservable`);
+    if (/^io_uring_(setup|enter)$/.test(sys)) {
+      if (info.kind !== "cli" && ioUringRing(sys, ret)) throw new HardError(`strace: io_uring used by agent process ${pid} — its file I/O is unobservable`);
+      return; // a setup that failed made no ring: nothing to audit
+    }
     const parts = splitArgs(args);
     if (sys === "chdir" || sys === "fchdir") {
       if (ret !== "0") return;

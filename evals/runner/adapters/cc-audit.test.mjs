@@ -129,3 +129,37 @@ test("R2-9: io_uring in an agent subtree is unobservable I/O → adapter error; 
   const cli = `${base}1001 1760000007.000000 io_uring_setup(8, {flags=0}) = 4<anon_inode:[io_uring]>\n`;
   assert.doesNotThrow(() => parseStrace(cli, { storeRoot: STORE, cwd: "/home/agent", excludePids: new Map(), windows: EV_WINDOWS }));
 });
+
+// Linux CI (run 37747714088): Node 22's libuv calls io_uring_setup in EVERY process for its epoll_ctl batching ring
+// (flags=0x10000), whatever UV_USE_IO_URING says — so every node the agent ran (the signer client, the stub CLI's
+// tools) tripped R2-9. The tracer now makes io_uring_setup fail with ENOSYS in the whole traced tree (libuv falls back
+// to plain epoll and threadpool file I/O, which strace sees); a ring that nevertheless exists in an agent subtree is
+// still an adapter error.
+test("R2-9: strace makes io_uring_setup fail (ENOSYS) in the traced tree; the probe trial carries the same injection", () => {
+  const real = straceArgv("/r/a.strace", { arch: "x64" });
+  const at = real.indexOf("inject=?io_uring_setup:error=ENOSYS");
+  assert.ok(at > 0 && real[at - 1] === "-e" && at < real.indexOf("--"), JSON.stringify(real));
+  const calls = [];
+  probeAudit({ platform: "linux", arch: "x64", run: (cmd, args) => { calls.push([cmd, ...args]); return { status: 0, stderr: "" }; } });
+  const trial = calls.find((c) => c.includes("/bin/true"));
+  assert.ok(trial.includes("inject=?io_uring_setup:error=ENOSYS"), "a strace that cannot inject makes the audit unavailable up front");
+  assert.ok(syscallSet("x64").includes("?io_uring_setup") && syscallSet("arm64").includes("?io_uring_enter"), "io_uring calls stay traced");
+});
+
+test("R2-9: an agent io_uring_setup the tracer failed (or the kernel refused) made no ring — not an error; a ring that exists, or any io_uring_enter, still is", () => {
+  const base = readFileSync(join(FIX, "evasion.strace"), "utf8");
+  const opts = { storeRoot: STORE, cwd: "/home/agent", excludePids: new Map([[1100, 1760000002060]]), windows: EV_WINDOWS };
+  const node = "io_uring_setup(256, {flags=0x10000 /* IORING_SETUP_??? */, sq_thread_cpu=0, sq_thread_idle=0})";
+  const injected = `${base}1201 1760000002.180000 ${node} = -1 ENOSYS (Function not implemented) (INJECTED)\n`;
+  assert.deepEqual(parseStrace(injected, opts), parseEvM(new Map([[1100, 1760000002060]])), "an injected failure leaves the audit unchanged");
+  const refused = `${base}1201 1760000002.180000 ${node} = -1 EPERM (Operation not permitted)\n`;
+  assert.doesNotThrow(() => parseStrace(refused, opts));
+  const ring = `${base}1201 1760000002.180000 ${node} = 5<anon_inode:[io_uring]>\n`;
+  assert.throws(() => parseStrace(ring, opts), (e) => e instanceof HardError && /io_uring used by agent process 1201/.test(e.message));
+  const unknown = `${base}1201 1760000002.180000 ${node} = ?\n`;
+  assert.throws(() => parseStrace(unknown, opts), (e) => e instanceof HardError && /io_uring/.test(e.message), "an unknown result is fail-closed");
+  const enter = `${base}1201 1760000002.180000 io_uring_enter(7, 1, 0, 0, NULL, 0) = -1 EBADF (Bad file descriptor)\n`;
+  assert.throws(() => parseStrace(enter, opts), (e) => e instanceof HardError && /io_uring/.test(e.message), "io_uring_enter in an agent subtree is always an error");
+  const resumed = `${base}1201 1760000002.180000 io_uring_setup(256, <unfinished ...>\n1201 1760000002.180100 <... io_uring_setup resumed>{flags=0x10000, sq_entries=256}) = 9<anon_inode:[io_uring]>\n`;
+  assert.throws(() => parseStrace(resumed, opts), (e) => e instanceof HardError && /io_uring/.test(e.message), "a ring set up across unfinished/resumed halves is seen");
+});

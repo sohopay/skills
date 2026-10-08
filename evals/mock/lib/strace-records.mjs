@@ -2,7 +2,27 @@
 // child trace (child-trace.mjs). Under `strace -f` a multithreaded process (node) has its syscalls split into
 // `<unfinished ...>` and `<... X resumed>` halves; they are joined per (pid, syscall), keeping the time the call
 // STARTED, the arguments of both halves and the kernel path the resumed half reports.
-const LINE_RE = /^(\d+)\s+(\d+\.\d+)\s+(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?:<([^>]*)>)?/;
+
+/**
+ * R2-9: strace makes io_uring_setup fail with ENOSYS in the whole traced tree (agent tree and signer child), so no
+ * process there can open a ring whose I/O strace cannot see. Node's libuv sets up an io_uring (its epoll_ctl batching
+ * ring) in every process whatever UV_USE_IO_URING says; on ENOSYS it falls back to plain epoll and threadpool file I/O
+ * (openat — visible). A ring that nevertheless exists stays an error (ioUringRing).
+ */
+export const IO_URING_INJECT = "inject=?io_uring_setup:error=ENOSYS";
+
+/**
+ * Does this io_uring record leave a ring the process can use? io_uring_enter always counts (it only ever acts on a
+ * ring); io_uring_setup counts unless it returned an error (the injected ENOSYS, or a kernel / seccomp refusal). An
+ * unknown result (`?`) counts (fail closed).
+ */
+export function ioUringRing(sys, ret) {
+  if (sys === "io_uring_enter") return true;
+  if (sys !== "io_uring_setup") return false;
+  return !/^-\d+$/.test(String(ret));
+}
+
+const LINE_RE =/^(\d+)\s+(\d+\.\d+)\s+(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?:<([^>]*)>)?/;
 const RESUMED_RE = /^(\d+)\s+(\d+\.\d+)\s+<\.\.\.\s+(\w+)\s+resumed>(.*)\)\s+=\s+(-?\d+|\?)(?:<([^>]*)>)?/;
 const UNFINISHED_RE = /^(\d+)\s+(\d+\.\d+)\s+(\w+)\((.*)<unfinished \.\.\.>/;
 

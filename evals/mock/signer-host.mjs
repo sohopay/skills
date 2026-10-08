@@ -30,6 +30,7 @@ import { diffSnapshots, snapshotTree } from "./lib/keystore-snapshot.mjs";
 import { resolveLoose } from "./lib/realpath-loose.mjs";
 import { childTraceSupport, runSandboxed, sandboxSupport, SIGNER_CALL_TIMEOUT_MS } from "./lib/signer-sandbox.mjs";
 import { parseChildTrace } from "./lib/child-trace.mjs";
+import { IO_URING_INJECT } from "./lib/strace-records.mjs";
 
 export { sandboxSupport };
 export const HOST = "127.0.0.1";
@@ -37,6 +38,11 @@ const MAX_BODY = 4 * 1024 * 1024;
 const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
 // Child strace (Linux): the agent-tree syscall set plus io_uring (unobservable I/O must at least be seen).
 const CHILD_TRACE = "openat,?openat2,creat,open,newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,?io_uring_setup,?io_uring_enter";
+
+/** argv prefix wrapping the sandboxed child in strace; io_uring_setup fails with ENOSYS there too (R2-9). */
+export function childStraceArgv(file) {
+  return ["strace", "-f", "-y", "-qq", "-ttt", "-s", "4096", "-o", file, "-e", `trace=${CHILD_TRACE}`, "-e", IO_URING_INJECT, "--"];
+}
 
 /** Constant-time string equality (false on any length mismatch). */
 export function tokenEquals(a, b) {
@@ -173,7 +179,7 @@ async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, polic
   const work = mkdtempSync(join(privateDir, "x-"));
   try {
     const traceable = childTraceSupport(support).ok;
-    const strace = traceable ? { file: join(work, "child.strace"), argv: ["strace", "-f", "-y", "-qq", "-ttt", "-s", "4096", "-o", join(work, "child.strace"), "-e", `trace=${CHILD_TRACE}`, "--"] } : null;
+    const strace = traceable ? { file: join(work, "child.strace"), argv: childStraceArgv(join(work, "child.strace")) } : null;
     const childPolicy = { home, writeRoots: [...policy.writeRoots, ...extraWriteRoots], denyRead: policy.denyRead ?? [], denyWrite: policy.denyWrite ?? [], allowRead: policy.allowRead ?? [] };
     const before = snapshotTree(join(home, ".agents"));
     const out = await runSandboxed(support, { policy: childPolicy, cwd, request: { config, argv, stdin: typeof stdin === "string" ? stdin : "", home, state: logs.state }, strace, seam, timeoutMs: callTimeoutMs });

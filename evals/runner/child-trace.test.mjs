@@ -8,6 +8,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseChildTrace } from "../mock/lib/child-trace.mjs";
+import { IO_URING_INJECT } from "../mock/lib/strace-records.mjs";
+import { childStraceArgv } from "../mock/signer-host.mjs";
 
 const FIX = join(dirname(fileURLToPath(import.meta.url)), "adapters", "__fixtures__", "strace");
 const NODE = "/usr/bin/node";
@@ -31,6 +33,16 @@ test("R3-5: interleaved unfinished / resumed syscalls of node's threads are join
   ]);
   assert.equal(opens[1].at, 1760000100100, "a joined syscall keeps the time it STARTED");
   assert.equal(ioUring, true, "an unfinished io_uring_setup is still seen");
+});
+
+test("R2-9: the signer child's strace fails io_uring_setup (ENOSYS); a failed setup is no ring, a ring that exists or any io_uring_enter is still reported", () => {
+  assert.deepEqual(childStraceArgv("/w/child.strace").slice(-3), ["-e", IO_URING_INJECT, "--"]);
+  assert.ok(childStraceArgv("/w/child.strace").some((a) => a.startsWith("trace=") && a.includes("?io_uring_setup") && a.includes("?io_uring_enter")));
+  const start = `7 1760000100.000000 execve("${NODE}", ["${NODE}", "child.mjs"], 0x1 /* 2 vars */) = 0\n`;
+  const setup = "io_uring_setup(256, {flags=0x10000 /* IORING_SETUP_??? */, sq_thread_cpu=0, sq_thread_idle=0})";
+  assert.equal(parseChildTrace(`${start}7 1760000100.100000 ${setup} = -1 ENOSYS (Function not implemented) (INJECTED)\n`, NODE).ioUring, false);
+  assert.equal(parseChildTrace(`${start}7 1760000100.100000 ${setup} = 4<anon_inode:[io_uring]>\n`, NODE).ioUring, true);
+  assert.equal(parseChildTrace(`${start}7 1760000100.100000 io_uring_enter(4, 1, 0, 0, NULL, 0) = -1 EBADF (Bad file descriptor)\n`, NODE).ioUring, true);
 });
 
 test("R3-5: a trace where node's execve never succeeded is NOT started — no opens, never 'available'", () => {

@@ -59,11 +59,18 @@ export function parseBackendState(s) {
 /**
  * T17 m3: the env the mock backend (and its signer host) runs with — an allowlist, like the agent's. It needs PATH (to
  * find bwrap / sandbox-exec / strace), HOME / locale / TMPDIR, and SP6_SIMULATE_NO_SANDBOX (which only ever forces the
- * sandbox to "unavailable"). Never a credential, never NODE_OPTIONS.
+ * sandbox to "unavailable"). Never a credential, never NODE_OPTIONS. UV_USE_IO_URING is always "0" (R2-9), never the
+ * parent's value.
  */
-export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX"]);
+export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX", "UV_USE_IO_URING"]);
+/**
+ * R2-9: libuv's documented switch for its file-op io_uring, set on every process the adapter world starts. It is not
+ * sufficient on its own (libuv still sets up its epoll_ctl ring), so the strace audit also fails io_uring_setup.
+ */
+export const UV_IO_URING_OFF = Object.freeze({ UV_USE_IO_URING: "0" });
 export function backendEnv(parent = process.env) {
-  return Object.fromEntries(BACKEND_ENV_KEYS.filter((k) => typeof parent[k] === "string").map((k) => [k, parent[k]]));
+  const inherited = BACKEND_ENV_KEYS.filter((k) => !(k in UV_IO_URING_OFF) && typeof parent[k] === "string").map((k) => [k, parent[k]]);
+  return { ...Object.fromEntries(inherited), ...UV_IO_URING_OFF };
 }
 
 /** Start backend.mjs (+ the signer host) as its own process — a same-process server would deadlock a sync caller. */
@@ -159,6 +166,7 @@ export function installHookWrapper(base) {
 export const AGENT_ENV_KEYS = Object.freeze([
   "HOME", "PATH", "SHELL", "TERM", "LANG", "USER", "LOGNAME", "TMPDIR",
   "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ENABLE_TOOL_SEARCH",
+  "UV_USE_IO_URING",
 ]);
 
 /** The agent's environment: identity, locale and a DEFAULT TMPDIR only (AGENT_ENV_KEYS); never a credential. */
@@ -167,7 +175,7 @@ export function agentEnv({ home, binDir }, parent = process.env) {
     HOME: home, PATH: `${binDir}:/usr/bin:/bin:/usr/sbin:/sbin`, SHELL: "/bin/bash", TERM: "dumb",
     LANG: parent.LANG ?? "en_US.UTF-8", USER: parent.USER ?? "agent", LOGNAME: parent.LOGNAME ?? parent.USER ?? "agent",
     DISABLE_AUTOUPDATER: "1", DISABLE_TELEMETRY: "1", DISABLE_ERROR_REPORTING: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
-    ENABLE_TOOL_SEARCH: "false",
+    ENABLE_TOOL_SEARCH: "false", ...UV_IO_URING_OFF,
   };
   if (parent.TMPDIR && DEFAULT_TMPDIR_RE.test(parent.TMPDIR)) env.TMPDIR = parent.TMPDIR;
   return Object.fromEntries(Object.entries(env).filter(([k]) => AGENT_ENV_KEYS.includes(k)));

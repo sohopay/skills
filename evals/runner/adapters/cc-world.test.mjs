@@ -13,6 +13,7 @@ import { HardError } from "../schema.mjs";
 import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
+import { signerChildEnv } from "../../mock/lib/signer-sandbox.mjs";
 import { AGENT_ENV_KEYS, BACKEND_ENV_KEYS, agentEnv, backendEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxFilesystem, sandboxTmpDir, signerPolicy, writeSettings } from "./cc-world.mjs";
 
 const SKILLS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "plugins", "sohopay", "skills");
@@ -40,7 +41,16 @@ test("T17 m3: the mock backend is spawned with an ALLOWLISTED env — no API key
   };
   const env = backendEnv(parent);
   for (const k of Object.keys(env)) assert.ok(BACKEND_ENV_KEYS.includes(k), `${k} not allowlisted`);
-  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1" }, "sandbox detection inputs pass; credentials and NODE_OPTIONS do not");
+  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", UV_USE_IO_URING: "0" }, "sandbox detection inputs pass; credentials and NODE_OPTIONS do not");
+});
+
+test("R2-9: every process the adapter world starts runs with UV_USE_IO_URING=0 (libuv's file-op io_uring off) — the agent env, the backend, the signer child; never the parent's value", () => {
+  for (const parent of [{}, { UV_USE_IO_URING: "1" }]) {
+    assert.equal(agentEnv({ home: "/w/home", binDir: "/w/bin" }, parent).UV_USE_IO_URING, "0", "the CLI, its hooks and every agent tool subprocess inherit it");
+    assert.equal(backendEnv(parent).UV_USE_IO_URING, "0");
+  }
+  assert.ok(AGENT_ENV_KEYS.includes("UV_USE_IO_URING") && BACKEND_ENV_KEYS.includes("UV_USE_IO_URING"));
+  assert.deepEqual(signerChildEnv("/w/home"), { HOME: "/w/home", PATH: "/usr/bin:/bin", UV_USE_IO_URING: "0" });
 });
 
 test("[E2E] T17 m3: the running backend process holds no harness credential", async () => {
