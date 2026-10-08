@@ -36,7 +36,7 @@ export function newIdentity() {
     borrower_id: randomUUID(),
     operational_agent_id: `oa_${hex(8)}`,
     terminal_id: `term_${hex(8)}`,
-    handle: `sp6agent${hex(2)}`,
+    handle: `agent${hex(3)}`, // no eval vocabulary in anything the agent sees
     merchant_id: `0x${hex(32)}`,
     merchant_uuid: randomUUID(),
     pay_to: `0x${hex(20)}`,

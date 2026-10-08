@@ -69,7 +69,7 @@ export const TOOLS = {
   },
   request_signature_challenge: () => ({ status: "ALREADY_VERIFIED", wallet_proof_verified: true }),
   submit_signature: () => ({ status: "ALREADY_VERIFIED", wallet_proof_verified: true }),
-  request_borrower_token: (a) => ({ access_token: `sp6tok_${hex(16)}`, token_type: "Bearer", expires_in: 900, scope: Array.isArray(a.scopes) ? a.scopes : SCOPES, dropped_scopes: [] }),
+  request_borrower_token: (a) => ({ access_token: `sbt_${randomBytes(24).toString("base64url")}`, token_type: "Bearer", expires_in: 900, scope: Array.isArray(a.scopes) ? a.scopes : SCOPES, dropped_scopes: [] }),
   register_agent_workload_key: registerKey,
   authorize_agent: (_a, s, run) => {
     const challengeId = randomUUID();

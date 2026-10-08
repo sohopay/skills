@@ -13,19 +13,23 @@
 //   CLI: node evals/mock/backend.mjs --run <run.json> [--port <n>]   → prints {"url": "..."} once listening.
 import { appendFileSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { initialState, merchantChallenge, ToolError, TOOLS } from "./lib/backend-tools.mjs";
+import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "./lib/tool-catalog.mjs";
+import { createSignerHost } from "./signer-host.mjs";
 
 export const HOST = "127.0.0.1";
 const PROTOCOL_VERSION = "2025-06-18";
 const MERCHANT_PATH = "/merchant/api/premium";
 const KEYS_RE = /^\/api\/v1\/agents\/([A-Za-z0-9_.-]+)\/keys\/?$/;
 
-const TOOL_LIST = Object.keys(TOOLS).map((name) => ({
-  name,
-  description: `SohoPay ${name.replace(/_/g, " ")}`,
-  inputSchema: { type: "object", additionalProperties: true },
-}));
+// Realistic descriptions / schemas (tool-catalog.mjs); a tool without a catalog entry is a wiring bug.
+const TOOL_LIST = Object.keys(TOOLS).map((name) => {
+  const entry = TOOL_CATALOG[name];
+  if (!entry) throw new Error(`tool-catalog.mjs has no entry for ${name}`);
+  return { name, description: entry.description, inputSchema: entry.inputSchema };
+});
 
 function readBody(req) {
   return new Promise((resolve, reject) => {
@@ -74,7 +78,7 @@ export function createBackend(run) {
     const reply = (result) => ({ jsonrpc: "2.0", id: msg.id, result });
     if (msg.id === undefined) return null; // notification (e.g. notifications/initialized)
     switch (msg.method) {
-      case "initialize": return reply({ protocolVersion: msg.params?.protocolVersion ?? PROTOCOL_VERSION, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "sohopay", version: "8.0.0" } });
+      case "initialize": return reply({ protocolVersion: msg.params?.protocolVersion ?? PROTOCOL_VERSION, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "sohopay", version: "8.0.0" }, instructions: SERVER_INSTRUCTIONS });
       case "ping": return reply({});
       case "tools/list": return reply({ tools: TOOL_LIST });
       case "tools/call": {
@@ -147,7 +151,11 @@ export const merchantUrl = (base) => `${base}${MERCHANT_PATH}`;
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const arg = (f) => { const i = process.argv.indexOf(f); return i > 0 ? process.argv[i + 1] : undefined; };
-  const run = JSON.parse(readFileSync(arg("--run"), "utf8"));
+  const runPath = arg("--run");
+  const run = JSON.parse(readFileSync(runPath, "utf8"));
   const backend = createBackend(run);
-  backend.listen(Number(arg("--port") ?? 0)).then((url) => process.stdout.write(`${JSON.stringify({ url, mcp: `${url}/mcp`, merchant: merchantUrl(url) })}\n`));
+  // --signer-host: also serve the out-of-process signer for a live run (its owned-change log sits beside run.json).
+  const signer = process.argv.includes("--signer-host") ? createSignerHost(run, { ownedLog: join(dirname(runPath), "signer-owned.jsonl") }) : null;
+  Promise.all([backend.listen(Number(arg("--port") ?? 0)), signer ? signer.listen(0) : null]).then(([url, signerUrl]) =>
+    process.stdout.write(`${JSON.stringify({ url, mcp: `${url}/mcp`, merchant: merchantUrl(url), ...(signerUrl ? { signer: signerUrl } : {}) })}\n`));
 }
