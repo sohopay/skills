@@ -30,7 +30,11 @@ jobs:
             || { echo "FAIL: generated files drifted — run npm run build and commit"; exit 1; }
       - name: Merge gate — pinned signer advertises the keygen contract
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # @sohopay/agent-signer is a PRIVATE package published from the sibling sohopay/sohopay-agent-signer
+          # repo, so this repo's GITHUB_TOKEN cannot read it and the fail-closed contract gate can never resolve
+          # the signer. Provide a read:packages PAT as the AGENT_SIGNER_READ_TOKEN secret; the `||` falls back to
+          # GITHUB_TOKEN when the secret is unset, leaving behaviour unchanged until it is configured.
+          NODE_AUTH_TOKEN: ${{ secrets.AGENT_SIGNER_READ_TOKEN || secrets.GITHUB_TOKEN }}
         run: node scripts/signer-contract-check.mjs
       - name: SP6 eval runner (replay gate)
         run: |
