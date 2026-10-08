@@ -78,6 +78,16 @@ Grep results:
 
 ---
 
+## Amendment 5: Pending Goldens
+
+**Text:** `evals/goldens-pending.json` lists the cases whose golden has not been recorded yet. The replay gate and `INV-sp6-transcripts-present` report a listed case without a golden as `PENDING` instead of failing.
+
+**Owning Task:** post-Task 17 (PR #80 CI)
+
+**Rationale:** Goldens can only come from a paid live run. Without this, the zero-dependency merge gate stays red until all 17 record in one run, and the one-case `workflow_dispatch` smoke run needs `evals-live.yml` on the default branch first. Guardrails: an unlisted case without a golden still fails; a listed case whose golden exists is graded normally by replay and fails `INV-sp6-goldens-pending` until removed (the list only shrinks); the regen job removes each id in the golden's own commit; a malformed file fails closed; CODEOWNERS covers the file.
+
+---
+
 **Document Date:** 2026-10-08  
 **Branch:** feat/sp6-behavioral-eval-runner  
 **Plan:** docs/superpowers/plans/2026-10-08-sp6-behavioral-eval-runner.md

@@ -358,6 +358,16 @@ jobs:
             paths+=("$p")
           done < "$VERDICT/regen-manifest.txt"
           [ "${#paths[@]}" -gt 0 ] || { echo "no goldens to commit"; exit 0; }
+          # The pending list only shrinks: drop each recorded case in the same commit as its golden (INV-sp6-goldens-pending).
+          pending=evals/goldens-pending.json
+          if [ -s "$pending" ]; then
+            for p in "${paths[@]}"; do
+              suite="$(cut -d/ -f2 <<<"$p")"; id="$(basename "$p" .json)"
+              jq --arg s "$suite" --arg id "$id" 'if .pending[$s] then .pending[$s] |= map(select(. != $id)) else . end' "$pending" > "$RUNNER_TEMP/pending.json"
+              mv "$RUNNER_TEMP/pending.json" "$pending"
+            done
+            paths+=("$pending")
+          fi
           git add -- "${paths[@]}"
           if git diff --cached --quiet; then echo "goldens unchanged"; exit 0; fi
           git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \

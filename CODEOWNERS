@@ -8,6 +8,8 @@
 # Committed goldens + adversarials: a hand-placed transcript is a grading bypass (final review I2).
 /evals/*/transcripts/     @sohopay/backend-write
 /evals/floor-waivers.json @sohopay/backend-write
+# Listing a case here lets it ship without a golden: a reviewed decision.
+/evals/goldens-pending.json @sohopay/backend-write
 /.github/workflows/evals-live.yml @sohopay/backend-write
 /evals/live-workflow.sha256 @sohopay/backend-write
 # The code that ENFORCES the live-workflow pin and its rules (T17 m7).

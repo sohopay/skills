@@ -6,6 +6,7 @@ import { grade } from "./grader.mjs";
 import { loadSuite, validateJoin } from "./cases.mjs";
 import { skillHash } from "./hashes.mjs";
 import { run as replayRun } from "./adapters/replay.mjs";
+import { loadPending } from "./pending.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_EVALS_ROOT = resolve(HERE, "..");
@@ -54,8 +55,22 @@ function record(caseId, kind, g, expectPass, audit = null) {
   return { caseId, kind, pass, findings: g.findings, hardError: g.hardError, audit };
 }
 
+/**
+ * goldens-pending.json for the replay gate. Validated against every suite dir present under evalsRoot (the default
+ * suites plus any requested), so a subset run (live-ci replays one suite) still accepts the full file.
+ */
+function pendingFor(evalsRoot, suites) {
+  try {
+    const ids = new Map();
+    for (const dir of new Set([...Object.values(DEFAULT_SUITES), ...Object.values(suites)])) {
+      if (existsSync(join(evalsRoot, dir, "assertions.json"))) ids.set(dir, new Set(loadSuite(join(evalsRoot, dir)).assertions.keys()));
+    }
+    return loadPending(evalsRoot, ids);
+  } catch (e) { throw e instanceof HardError ? e : new HardError(e.message); }
+}
+
 function runReplaySuite(dir, ctx) {
-  const { evalsRoot, skillsRoot, waivers, caseFilter } = ctx;
+  const { evalsRoot, skillsRoot, waivers, caseFilter, pending } = ctx;
   const { cases, assertions } = loadSuite(join(evalsRoot, dir));
   const joinErrs = validateJoin(cases, assertions);
   if (joinErrs.length) return [{ caseId: dir, kind: "suite", pass: false, findings: joinErrs, hardError: `invalid suite ${dir}` }];
@@ -63,8 +78,11 @@ function runReplaySuite(dir, ctx) {
   const results = [];
   for (const [id, assertion] of assertions) {
     if (caseFilter && caseFilter !== id) continue;
+    // A listed case with no golden yet is reported, not failed; once its golden exists it is graded like any other.
+    const goldenPending = pending.get(dir)?.has(id) && !existsSync(join(evalsRoot, dir, "transcripts", `${id}.json`));
+    if (goldenPending) results.push({ caseId: id, kind: "golden", pass: true, pending: true, findings: [], hardError: null, audit: null });
     const refs = [
-      { kind: "golden", name: id, expectPass: true },
+      ...(goldenPending ? [] : [{ kind: "golden", name: id, expectPass: true }]),
       ...listAdversarials(evalsRoot, dir, id).map((name) => ({ kind: "adversarial", name, expectPass: false })),
     ];
     for (const r of refs) {
@@ -96,7 +114,8 @@ export async function main(argv, opts = {}) {
   const waivers = JSON.parse(readFileSync(join(DEFAULT_EVALS_ROOT, "floor-waivers.json"), "utf8")).waivers;
   let cases = [];
   if (args.adapter === "replay") {
-    for (const dir of dirs) cases.push(...runReplaySuite(dir, { evalsRoot, skillsRoot, waivers, caseFilter: args.case }));
+    const pending = pendingFor(evalsRoot, opts.suites ?? DEFAULT_SUITES);
+    for (const dir of dirs) cases.push(...runReplaySuite(dir, { evalsRoot, skillsRoot, waivers, caseFilter: args.case, pending }));
   } else {
     // Loaded lazily: the live adapter must never be reachable from the static import graph.
     const live = await import("./adapters/claude-code.mjs");
@@ -111,6 +130,7 @@ export async function main(argv, opts = {}) {
     passed: cases.length - failed,
     failed,
     hardErrors: cases.filter((c) => c.hardError).length,
+    pending: cases.filter((c) => c.pending).length,
     cases,
   };
   if (!opts.silent) console.log(JSON.stringify(report, null, 2));

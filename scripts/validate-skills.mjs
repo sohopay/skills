@@ -9,6 +9,7 @@ import { closureFiles, skillHash } from '../evals/runner/hashes.mjs';
 import { validateTranscript } from '../evals/runner/schema.mjs';
 import { goldenAuditError, transcriptKindError } from '../evals/runner/golden.mjs';
 import { validateWaivers } from '../evals/runner/waivers.mjs';
+import { loadPending, PENDING_FILE } from '../evals/runner/pending.mjs';
 import { livePinError, liveWorkflowErrors } from '../evals/runner/live-workflow-check.mjs';
 import {
   HOSTED_BASE,
@@ -558,7 +559,22 @@ function checkSp6PublishIsolation() {
   if (failCount === before) pass('INV-sp6-publish-isolation');
 }
 
-function checkSp6Suite(name) {
+/**
+ * INV-sp6-goldens-pending: evals/goldens-pending.json is well-formed (known suites + case ids, no duplicates).
+ * Returns suite → Set of pending ids; on a malformed file it fails and returns an empty map, so every missing golden
+ * fails too (fail closed).
+ */
+function loadSp6Pending() {
+  const ids = new Map();
+  for (const name of SP6_SUITES) {
+    const dir = join(ROOT, 'evals', name);
+    if (!existsSync(join(dir, 'assertions.json'))) continue;
+    try { ids.set(name, new Set(loadSuite(dir).assertions.keys())); } catch { /* reported by checkSp6Suite */ }
+  }
+  try { return loadPending(join(ROOT, 'evals'), ids); } catch (e) { fail(`INV-sp6-goldens-pending: ${e.message}`); return new Map(); }
+}
+
+function checkSp6Suite(name, pending = new Set()) {
   const dir = join(ROOT, 'evals', name);
   if (!existsSync(join(dir, 'assertions.json'))) return null; // Phase A: no real suite yet
   const before = failCount;
@@ -573,7 +589,13 @@ function checkSp6Suite(name) {
 
   for (const id of suite.assertions.keys()) {
     const f = join(dir, 'transcripts', `${id}.json`);
-    if (!existsSync(f)) { fail(`INV-sp6-transcripts-present ${name}: no golden for case "${id}"`); continue; }
+    if (!existsSync(f)) {
+      if (pending.has(id)) console.log(`PENDING: INV-sp6-transcripts-present ${name}: golden for case "${id}" not yet recorded (evals/${PENDING_FILE})`);
+      else fail(`INV-sp6-transcripts-present ${name}: no golden for case "${id}" (record it, or list it in evals/${PENDING_FILE})`);
+      continue;
+    }
+    // The list only shrinks: the regen job removes an id in the same commit that adds its golden.
+    if (pending.has(id)) fail(`INV-sp6-goldens-pending ${name}: case "${id}" has a golden but is still listed in evals/${PENDING_FILE} — remove it`);
     try {
       const t = JSON.parse(readFileSync(f, 'utf8'));
       const v = validateTranscript(t);
@@ -607,8 +629,9 @@ function checkSp6Suite(name) {
 function checkSp6Invariants() {
   const knownIds = new Set();
   let anySuite = false;
+  const pending = loadSp6Pending();
   for (const name of SP6_SUITES) {
-    const suite = checkSp6Suite(name);
+    const suite = checkSp6Suite(name, pending.get(name));
     if (!suite) continue;
     anySuite = true;
     for (const id of suite.assertions.keys()) knownIds.add(id);
