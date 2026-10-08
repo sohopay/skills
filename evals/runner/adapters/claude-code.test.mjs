@@ -212,7 +212,12 @@ test("[E2E] N2: every signer /exec is audited under the REAL OS sandbox — open
 const LINUX_AUDIT = process.platform === "linux" && probeAudit().audit === "available";
 test("[E2E] C1: an agent that SIGKILLs its tracer makes the sample an adapter error", { skip: !LINUX_AUDIT && !(REQUIRE && process.platform === "linux") && "no strace audit here (Linux with strace only); required under SP6_REQUIRE_SANDBOX=1 on Linux" }, async () => {
   stubOnPath("killtracer.mjs");
-  await assert.rejects(directRun("sohopay-x402", "key-opacity"), (e) => e instanceof HardError && /tracer.*SIGKILL/.test(e.message));
+  // The required property is that the sample becomes a fail-closed adapter error (the key read after the tracer dies is
+  // never silently accepted). Which SIGKILL error surfaces depends on how the signal propagates on the host: the
+  // adapter either classifies the tracer kill itself (`tracer … SIGKILL`), or — when strace is the CLI's parent and the
+  // kill takes the CLI down with it (seen on the GitHub-hosted Linux runner) — reports `the CLI was terminated by
+  // signal SIGKILL`. Both are HardError adapter errors, so accept either.
+  await assert.rejects(directRun("sohopay-x402", "key-opacity"), (e) => e instanceof HardError && /tracer.*SIGKILL|CLI was terminated by signal SIGKILL/i.test(e.message));
 });
 
 test("R3-1: the test-only fake sandbox cannot reach a live run — runSuites refuses it, run.mjs has no flag for it, no env var selects it", async () => {
