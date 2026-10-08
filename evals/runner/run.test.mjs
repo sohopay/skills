@@ -4,7 +4,8 @@ import { cpSync, mkdtempSync, copyFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { liveEnv, main, parseArgs } from "./run.mjs";
+import { main, parseArgs } from "./run.mjs";
+import { readFileSync } from "node:fs";
 import { HardError } from "./schema.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -36,19 +37,17 @@ test("replay: an adversarial that grades pass -> exit 1", async (t) => {
   assert.equal(report.failed, 1);
 });
 
-test("M4: --live is a boolean flag accepted only with --adapter claude-code; it is the only thing that sets SP6_LIVE", () => {
+test("M4: --live is a boolean flag accepted only with --adapter claude-code (the adapter's only spawn authorisation)", () => {
   assert.equal(parseArgs(["--adapter", "claude-code", "--live"]).live, true);
   assert.equal(parseArgs(["--adapter", "claude-code"]).live, false);
   assert.throws(() => parseArgs(["--adapter", "replay", "--live"]), (e) => e instanceof HardError && /--live .*claude-code/.test(e.message));
   assert.throws(() => parseArgs(["--live", "1"]), HardError, "--live takes no value");
-  assert.deepEqual(liveEnv(parseArgs(["--adapter", "claude-code", "--live"])), { SP6_LIVE: "1" });
-  assert.deepEqual(liveEnv(parseArgs(["--adapter", "claude-code"])), {});
 });
 
-test("M4: a replay run never sets SP6_LIVE (and main restores the environment it found)", async () => {
-  assert.equal(process.env.SP6_LIVE, undefined);
-  await main(["--adapter", "replay", "--suite", "all"], opts(FIX));
-  assert.equal(process.env.SP6_LIVE, undefined);
+test("T17 m4: run.mjs never reads or writes SP6_LIVE (authorisation is an in-process option, never the environment)", () => {
+  const src = readFileSync(join(here, "run.mjs"), "utf8");
+  assert.ok(!/SP6_LIVE\b(?!_)/.test(src), "run.mjs mentions SP6_LIVE");
+  assert.match(src, /live: args\.live/, "main passes --live to the adapter as an option");
 });
 
 test("--case filter narrows to that id", async () => {

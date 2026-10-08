@@ -4,7 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HardError, validateTranscript } from "../schema.mjs";
 import { auditRefusal, checkInit, claudeArgv, makeBudget, PINS, signerAuditError, signerAuditStatus, signerHostErrors } from "./claude-code.mjs";
-import { harnessLeak, harnessSecrets } from "./cc-guards.mjs";
+import { harnessLeak, harnessSecrets, redactSecrets } from "./cc-guards.mjs";
 
 const GOOD = () => ({
   type: "system", subtype: "init", cwd: "/w/home", session_id: "s",
@@ -147,4 +147,22 @@ test("C1: harnessLeak finds a harness secret anywhere in a transcript, in every 
   }
   assert.equal(harnessLeak(tr([evt({ stdout: "nothing here" })]), secrets), null);
   assert.equal(harnessLeak(tr([evt({ stdout: KEY })]), []), null, "no harness secrets → nothing to find");
+});
+
+test("T17 m6: redactSecrets cuts a harness secret in EVERY never_appears encoding (raw, base64/url ± pad, hex, embedded, windows) and names it", () => {
+  const secrets = [{ name: "ANTHROPIC_API_KEY", value: KEY }];
+  const b = Buffer.from(KEY);
+  const embedded = Buffer.concat([Buffer.from("xy"), b]).toString("base64");
+  const forms = {
+    raw: KEY, base64: b.toString("base64"), base64url: b.toString("base64url"), unpadded: b.toString("base64").replace(/=+$/, ""),
+    hex: b.toString("hex"), hexUpper: b.toString("hex").toUpperCase(), embedded, window: `…${KEY.slice(40, 60)}…`,
+  };
+  for (const [name, form] of Object.entries(forms)) {
+    const out = redactSecrets(`stderr: got ${form} from the CLI`, secrets);
+    assert.match(out, /\[REDACTED:ANTHROPIC_API_KEY\]/, name);
+    for (let i = 0; i + 16 <= KEY.length; i++) assert.ok(!out.includes(KEY.slice(i, i + 16)), `${name}: a raw 16-char window survived`);
+    assert.equal(harnessLeak({ events: [{ stdout: out }] }, secrets), null, `${name}: nothing the egress guard would still find`);
+  }
+  assert.equal(redactSecrets("no secret here", secrets), "no secret here");
+  assert.equal(redactSecrets(`x ${KEY} y`, []), `x ${KEY} y`, "no harness secrets → unchanged");
 });

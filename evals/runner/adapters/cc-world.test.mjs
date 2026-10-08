@@ -3,7 +3,7 @@
 // I6), and the installed signer looking like a normal npm-global install that forwards no secrets (fix M1).
 import test from "node:test";
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { createServer } from "node:http";
 import { chmodSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -13,7 +13,7 @@ import { HardError } from "../schema.mjs";
 import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
-import { AGENT_ENV_KEYS, agentEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxFilesystem, sandboxTmpDir, signerPolicy, writeSettings } from "./cc-world.mjs";
+import { AGENT_ENV_KEYS, BACKEND_ENV_KEYS, agentEnv, backendEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxFilesystem, sandboxTmpDir, signerPolicy, writeSettings } from "./cc-world.mjs";
 
 const SKILLS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "plugins", "sohopay", "skills");
 const EVAL_WORDS = /\bmock\b|\bsp6\b|canary|\beval(?:s|uation)?\b|grader|adversarial/i;
@@ -25,6 +25,40 @@ async function withWorld(caseId, suiteDir, fn) {
 }
 /** Regular files under d (symlinks are recorded by their own test, never followed). */
 const walk = (d, out = []) => { for (const n of readdirSync(d)) { const p = join(d, n); const st = lstatSync(p); if (st.isDirectory()) walk(p, out); else if (st.isFile()) out.push(p); } return out; };
+
+/** A live process's environment as NAME=value strings (Linux /proc; macOS `ps -E` for our own child). */
+function processEnv(pid) {
+  if (process.platform === "linux") return readFileSync(`/proc/${pid}/environ`, "utf8").split("\0").filter(Boolean);
+  const out = execFileSync("ps", ["-E", "-ww", "-p", String(pid), "-o", "command="], { encoding: "utf8" });
+  return out.trim().split(/\s+/).filter((t) => /^[A-Za-z_][A-Za-z0-9_]*=/.test(t));
+}
+
+test("T17 m3: the mock backend is spawned with an ALLOWLISTED env — no API key, no token, nothing credential-shaped", () => {
+  const parent = {
+    PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1",
+    ANTHROPIC_API_KEY: "sk-ant-x", CLAUDE_CODE_OAUTH_TOKEN: "o", GITHUB_TOKEN: "g", ACTIONS_RUNTIME_TOKEN: "r", NODE_AUTH_TOKEN: "n", AWS_SECRET_ACCESS_KEY: "s", SP6_LIVE: "1", NODE_OPTIONS: "--import=/evil.mjs",
+  };
+  const env = backendEnv(parent);
+  for (const k of Object.keys(env)) assert.ok(BACKEND_ENV_KEYS.includes(k), `${k} not allowlisted`);
+  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1" }, "sandbox detection inputs pass; credentials and NODE_OPTIONS do not");
+});
+
+test("[E2E] T17 m3: the running backend process holds no harness credential", async () => {
+  const saved = { a: process.env.ANTHROPIC_API_KEY, g: process.env.GITHUB_TOKEN };
+  process.env.ANTHROPIC_API_KEY = ["sk", "ant", "backend-must-not-see-this-0123456789"].join("-"); // assembled: committed-secrets
+  process.env.GITHUB_TOKEN = "ghs_backendMustNotSeeThis0123456789";
+  try {
+    await withWorld("key-opacity", "sohopay-x402", async (w) => {
+      assert.ok(Number.isInteger(w.backendPid), "createWorld exposes the backend pid");
+      const env = processEnv(w.backendPid);
+      assert.ok(env.some((e) => e.startsWith("PATH=")), `env read: ${env.slice(0, 3)}`);
+      assert.ok(!env.some((e) => /^(ANTHROPIC_API_KEY|GITHUB_TOKEN|CLAUDE_CODE_OAUTH_TOKEN)=/.test(e)), env.join(" "));
+      assert.ok(!env.join("\n").includes("must-not-see") && !env.join("\n").includes("MustNotSee"));
+    });
+  } finally {
+    for (const [k, v] of [["ANTHROPIC_API_KEY", saved.a], ["GITHUB_TOKEN", saved.g]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
 
 test("positive: key inside HOME, run root 0700 / outside HOME's parent / not under /tmp / no trust artifacts on disk, one signer", async () => {
   await withWorld("key-opacity", "sohopay-x402", async (w) => {

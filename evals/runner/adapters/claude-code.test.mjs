@@ -33,9 +33,8 @@ after(() => {
 //    before EVERY test — so no test depends on a stub a previous test left behind, and a test that forgets
 //    stubOnPath reaches the guard (an adapter version error), never the operator's real CLI.
 const STUB_MARKER = "SP6-TEST-STUB-CLAUDE";
-// M4: SP6_LIVE=1 is the only thing that lets the adapter spawn a real (unmarked) `claude`; a test never has it, even if
-// the operator's shell exported it.
-delete process.env.SP6_LIVE;
+// M4 / m4: only `run.mjs --live` (an in-process option) lets the adapter spawn an unmarked `claude`; SP6_LIVE in the
+// environment is ignored (tested below), so an operator's shell cannot authorise a spawn.
 const stubScript = (body) => `#!/bin/sh\n# ${STUB_MARKER}\n${body}\n`;
 const GUARD_DIR = mkdtempSync(join(tmpdir(), "cc-stub-guard-"));
 ROOTS.push(GUARD_DIR);
@@ -387,17 +386,42 @@ export default async function (agent) { agent.bash("echo ${Buffer.concat([Buffer
   });
 });
 
-test("M4: without SP6_LIVE=1 the adapter refuses to spawn any `claude` that is not a marked test stub — via runSuites and via run()", async () => {
-  assert.equal(process.env.SP6_LIVE, undefined, "tests never set SP6_LIVE");
+/** An UNMARKED fake `claude` (stands in for the real CLI; harmless) that records each invocation; first on PATH. */
+function unmarkedOnPath() {
   const dir = mkdtempSync(join(tmpdir(), "cc-stub-unmarked-"));
   ROOTS.push(dir);
-  writeFileSync(join(dir, "claude"), `#!/bin/sh\ntouch '${join(dir, "INVOKED")}'\necho "${PINS.CLI_VERSION} (Claude Code)"\n`);
+  writeFileSync(join(dir, "claude"), `#!/bin/sh\necho "$@" >> '${join(dir, "INVOKED")}'\necho "${PINS.CLI_VERSION} (Claude Code)"\n`);
   chmodSync(join(dir, "claude"), 0o755);
   process.env.PATH = `${dir}:${GUARD_DIR}:${savedEnv.PATH}`;
-  await assert.rejects(live("onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /refusing to spawn .* SP6_LIVE=1/.test(e.message));
+  return dir;
+}
+
+test("M4: without --live the adapter refuses to spawn any `claude` that is not a marked test stub — via runSuites and via run()", async () => {
+  const dir = unmarkedOnPath();
+  await assert.rejects(live("onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /refusing to spawn .* not a --live run/.test(e.message));
   await assert.rejects(directRun("sohopay-onboard", "keygen-routes-to-signer", { claudeBin: join(dir, "claude") }), (e) => e instanceof HardError && /refusing to spawn/.test(e.message));
   assert.ok(!existsSync(join(dir, "INVOKED")), "the unmarked CLI was never executed");
   assert.equal(TEST_STUB_MARKER, STUB_MARKER, "the adapter and the tests agree on the marker");
+});
+
+test("T17 m4: SP6_LIVE=1 inherited from the operator's shell authorises NOTHING — the adapter ignores the env var", async () => {
+  const dir = unmarkedOnPath();
+  await withEnv({ SP6_LIVE: "1" }, async () => {
+    await assert.rejects(live("onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /refusing to spawn/.test(e.message));
+    await assert.rejects(directRun("sohopay-onboard", "keygen-routes-to-signer", { claudeBin: join(dir, "claude") }), (e) => e instanceof HardError && /refusing to spawn/.test(e.message));
+  });
+  assert.ok(!existsSync(join(dir, "INVOKED")), "never executed");
+});
+
+test("T17 m4: `run.mjs --adapter claude-code --live` (and only that) authorises the spawn — an in-process option, not env", async () => {
+  const dir = unmarkedOnPath();
+  let seen = null;
+  const stop = async (ref, o) => { seen = o; throw new HardError("stopped by the test before any session"); };
+  const { report } = await main(["--adapter", "claude-code", "--live", "--suite", "onboard", "--case", "keygen-routes-to-signer", "--samples", "1"], { silent: true, liveSampleRunner: stop });
+  assert.match(readFileSync(join(dir, "INVOKED"), "utf8"), /^--version$/m, "--live let the adapter run `claude --version` (the fake, never a session)");
+  assert.equal(seen.live, true, "the sample runner receives live: true");
+  assert.match(report.cases[0].hardError, /stopped by the test/);
+  assert.equal(process.env.SP6_LIVE, undefined, "--live never sets an env var");
 });
 
 test("cleanup: every run root and agent workspace any sample used is gone (no temp dirs left behind)", () => {

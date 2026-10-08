@@ -103,6 +103,17 @@ function walk(v, ancestors, parent, bad) {
   scanFlat(v, ancestors, bad);
 }
 
+/**
+ * A committed file's findings. One path is allowlisted, with its reason: evals/live-workflow.sha256 is the T17 hash pin
+ * of the live workflow (a PUBLIC digest of a committed file), accepted only in exact `sha256sum` format.
+ */
+const PIN_PATH = "evals/live-workflow.sha256";
+const PIN_RE = /^[0-9a-f]{64} {2}\.github\/workflows\/evals-live\.yml\n?$/;
+export function scanCommitted(rel, text) {
+  if (rel === PIN_PATH && PIN_RE.test(text)) return [];
+  return scanText(text, { json: rel.endsWith(".json") });
+}
+
 /** Offending tokens in one file's text (empty = clean). JSON is walked structurally. */
 export function scanText(text, { json = false } = {}) {
   const bad = [];
@@ -150,7 +161,20 @@ test("scanner: public fields pass only in their public form (N2)", () => {
 });
 
 const committed = () => execFileSync("git", ["ls-files", "evals"], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
-const scanFile = (f) => scanText(readFileSync(join(ROOT, f), "utf8"), { json: f.endsWith(".json") });
+const scanFile = (f) => scanCommitted(f, readFileSync(join(ROOT, f), "utf8"));
+
+test("T17 N1: the workflow hash pin is allowlisted ONLY at its exact path and ONLY in exact sha256sum format", () => {
+  const good = `${HEX}  .github/workflows/evals-live.yml\n`;
+  assert.deepEqual(scanCommitted("evals/live-workflow.sha256", good), [], "the pin itself");
+  assert.deepEqual(scanCommitted("evals/live-workflow.sha256", good.trimEnd()), [], "no trailing newline");
+  assert.equal(scanCommitted("evals/other.sha256", good).length, 1, "any other path with a 64-hex token is still flagged");
+  assert.equal(scanCommitted("evals/runner/live-workflow.sha256", good).length, 1, "same basename elsewhere is flagged");
+  assert.ok(scanCommitted("evals/live-workflow.sha256", `${good}${HEX}\n`).length >= 1, "an extra token in the pin file is flagged");
+  assert.ok(scanCommitted("evals/live-workflow.sha256", `${HEX}  .github/workflows/evals-live.yml extra\n`).length >= 1, "trailing junk is flagged");
+  assert.ok(scanCommitted("evals/live-workflow.sha256", `${HEX.toUpperCase()}  .github/workflows/evals-live.yml\n`).length >= 1, "upper-case hex is not the sha256sum format");
+  assert.ok(scanCommitted("evals/live-workflow.sha256", `${HEX} .github/workflows/evals-live.yml\n`).length >= 1, "one space is not the sha256sum format");
+  assert.ok(scanCommitted("evals/live-workflow.sha256", `${HEX}  .github/workflows/validate.yml\n`).length >= 1, "a pin for another file is flagged");
+});
 
 // T17 C1: an Anthropic API key (`sk-ant-…`, ~108 chars) is not caught by the length-based rule above. Assembled at
 // runtime so this file carries none.

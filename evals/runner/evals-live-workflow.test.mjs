@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PINS } from "./adapters/cc-guards.mjs";
@@ -107,12 +108,35 @@ test("M3 + M5: issues are filed per case id with per-id error handling (no set -
 
 test("I2 hash pin: evals/live-workflow.sha256 pins the committed workflow; any edit must update it (CODEOWNERS covers both)", () => {
   const pin = readFileSync(join(ROOT, "evals", "live-workflow.sha256"), "utf8");
-  assert.equal(livePinError(YML, pin), null);
-  assert.match(livePinError(YML.replace("timeout-minutes", "timeout-minutes "), pin), /INV-sp6-live-workflow: .*sha256 .* != pinned/);
-  assert.match(livePinError(YML, ""), /pin/);
+  const RAW = readFileSync(join(ROOT, ".github", "workflows", "evals-live.yml"));
+  assert.equal(livePinError(RAW, pin), null);
+  assert.match(livePinError(Buffer.from(YML.replace("timeout-minutes", "timeout-minutes ")), pin), /INV-sp6-live-workflow: .*sha256 .* != pinned/);
+  assert.match(livePinError(RAW, ""), /pin/);
   const owners = readFileSync(join(ROOT, "CODEOWNERS"), "utf8");
   assert.match(owners, /^\/\.github\/workflows\/evals-live\.yml\s+@sohopay\/maintainers$/m);
   assert.match(owners, /^\/evals\/live-workflow\.sha256\s+@sohopay\/maintainers$/m);
+});
+
+test("m7: the code that ENFORCES the pin (validate-skills.mjs, validate.yml) is maintainer-owned too; the repo-wide catch-all stays first", () => {
+  const lines = readFileSync(join(ROOT, "CODEOWNERS"), "utf8").split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+  assert.match(lines[0], /^\*\s+@sohopay\/platform$/, "catch-all first (later, more specific lines win)");
+  for (const p of ["/scripts/validate-skills.mjs", "/.github/workflows/validate.yml", "/evals/runner/", "/.github/workflows/evals-live.yml", "/evals/live-workflow.sha256"]) {
+    assert.ok(lines.some((l) => l.split(/\s+/)[0] === p && /@sohopay\/maintainers/.test(l)), p);
+  }
+});
+
+test("m8: the pin hashes the file's raw BYTES, so byte sequences that decode alike (invalid UTF-8 → U+FFFD) still differ", () => {
+  const raw = readFileSync(join(ROOT, ".github", "workflows", "evals-live.yml"));
+  assert.equal(livePinError(raw, readFileSync(join(ROOT, "evals", "live-workflow.sha256"), "utf8")), null, "the committed bytes match the pin");
+  const a = Buffer.concat([Buffer.from("x: 1\n"), Buffer.from([0xff])]);
+  const b = Buffer.concat([Buffer.from("x: 1\n"), Buffer.from([0xfe])]);
+  assert.equal(a.toString("utf8"), b.toString("utf8"), "the two decode to the same string");
+  const pinA = `${createHash("sha256").update(a).digest("hex")}  .github/workflows/evals-live.yml\n`;
+  assert.equal(livePinError(a, pinA), null);
+  assert.match(livePinError(b, pinA), /!= pinned/);
+  // Only bytes are accepted (a decoded string would collapse the two above), and the INV reads the file as bytes.
+  assert.throws(() => livePinError(a.toString("utf8"), pinA), TypeError);
+  assert.match(readFileSync(join(ROOT, "scripts", "validate-skills.mjs"), "utf8"), /const raw = readFileSync\(f\);[\s\S]{0,400}livePinError\(raw,/);
 });
 
 test("I2: no `${{ }}` expression inside any run: body (script injection); every value reaches the shell through env", () => {
@@ -203,6 +227,25 @@ const MUTATIONS = [
   ["M2: no live-step timeout", (y) => y.replace("        timeout-minutes: 300\n", ""), /step timeout/],
   ["M5: issues without gate success", (y) => y.replace("${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures", "${{ !cancelled() && needs.live.outputs.safety_failures"), /needs\.gate\.result/],
   ["M3: set -e in the issues loop", (y) => y.replace("          set -uo pipefail\n          gh label create", "          set -euo pipefail\n          gh label create"), /set -e/],
+  // ── fix round 2, m1 (re-review mutations A–G and the ruling's list) ──
+  ["m1: always() on the live job (a paid run even when the gate is skipped / fails)", (y) => y.replace("  live:\n    name: Live run (protected environment)\n    needs: gate\n", "  live:\n    name: Live run (protected environment)\n    needs: gate\n    if: ${{ always() }}\n"), /status function/],
+  ["m1: !cancelled() on the live job", (y) => y.replace("  live:\n    name: Live run (protected environment)\n    needs: gate\n", "  live:\n    name: Live run (protected environment)\n    needs: gate\n    if: ${{ !cancelled() }}\n"), /status function/],
+  ["m1: failure() on the gate", (y) => y.replace("      github.event_name == 'workflow_dispatch' ||", "      failure() || github.event_name == 'workflow_dispatch' ||"), /gate .*if|status function/],
+  ["m1: !cancelled() on the gate", (y) => y.replace("      github.event_name == 'workflow_dispatch' ||", "      !cancelled() && github.event_name == 'workflow_dispatch' ||"), /gate .*if|status function/],
+  ["m1: push HEAD_REF from base.ref (pushes to the base branch)", (y) => y.replace("          HEAD_REF: ${{ github.event.pull_request.head.ref }}\n          HEAD_SHA:", "          HEAD_REF: ${{ github.event.pull_request.base.ref }}\n          HEAD_SHA:"), /HEAD_REF/],
+  ["m1: push HEAD_REF a literal", (y) => y.replace("          HEAD_REF: ${{ github.event.pull_request.head.ref }}\n          HEAD_SHA:", "          HEAD_REF: develop\n          HEAD_SHA:"), /HEAD_REF/],
+  ["m1: github-script script: with an event expression", (y) => y.replace("      - name: One issue per failing safety case id", "      - uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1\n        with:\n          script: console.log(\"${{ github.event.pull_request.title }}\")\n      - name: One issue per failing safety case id"), /script:/],
+  ["m1: eval of an env value", (y) => y.replace('        run: |\n          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then', '        run: |\n          eval "echo $HEAD_REF"\n          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then'), /eval|-c "\$/],
+  ["m1: bash -c \"$VAR\"", (y) => y.replace("          mkdir -p \"$SP6_LIVE_OUT_DIR\"\n", "          mkdir -p \"$SP6_LIVE_OUT_DIR\"\n          bash -c \"$CASE\"\n"), /eval|-c "\$/],
+  ["m1: continue-on-error on the fork step", (y) => y.replace("      - name: Refuse a fork PR\n", "      - name: Refuse a fork PR\n        continue-on-error: true\n"), /continue-on-error/],
+  ["m1: continue-on-error on the egress step", (y) => y.replace("        id: egress\n", "        id: egress\n        continue-on-error: true\n"), /continue-on-error/],
+  ["m1: continue-on-error on the gate job", (y) => y.replace("  gate:\n    name: Gate (fork refusal, no secrets)\n", "  gate:\n    name: Gate (fork refusal, no secrets)\n    continue-on-error: true\n"), /continue-on-error/],
+  ["m1: toJSON(github.event) written to GITHUB_ENV", (y) => y.replace("          EVENT: ${{ github.event_name }}\n", "          EVENT: ${{ github.event_name }}\n          EV: ${{ toJSON(github.event) }}\n").replace('          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then', '          set -euo pipefail\n          echo "BODY=$(echo "$EV" | jq -r .pull_request.body)" >> "$GITHUB_ENV"\n          if [ "$EVENT" = "pull_request" ]; then'), /toJSON|GITHUB_ENV/],
+  ["m1: PR title written to GITHUB_OUTPUT", (y) => y.replace("          EVENT: ${{ github.event_name }}\n", "          EVENT: ${{ github.event_name }}\n          TITLE: ${{ github.event.pull_request.title }}\n").replace('          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then', '          set -euo pipefail\n          echo "title=$TITLE" >> "$GITHUB_OUTPUT"\n          if [ "$EVENT" = "pull_request" ]; then'), /event text/],
+  ["m1: anything written to GITHUB_PATH", (y) => y.replace("          strace -V | head -n 1\n", "          strace -V | head -n 1\n          echo \"$RUNNER_TEMP/bin\" >> \"$GITHUB_PATH\"\n"), /GITHUB_PATH|GITHUB_ENV/],
+  // ── m2: force pushes the exact PUSH_LINE comparison alone would NOT catch ──
+  ["m2: forced refspec configured, exact push line kept", (y) => y.replace('          git push origin "HEAD:refs/heads/${HEAD_REF}"\n', '          git config remote.origin.push "+HEAD:refs/heads/${HEAD_REF}"\n          git push origin "HEAD:refs/heads/${HEAD_REF}"\n'), /force/],
+  ["m2: `git -c … push --force` (not a `git push` line)", (y) => y.replace('git push origin "HEAD:refs/heads/${HEAD_REF}"', 'git -c protocol.version=2 push --force origin "HEAD:refs/heads/${HEAD_REF}"'), /force/],
 ];
 for (const [name, mutate, expected] of MUTATIONS) {
   test(`teeth: ${name} is reported`, () => {
