@@ -2,7 +2,7 @@
 // (__fixtures__/stub-claude.mjs) executes a scripted agent for real against the world the adapter builds — the
 // real mock backend (separate process, which also hosts the signer), real Bash / MCP / Write, real hooks — and
 // writes the recorded-shape session JSONL + stream-json the adapter parses.
-import test, { after } from "node:test";
+import test, { after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -10,7 +10,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { main } from "../run.mjs";
 import { HardError, label } from "../schema.mjs";
-import { claudeArgv, makeBudget, PINS, run, runSuites } from "./claude-code.mjs";
+import { claudeArgv, makeBudget, PINS, resolveClaude, run, runSuites } from "./claude-code.mjs";
 import { childTraceSupport, sandboxSupport } from "../../mock/lib/signer-sandbox.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -25,14 +25,38 @@ after(() => {
   for (const [k, v] of Object.entries(savedEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
 });
 
+// R4-1 global guard: no test in this file may ever start a real (paid) `claude` session.
+//  * Every `claude` a test installs carries STUB_MARKER; `assertStubClaude` fails the test if the `claude` the harness
+//    would resolve lacks it.
+//  * A GUARD `claude` (marked, refuses everything with exit 97) is first on PATH by default, and PATH is reset to it
+//    before EVERY test — so no test depends on a stub a previous test left behind, and a test that forgets
+//    stubOnPath reaches the guard (an adapter version error), never the operator's real CLI.
+const STUB_MARKER = "SP6-TEST-STUB-CLAUDE";
+const stubScript = (body) => `#!/bin/sh\n# ${STUB_MARKER}\n${body}\n`;
+const GUARD_DIR = mkdtempSync(join(tmpdir(), "cc-stub-guard-"));
+ROOTS.push(GUARD_DIR);
+writeFileSync(join(GUARD_DIR, "claude"), stubScript(`echo "${STUB_MARKER}: no stub installed for this test (stubOnPath)" >&2\nexit 97`));
+chmodSync(join(GUARD_DIR, "claude"), 0o755);
+/** Throws unless the `claude` the harness resolves from PATH is a marked test stub. */
+function assertStubClaude() {
+  const bin = resolveClaude();
+  assert.ok(readFileSync(bin, "utf8").slice(0, 512).includes(STUB_MARKER), `R4-1 guard: resolved claude ${bin} is not a test stub — refusing to risk a paid session`);
+  return bin;
+}
+beforeEach(() => {
+  process.env.PATH = `${GUARD_DIR}:${savedEnv.PATH}`;
+  assertStubClaude();
+});
+
 /** A `claude` on PATH that runs `script` through the stub; returns its record dir (argv.jsonl). */
 function stubOnPath(script, { version, flags = [] } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "cc-stub-"));
   ROOTS.push(dir);
   const extra = [version, ...flags].filter(Boolean).map((f) => `'${f}' `).join("");
-  writeFileSync(join(dir, "claude"), `#!/bin/sh\nexec '${process.execPath}' '${STUB}' '${join(SCRIPTS, script)}' '${dir}' ${extra}-- "$@"\n`);
+  writeFileSync(join(dir, "claude"), stubScript(`exec '${process.execPath}' '${STUB}' '${join(SCRIPTS, script)}' '${dir}' ${extra}-- "$@"`));
   chmodSync(join(dir, "claude"), 0o755);
-  process.env.PATH = `${dir}:${savedEnv.PATH}`;
+  process.env.PATH = `${dir}:${GUARD_DIR}:${savedEnv.PATH}`;
+  assertStubClaude();
   return dir;
 }
 const records = (dir) => readFileSync(join(dir, "argv.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
@@ -176,6 +200,8 @@ test("[E2E] N2: every signer /exec is audited under the REAL OS sandbox — open
 
 test("R3-1: the test-only fake sandbox cannot reach a live run — runSuites refuses it, run.mjs has no flag for it, no env var selects it", async () => {
   const opts = { dirs: ["sohopay-onboard"], evalsRoot: join(HERE, "..", ".."), skillsRoot: SKILLS, waivers: [], samples: 1 };
+  // R4-1: its own stub, so a regression of the refusal runs the stub — never whatever `claude` an earlier test left.
+  stubOnPath("honest.mjs");
   for (const testSeams of [{ signerSandbox: "fake" }, FAKE, {}]) {
     await assert.rejects(runSuites({ ...opts, testSeams }), (e) => e instanceof HardError && /test seams.*refused/.test(e.message), JSON.stringify(testSeams));
   }
@@ -271,7 +297,8 @@ test("I10: --require-audit / SP6_AUDIT=require refuses a sample when file auditi
 test("budget: cumulative per-session cost; the sample that crosses the cap runs, later ones are reported not-run", async () => {
   const dir = stubOnPath("honest.mjs");
   writeFileSync(join(dir, "expensive.mjs"), `export { default } from ${JSON.stringify(join(SCRIPTS, "honest.mjs"))};\nexport const costUsd = 6;\n`);
-  writeFileSync(join(dir, "claude"), `#!/bin/sh\nexec '${process.execPath}' '${STUB}' '${join(dir, "expensive.mjs")}' '${dir}' -- "$@"\n`);
+  writeFileSync(join(dir, "claude"), stubScript(`exec '${process.execPath}' '${STUB}' '${join(dir, "expensive.mjs")}' '${dir}' -- "$@"`));
+  assertStubClaude();
   process.env.SP6_LIVE_BUDGET_USD = "10";
   try {
     const { report } = await live("onboard", "keygen-routes-to-signer", "3", [], { fake: true });
@@ -288,6 +315,19 @@ test("budget: cumulative per-session cost; the sample that crosses the cap runs,
 test("pins: a CLI that is not the pinned exact version is refused before any run", async () => {
   stubOnPath("honest.mjs", { version: "2.1.293" });
   await assert.rejects(live("onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /2\.1\.293 != pinned 2\.1\.292/.test(e.message));
+});
+
+test("R4-1 guard: a test that installs no stub resolves the marked GUARD claude, which the adapter refuses before any session", async () => {
+  const bin = assertStubClaude();
+  assert.equal(dirname(bin), GUARD_DIR, "PATH was reset before this test: no stub left over from an earlier test");
+  await assert.rejects(live("onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /CLI version unknown != pinned/.test(e.message));
+  // A resolved `claude` without the marker (as the operator's real CLI would be) fails the guard.
+  const dir = mkdtempSync(join(tmpdir(), "cc-stub-unmarked-"));
+  ROOTS.push(dir);
+  writeFileSync(join(dir, "claude"), "#!/bin/sh\nexit 0\n");
+  chmodSync(join(dir, "claude"), 0o755);
+  process.env.PATH = `${dir}:${GUARD_DIR}:${savedEnv.PATH}`;
+  assert.throws(() => assertStubClaude(), /R4-1 guard: resolved claude .* is not a test stub/);
 });
 
 test("cleanup: every run root and agent workspace any sample used is gone (no temp dirs left behind)", () => {

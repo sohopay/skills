@@ -27,13 +27,36 @@ export const SIGNER_CALL_TIMEOUT_MS = 20_000;
 /** TEST-ONLY: the child runs unconfined. Never returned by detection; only ever passed in as this object. */
 export const FAKE_SANDBOX = Object.freeze({ kind: "fake", reason: "test-only: unconfined signer child" });
 
+/** The namespace / mount prefix production passes to bwrap (bwrapArgs starts with exactly this). */
+const BWRAP_BASE = Object.freeze(["--die-with-parent", "--new-session", "--unshare-all", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"]);
+/** Limit for the functional bwrap probe (a working bwrap starts `true` in well under a second). */
+export const BWRAP_PROBE_TIMEOUT_MS = 5_000;
+const probeCache = new Map();
+
+/**
+ * R4-2: a bwrap binary can exist yet be unable to create namespaces (e.g. Ubuntu 24.04's AppArmor userns restriction).
+ * Run it once, with the same namespace flags production uses, on `true`; anything but a clean exit 0 = unavailable.
+ * Cached per binary path (only for the real spawner, so tests with stub binaries are never cross-polluted).
+ */
+export function probeBwrap(path, run = spawnSync) {
+  if (run === spawnSync && probeCache.has(path)) return probeCache.get(path);
+  const r = run(path, [...BWRAP_BASE, "true"], { stdio: ["ignore", "ignore", "pipe"], encoding: "utf8", timeout: BWRAP_PROBE_TIMEOUT_MS });
+  const why = r.error ? r.error.code ?? r.error.message : r.signal ? `killed by ${r.signal}` : r.status !== 0 ? `exit ${r.status}` : null;
+  const stderr = String(r.stderr ?? "").trim().split("\n")[0]?.slice(0, 200);
+  const out = why === null ? { ok: true, reason: null } : { ok: false, reason: `bwrap present but its functional probe failed (${why}${stderr ? `: ${stderr}` : ""})` };
+  if (run === spawnSync) probeCache.set(path, out);
+  return out;
+}
+
 /** Which OS sandbox this host can run the signer under (never the fake). */
-export function sandboxSupport(platform = process.platform, env = process.env) {
+export function sandboxSupport(platform = process.platform, env = process.env, run = spawnSync) {
   if (env.SP6_SIMULATE_NO_SANDBOX === "1") return { kind: null, reason: "simulated: no OS sandbox (SP6_SIMULATE_NO_SANDBOX=1)" };
   if (platform === "darwin") return existsSync("/usr/bin/sandbox-exec") ? { kind: "sandbox-exec", path: "/usr/bin/sandbox-exec" } : { kind: null, reason: "no /usr/bin/sandbox-exec" };
   if (platform === "linux") {
     const bw = (env.PATH ?? "/usr/bin:/bin").split(delimiter).map((d) => join(d, "bwrap")).find((p) => existsSync(p));
-    return bw ? { kind: "bwrap", path: bw } : { kind: null, reason: "bwrap not installed" };
+    if (!bw) return { kind: null, reason: "bwrap not installed" };
+    const probe = probeBwrap(bw, run);
+    return probe.ok ? { kind: "bwrap", path: bw } : { kind: null, reason: probe.reason }; // fail closed
   }
   return { kind: null, reason: `no OS sandbox for ${platform}` };
 }
@@ -79,7 +102,7 @@ export function seatbeltProfile({ writeRoots, denyRead, denyWrite, allowRead }) 
 export function bwrapArgs({ writeRoots, denyRead, denyWrite, allowRead, cwd }) {
   const ex = (p) => { try { lstatSync(p); return true; } catch { return false; } };
   const isDir = (p) => { try { return lstatSync(p).isDirectory(); } catch { return false; } };
-  const a = ["--die-with-parent", "--new-session", "--unshare-all", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc"];
+  const a = [...BWRAP_BASE];
   for (const w of writeRoots.map(canon).filter(isDir)) a.push("--bind", w, w);
   for (const d of denyWrite.map(canon).filter(isDir)) a.push("--ro-bind", d, d);
   for (const d of denyRead.map(canon).filter(ex)) a.push(...(isDir(d) ? ["--tmpfs", d] : ["--ro-bind", "/dev/null", d]));

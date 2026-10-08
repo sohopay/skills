@@ -14,7 +14,7 @@ import { createBackend } from "../mock/backend.mjs";
 import { publicFromPrivate, storedKeyFile } from "../mock/lib/keymodel.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
 import { createSignerHost, execForwarded, newLogs, recordTrace, sandboxSupport } from "../mock/signer-host.mjs";
-import { childTraceSupport, FAKE_SANDBOX, seatbeltProfile } from "../mock/lib/signer-sandbox.mjs";
+import { bwrapArgs, childTraceSupport, FAKE_SANDBOX, seatbeltProfile } from "../mock/lib/signer-sandbox.mjs";
 import { confinement, signerPolicy } from "./adapters/cc-world.mjs";
 
 const ROOT = realpathSync(mkdtempSync(join(tmpdir(), "sp6-host-")));
@@ -87,6 +87,34 @@ test("R3-1: detection never yields the fake — no env var selects it; SP6_SIMUL
   }
   assert.equal(FAKE_SANDBOX.kind, "fake");
   assert.ok(Object.isFrozen(FAKE_SANDBOX));
+});
+
+test("R4-2: a bwrap that exists but cannot create its namespaces is UNAVAILABLE (functional probe, fail closed); a working one is probed with production's flags", () => {
+  const dir = realpathSync(mkdtempSync(join(ROOT, "bwrap-stub-")));
+  const broken = join(dir, "broken");
+  const working = join(dir, "working");
+  for (const d of [broken, working]) mkdirSync(d);
+  // Present on PATH, but fails like bwrap under an AppArmor userns restriction.
+  writeFileSync(join(broken, "bwrap"), "#!/bin/sh\necho 'bwrap: setting up uid map: Permission denied' >&2\nexit 1\n");
+  writeFileSync(join(working, "bwrap"), `#!/bin/sh\nprintf '%s\\n' "$@" > '${join(working, "args")}'\nexit 0\n`);
+  for (const d of [broken, working]) chmodSync(join(d, "bwrap"), 0o755);
+
+  const no = sandboxSupport("linux", { PATH: broken });
+  assert.equal(no.kind, null, JSON.stringify(no));
+  assert.match(no.reason, /bwrap present but its functional probe failed \(exit 1: bwrap: setting up uid map: Permission denied\)/);
+  assert.deepEqual(childTraceSupport(no), { ok: false, reason: no.reason }, "no traced child either: kernel tests skip (or fail under SP6_REQUIRE_SANDBOX=1)");
+
+  const yes = sandboxSupport("linux", { PATH: working });
+  assert.deepEqual(yes, { kind: "bwrap", path: join(working, "bwrap") });
+  const args = readFileSync(join(working, "args"), "utf8").trim().split("\n");
+  assert.deepEqual(args, ["--die-with-parent", "--new-session", "--unshare-all", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "true"]);
+  const prod = bwrapArgs({ writeRoots: [], denyRead: [], denyWrite: [], allowRead: [], cwd: "/" });
+  assert.deepEqual(prod.slice(0, args.length - 1), args.slice(0, -1), "the probe uses the exact namespace prefix production passes");
+
+  // A hung bwrap is killed at the probe timeout and is unavailable too (injected spawner: no 5 s wait here).
+  const hung = sandboxSupport("linux", { PATH: working }, () => ({ status: null, signal: "SIGTERM", stderr: "" }));
+  assert.equal(hung.kind, null);
+  assert.match(hung.reason, /functional probe failed \(killed by SIGTERM\)/);
 });
 
 test("R3-1: with no OS sandbox (detection forced unavailable, no injected seam) every signer call fails closed — never the fake, never unsandboxed", async () => {
