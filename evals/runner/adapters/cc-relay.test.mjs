@@ -3,7 +3,7 @@
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { HardError } from "../schema.mjs";
@@ -110,6 +110,43 @@ test("N1: the hook wrapper has a fixed, secret-free path; it finds the relay via
     assert.ok(r.hooks.get("toolu_w").pre);
     assert.ok(r.hookPids.has(res.pid), "the hook's own pid is reported over the authenticated relay");
   } finally { await r.close(); }
+});
+
+// Linux CI (run 37747714088, keygen-routes-to-signer: "capture gap: … has no PreToolUse record"): every createWorld
+// re-wrote the ONE shared <run base>/hook.mjs in place (truncate, then write) while `node --test` ran other files'
+// samples in parallel against the same base — a hook node that loaded the file in that window ran an empty (exit 0,
+// nothing relayed) or truncated module, and the call's PreToolUse was lost. A concurrent reader must only ever see
+// the whole wrapper.
+test("the shared hook wrapper is installed atomically: concurrent installs never expose a truncated or empty wrapper to a hook", async () => {
+  const base = join(ROOT, "base-atomic");
+  mkdirSync(base, { recursive: true, mode: 0o700 });
+  const wrapper = installHookWrapper(base);
+  const want = readFileSync(wrapper, "utf8");
+  const ino = statSync(wrapper).ino;
+  assert.equal(statSync(installHookWrapper(base)).ino, ino, "an identical wrapper is left in place, not rewritten");
+  writeFileSync(wrapper, "// an older wrapper\n", { mode: 0o700 });
+  installHookWrapper(base);
+  assert.equal(readFileSync(wrapper, "utf8"), want, "a different wrapper is replaced");
+  assert.equal(statSync(wrapper).mode & 0o777, 0o700);
+  assert.deepEqual(readdirSync(base).filter((n) => n !== "hook.mjs"), [], "no temp file left behind");
+  // Another test process installing into the same base while hooks load the wrapper; between installs it swaps an
+  // older (complete) wrapper in by rename, so every install has to replace the file.
+  const STALE = "// an older wrapper\n";
+  const installer = new URL("./cc-world.mjs", import.meta.url).href;
+  const src = `import { installHookWrapper } from ${JSON.stringify(installer)}; import { renameSync, writeFileSync } from "node:fs";
+    for (let i = 0; i < 300; i++) { writeFileSync(${JSON.stringify(`${wrapper}.old`)}, ${JSON.stringify(STALE)}); renameSync(${JSON.stringify(`${wrapper}.old`)}, ${JSON.stringify(wrapper)}); for (let k = 0; k < 3; k++) installHookWrapper(${JSON.stringify(base)}); }`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", src], { stdio: "ignore" });
+  let exited = false;
+  const done = new Promise((r) => child.once("exit", (code) => { exited = true; r(code); }));
+  const seen = new Set();
+  while (!exited) {
+    const body = readFileSync(wrapper, "utf8");
+    seen.add(body === want ? "whole" : body === STALE ? "older" : `partial (${body.length} bytes)`);
+    await new Promise((r) => setImmediate(r));
+  }
+  assert.equal(await done, 0);
+  assert.deepEqual([...seen].filter((s) => s.startsWith("partial")), [], "a hook never loads a truncated or empty wrapper");
+  assert.equal(readFileSync(wrapper, "utf8"), want);
 });
 
 test("N7: the wrapper fails (non-zero, like curl -f) when the relay rejects it — so a lost hook is a capture gap, never silent", async () => {

@@ -11,7 +11,7 @@
 //                             and the signer symlink, lib/node_modules/@sohopay/agent-signer).
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -149,11 +149,22 @@ export function installSkills(suiteDir, skillsRoot, home) {
 /**
  * N1: install the hook wrapper at the FIXED, secret-free path <base>/hook.mjs (comment lines stripped). The hook
  * command names only node and this path; the relay url + token are found per session in <base>/relays/.
+ * The file is shared by every sample using this base — including other processes' (parallel `node --test` files, a
+ * concurrent run) whose hooks may be loading it right now — so it is never rewritten in place: an identical wrapper is
+ * left alone, anything else is replaced by an atomic rename, and a hook only ever loads a whole wrapper.
  */
 export function installHookWrapper(base) {
   const dest = join(base, "hook.mjs");
   const code = readFileSync(HOOK_SRC, "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-  writeFileSync(dest, code, { mode: 0o700 });
+  let current = null;
+  try { const st = lstatSync(dest); if (st.isFile() && (st.mode & 0o777) === 0o700) current = readFileSync(dest, "utf8"); } catch { current = null; }
+  if (current === code) return dest;
+  const tmp = join(base, `.hook.mjs.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
+  try {
+    writeFileSync(tmp, code, { mode: 0o700, flag: "wx" });
+    chmodSync(tmp, 0o700); // the creation mode is subject to the umask
+    renameSync(tmp, dest);
+  } finally { rmSync(tmp, { force: true }); }
   return dest;
 }
 
