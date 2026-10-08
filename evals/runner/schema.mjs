@@ -117,6 +117,8 @@ export function validateTranscript(t) {
       if (e.type === "input_condition" && !INPUT_CONDITIONS.has(e.label)) bad(`event ${idx}: input_condition needs a declared label, got ${e.label}`);
       if (e.type === "stop" && !("code" in e)) bad(`event ${idx}: stop needs code (nullable)`);
       if (e.type === "file_open_audit" && (typeof e.path !== "string" || typeof e.op !== "string")) bad(`event ${idx}: file_open_audit needs string path and op`);
+      // A file_op the labeler cannot read a path from would label nothing (fail-open on the floor): reject it.
+      if (e.type === "file_op" && (typeof e.path !== "string" || e.path === "")) bad(`event ${idx}: file_op needs a non-empty string path`);
       if ("resolved_paths" in e) resolvedPathsErrors(e, idx).forEach(bad);
       // A result names its call by id (parallel calls return out of order); position pairing let a forged
       // `mktemp -d` result be trusted. Each call has at most one result.
