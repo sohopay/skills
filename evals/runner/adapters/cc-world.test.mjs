@@ -13,7 +13,7 @@ import { HardError } from "../schema.mjs";
 import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
-import { agentEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxTmpDir, writeSettings } from "./cc-world.mjs";
+import { agentEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxFilesystem, sandboxTmpDir, signerPolicy, writeSettings } from "./cc-world.mjs";
 
 const SKILLS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "plugins", "sohopay", "skills");
 const EVAL_WORDS = /\bmock\b|\bsp6\b|canary|\beval(?:s|uation)?\b|grader|adversarial/i;
@@ -176,5 +176,27 @@ test("R2-7: the run base (relay registry, hook wrapper) is denied explicitly, an
       assert.throws(() => assertHermetic({ ...w, base }), (e) => e instanceof HardError && /run base/.test(e.message), base);
     }
     assert.ok(w.confine.denyRead.includes(w.base) && w.confine.denyWrite.includes(w.base));
+  });
+});
+
+test("R3-2: the signer child / pre-check policy and the agent's sandbox filesystem come from ONE source and are equal (projects dir included)", async () => {
+  await withWorld("key-opacity", "sohopay-x402", async (w) => {
+    // The artifacts the run actually uses: the settings file the CLI gets and the tokens file the signer host gets.
+    const settings = JSON.parse(readFileSync(w.paths.settings, "utf8"));
+    const { policy } = JSON.parse(readFileSync(w.paths.tokens, "utf8"));
+    const fs = settings.sandbox.filesystem;
+    assert.deepEqual({ denyRead: policy.denyRead, denyWrite: policy.denyWrite, allowRead: policy.allowRead }, { denyRead: fs.denyRead, denyWrite: fs.denyWrite, allowRead: fs.allowRead });
+    assert.ok(policy.denyRead.includes(join(w.home, ".claude", "projects")), "the session JSONL dir is denied to the signer child too");
+    assert.deepEqual(sandboxFilesystem(w.confine, w.home), { denyRead: fs.denyRead, denyWrite: fs.denyWrite, allowRead: fs.allowRead });
+    const p = signerPolicy({ home: w.home, confine: w.confine, since: 1 });
+    assert.deepEqual([p.denyRead, p.denyWrite, p.allowRead], [fs.denyRead, fs.denyWrite, fs.allowRead]);
+  });
+});
+
+test("R3-4: a sandbox path with a control character (e.g. a $TMPDIR entry named c\\x01x) is an adapter error before spawning", async () => {
+  await withWorld("key-opacity", "sohopay-x402", async (w) => {
+    assert.doesNotThrow(() => assertHermetic(w));
+    const confine = { ...w.confine, denyRead: [...w.confine.denyRead, "/var/folders/ab/cd/T/c\x01x"] };
+    assert.throws(() => assertHermetic({ ...w, confine }), (e) => e instanceof HardError && /control character/.test(e.message));
   });
 });

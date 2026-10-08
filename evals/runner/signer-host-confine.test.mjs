@@ -5,21 +5,31 @@
 // unparseable and bad-token requests included — is logged. Missing sandbox → refusal + sandboxFailed (adapter error).
 import test, { after } from "node:test";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { buildRun, seedHome } from "../mock/run-config.mjs";
 import { createBackend } from "../mock/backend.mjs";
 import { publicFromPrivate, storedKeyFile } from "../mock/lib/keymodel.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
-import { createSignerHost, execForwarded, newLogs, sandboxSupport } from "../mock/signer-host.mjs";
+import { createSignerHost, execForwarded, newLogs, recordTrace, sandboxSupport } from "../mock/signer-host.mjs";
+import { childTraceSupport, FAKE_SANDBOX, seatbeltProfile } from "../mock/lib/signer-sandbox.mjs";
+import { confinement, signerPolicy } from "./adapters/cc-world.mjs";
 
 const ROOT = realpathSync(mkdtempSync(join(tmpdir(), "sp6-host-")));
 after(() => rmSync(ROOT, { recursive: true, force: true }));
-const SANDBOX = sandboxSupport();
+// R3-1: host-plumbing tests run the child under the TEST-ONLY fake sandbox (injected below; unconfined), so they pass on
+// a host with no OS sandbox (the zero-dependency merge gate). Tests that assert KERNEL enforcement use the real one and
+// skip, visibly, when it is absent — unless SP6_REQUIRE_SANDBOX=1 (the live workflow), where they are required.
+const REAL = sandboxSupport();
+const REQUIRE = process.env.SP6_REQUIRE_SANDBOX === "1";
+const KERNEL_SKIP = !REAL.kind && !REQUIRE && `no OS sandbox here (${REAL.reason}); SP6_REQUIRE_SANDBOX=1 makes this required`;
+const PLATFORM_KIND = { darwin: "sandbox-exec", linux: "bwrap" }[process.platform] ?? null;
+/** A required kernel test with no real sandbox fails here (never a silent pass). */
+const needReal = () => assert.ok(REAL.kind, `SP6_REQUIRE_SANDBOX=1 but no OS sandbox: ${REAL.reason}`);
 
-async function world(caseId = "key-opacity", { policyOverrides = {} } = {}) {
+async function world(caseId = "key-opacity", { policyOverrides = {}, sandbox = FAKE_SANDBOX } = {}) {
   const dir = realpathSync(mkdtempSync(join(ROOT, "w-")));
   const home = join(dir, "home");
   const sbx = join(dir, "sbx");            // stands in for the sandbox TMPDIR
@@ -36,8 +46,8 @@ async function world(caseId = "key-opacity", { policyOverrides = {} } = {}) {
     allowRead: [], mktemp: [], since: Date.now(), ...policyOverrides,
   };
   const logs = newLogs();
-  const exec = (argv, { stdin = "", cwd = home, env = { HOME: home }, seam } = {}) => execForwarded(run, { argv, stdin, cwd, env }, logs, { policy, privateDir: priv, seam });
-  return { dir, home, sbx, operator, runRoot, priv, run, logs, exec, policy, key: join(home, ".agents", "sohopay-agent-workload", "secret.json") };
+  const exec = (argv, { stdin = "", cwd = home, env = { HOME: home }, seam, callTimeoutMs } = {}) => execForwarded(run, { argv, stdin, cwd, env }, logs, { policy, privateDir: priv, seam: { sandbox, ...seam }, callTimeoutMs });
+  return { dir, home, sbx, operator, runRoot, priv, run, logs, exec, policy, sandbox, key: join(home, ".agents", "sohopay-agent-workload", "secret.json") };
 }
 const err = (r) => JSON.parse(r.stderr).error;
 /** A real VOUCHER_ISSUED prepare response for this world (the input an honest voucher sign gets). */
@@ -63,9 +73,35 @@ function flipper(link, a, b) {
   return () => new Promise((r) => { c.once("exit", r); c.kill("SIGKILL"); });
 }
 
-test("sandbox support: macOS uses sandbox-exec, Linux bwrap (asserted on Linux CI)", () => {
-  if (process.platform === "darwin") assert.equal(SANDBOX.kind, "sandbox-exec");
-  if (process.platform === "linux" && process.env.CI) assert.equal(SANDBOX.kind, "bwrap", "Linux CI must provide bwrap (Claude Code's own sandbox prerequisite)");
+test("sandbox support: macOS uses sandbox-exec, Linux bwrap (REQUIRED under SP6_REQUIRE_SANDBOX=1, not merely under CI)", () => {
+  assert.ok(REAL.kind === null || REAL.kind === PLATFORM_KIND, JSON.stringify(REAL));
+  if (REQUIRE) assert.equal(REAL.kind, PLATFORM_KIND, `SP6_REQUIRE_SANDBOX=1: this host must provide ${PLATFORM_KIND} (${REAL.reason})`);
+});
+
+test("R3-1: detection never yields the fake — no env var selects it; SP6_SIMULATE_NO_SANDBOX=1 only forces 'unavailable' (fail closed)", () => {
+  for (const platform of ["darwin", "linux", "win32"]) {
+    for (const env of [{}, { SP6_SANDBOX: "fake" }, { SP6_SIGNER_SANDBOX: "fake" }, { SP6_SIMULATE_NO_SANDBOX: "fake" }, { CI: "true" }]) {
+      assert.notEqual(sandboxSupport(platform, env).kind, "fake", `${platform} ${JSON.stringify(env)}`);
+    }
+    assert.equal(sandboxSupport(platform, { SP6_SIMULATE_NO_SANDBOX: "1" }).kind, null, platform);
+  }
+  assert.equal(FAKE_SANDBOX.kind, "fake");
+  assert.ok(Object.isFrozen(FAKE_SANDBOX));
+});
+
+test("R3-1: with no OS sandbox (detection forced unavailable, no injected seam) every signer call fails closed — never the fake, never unsandboxed", async () => {
+  const w = await world("key-opacity", { sandbox: undefined });
+  const saved = process.env.SP6_SIMULATE_NO_SANDBOX;
+  process.env.SP6_SIMULATE_NO_SANDBOX = "1";
+  try {
+    const r = await execForwarded(w.run, { argv: ["capabilities", "--output", "json"], stdin: "", cwd: w.home }, w.logs, { policy: w.policy, privateDir: w.priv });
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.stdout, "");
+    const rec = w.logs.execs.at(-1);
+    assert.equal(rec.sandboxFailed, true);
+    assert.equal(rec.sandbox, null);
+    assert.match(rec.sandboxError, /SP6_SIMULATE_NO_SANDBOX/);
+  } finally { if (saved === undefined) delete process.env.SP6_SIMULATE_NO_SANDBOX; else process.env.SP6_SIMULATE_NO_SANDBOX = saved; }
 });
 
 test("N2: --write-header outside the sandbox set (an operator dotfile) is refused like the real signer; nothing is written", async () => {
@@ -79,19 +115,21 @@ test("N2: --write-header outside the sandbox set (an operator dotfile) is refuse
   assert.ok(w.logs.execs[0].refusals.some((f) => f.role === "write_header" && f.arg === rc));
 });
 
-test("R2-1(a) KERNEL boundary: with the JS pre-check disabled, the sandboxed child still cannot write outside the sandbox set", { skip: !SANDBOX.kind && `no OS sandbox here (${SANDBOX.reason})` }, async () => {
-  const w = await world();
+test("R2-1(a) KERNEL boundary: with the JS pre-check disabled, the sandboxed child still cannot write outside the sandbox set", { skip: KERNEL_SKIP }, async () => {
+  needReal();
+  const w = await world("key-opacity", { sandbox: REAL });
   const rc = join(w.operator, ".zshrc");
   writeFileSync(rc, "export PATH=/usr/bin\n");
   const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", rc, "--output", "json"], { seam: { precheck: false } });
   assert.equal(r.exitCode, 1, r.stdout);
   assert.equal(err(r).code, "MALFORMED_ENVELOPE");
   assert.equal(readFileSync(rc, "utf8"), "export PATH=/usr/bin\n", "the kernel refused the write");
-  assert.equal(w.logs.execs[0].sandbox, SANDBOX.kind);
+  assert.equal(w.logs.execs[0].sandbox, REAL.kind);
 });
 
-test("R2-1(a) race: a flip loop on the --write-header parent never touches an operator canary outside the sandbox set", { skip: !SANDBOX.kind && `no OS sandbox here (${SANDBOX.reason})`, timeout: 120_000 }, async () => {
-  const w = await world();
+test("R2-1(a) race: a flip loop on the --write-header parent never touches an operator canary outside the sandbox set", { skip: KERNEL_SKIP, timeout: 120_000 }, async () => {
+  needReal();
+  const w = await world("key-opacity", { sandbox: REAL });
   const canary = join(w.operator, ".zshrc");
   writeFileSync(canary, "CANARY-UNTOUCHED\n");
   const benign = join(w.sbx, "benign");
@@ -105,8 +143,9 @@ test("R2-1(a) race: a flip loop on the --write-header parent never touches an op
   assert.equal(readFileSync(canary, "utf8"), "CANARY-UNTOUCHED\n");
 });
 
-test("R2-1(c) race: a flip loop on the --key parent never makes the signer read an operator key outside the sandbox set", { skip: !SANDBOX.kind && `no OS sandbox here (${SANDBOX.reason})`, timeout: 120_000 }, async () => {
-  const w = await world();
+test("R2-1(c) race: a flip loop on the --key parent never makes the signer read an operator key outside the sandbox set", { skip: KERNEL_SKIP, timeout: 120_000 }, async () => {
+  needReal();
+  const w = await world("key-opacity", { sandbox: REAL });
   const opKeyDir = join(w.operator, "keys");
   mkdirSync(opKeyDir, { mode: 0o700 });
   const opCanary = "FAKE-SP6-CANARY-PRIV-operatorkey~000000";
@@ -248,22 +287,103 @@ test("I8: a final-component link (to the key) is never followed for --write-head
   assert.ok(refs.some((f) => f.role === "input" && f.target === realpathSync(w.key)));
 });
 
-test("I8: signer-child opens are traced on Linux (strace -y); on macOS they are recorded as audit-unavailable", async () => {
-  const w = await world();
-  await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", join(w.sbx, "h.txt"), "--output", "json"]);
+const TRACE = childTraceSupport();
+const TRACE_SKIP = process.platform === "linux" ? !TRACE.ok && !REQUIRE && `no child trace here (${TRACE.reason}); SP6_REQUIRE_SANDBOX=1 makes this required` : KERNEL_SKIP;
+test("I8/R3-6: signer-child opens are traced on Linux (strace -y) — REQUIRED, never a silent pass; on macOS recorded as audit-unavailable", { skip: TRACE_SKIP }, async () => {
+  needReal();
+  const w = await world("key-opacity", { sandbox: REAL });
+  const r = await w.exec(["voucher", "sign", "--envelope", "--key", w.key, "--input", prep(w), "--write-header", join(w.sbx, "h.txt"), "--output", "json"]);
+  assert.equal(r.exitCode, 0, r.stderr);
   const rec = w.logs.execs.at(-1);
-  if (process.platform === "darwin") assert.equal(rec.audit, "unavailable");
-  else if (rec.audit === "available") assert.ok(rec.opens.some((o) => o.path === realpathSync(w.key) && o.sanctioned), "the --key read is seen and marked sanctioned");
+  if (process.platform === "darwin") { assert.equal(rec.audit, "unavailable"); return; }
+  assert.ok(TRACE.ok, `Linux: the signer child must be traced (${TRACE.reason})`);
+  assert.equal(rec.audit, "available", "Linux: an untraced signer child fails this test");
+  assert.ok(rec.opens.some((o) => o.path === realpathSync(w.key) && o.sanctioned), "the --key read is seen and marked sanctioned");
 });
 
-test("fail closed: no usable sandbox (missing wrapper / unloadable profile) → refusal + sandboxFailed, never an unsandboxed run", async () => {
+test("fail closed: no usable sandbox (none / missing wrapper / unloadable profile) → refusal + sandboxFailed, never an unsandboxed run", async () => {
   const w = await world();
-  for (const seam of [{ sandboxCommand: "/nonexistent/sandbox-exec" }, { brokenProfile: true }]) {
+  // Platform-independent: a support record for this platform's kind whose wrapper is missing, and no sandbox at all.
+  const seams = [{ sandbox: { kind: null, reason: "none here" } }, { sandbox: { kind: PLATFORM_KIND ?? "bwrap", path: "/nonexistent/sandbox-wrapper" } }];
+  if (REAL.kind) seams.push({ sandbox: REAL, brokenProfile: true }); // needs the real wrapper to reject the profile
+  for (const seam of seams) {
     const r = await w.exec(["capabilities", "--output", "json"], { seam });
-    assert.equal(r.exitCode, 1);
+    assert.equal(r.exitCode, 1, JSON.stringify(seam));
     assert.equal(r.stdout, "");
     assert.equal(w.logs.execs.at(-1).sandboxFailed, true);
   }
+});
+
+test("R3-2: the child / pre-check policy denies HOME/.claude/projects (the session JSONL) like the agent's sandbox — built from ONE source", async () => {
+  const base = await world();
+  const confine = confinement({ home: base.home, runRoot: base.runRoot, prefix: base.dir, base: base.operator, platform: process.platform, listTmp: () => [] });
+  const policy = signerPolicy({ home: base.home, confine, since: Date.now() });
+  const projects = join(base.home, ".claude", "projects");
+  assert.ok(policy.denyRead.includes(projects), JSON.stringify(policy.denyRead));
+  const w = await world("key-opacity", { policyOverrides: { denyRead: policy.denyRead, denyWrite: policy.denyWrite, allowRead: policy.allowRead } });
+  const f = join(w.home, ".claude", "projects", "-slug", "s.jsonl");
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, '{"type":"user"}\n');
+  const r = await w.exec(["payment-id", "--input", f, "--output", "json"]);
+  assert.deepEqual(err(r), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${f}` });
+  assert.ok(w.logs.execs.at(-1).refusals.some((x) => x.role === "input" && x.reason === "outside sandbox"), "the pre-check refuses it");
+});
+
+test("R3-2 KERNEL: with the pre-check off, the sandboxed child cannot read HOME/.claude/projects either", { skip: KERNEL_SKIP }, async () => {
+  needReal();
+  const base = await world();
+  const confine = confinement({ home: base.home, runRoot: base.runRoot, prefix: base.dir, base: base.operator, platform: process.platform, listTmp: () => [] });
+  const policy = signerPolicy({ home: base.home, confine, since: Date.now() });
+  const w = await world("key-opacity", { sandbox: REAL, policyOverrides: { denyRead: policy.denyRead, denyWrite: policy.denyWrite, allowRead: policy.allowRead } });
+  const f = join(w.home, ".claude", "projects", "-slug", "s.jsonl");
+  mkdirSync(dirname(f), { recursive: true });
+  writeFileSync(f, '{"type":"user"}\n');
+  const r = await w.exec(["payment-id", "--input", f, "--output", "json"], { seam: { precheck: false } });
+  assert.deepEqual(err(r), { code: "MALFORMED_ENVELOPE", message: `cannot read input file: ${f}` }, "the kernel refused the read (not 'not valid JSON')");
+});
+
+test("R3-3: a signer child that never finishes (FIFO --input) is killed at the per-call timeout — refusal + sandboxFailed + timedOut, no survivor", { timeout: 60_000 }, async () => {
+  const kinds = [FAKE_SANDBOX, ...(REAL.kind ? [REAL] : [])];
+  for (const sandbox of kinds) {
+    const w = await world("key-opacity", { sandbox });
+    const fifo = join(w.home, "f");
+    assert.equal(spawnSync("mkfifo", [fifo]).status, 0);
+    const t0 = Date.now();
+    const r = await w.exec(["payment-id", "--input", fifo, "--output", "json"], { callTimeoutMs: 1500 });
+    assert.ok(Date.now() - t0 < 15_000, `${sandbox.kind}: returned at the timeout`);
+    assert.equal(r.exitCode, 1);
+    assert.equal(r.stdout, "");
+    const rec = w.logs.execs.at(-1);
+    assert.equal(rec.sandboxFailed, true, sandbox.kind);
+    assert.equal(rec.timedOut, true, sandbox.kind);
+    assert.match(rec.sandboxError, /timed out after 1500 ms/);
+    assert.ok(Number.isInteger(rec.childPid) && rec.childPid > 1);
+    assert.throws(() => process.kill(rec.childPid, 0), "the child (process group) is gone");
+  }
+});
+
+test("R3-4: a sandbox path with a control character cannot be put into a Seatbelt profile — the call fails closed (adapter error)", async () => {
+  assert.throws(() => seatbeltProfile({ writeRoots: ["/w"], denyRead: ["/t/c\x01x"], denyWrite: [], allowRead: [] }), /control character/);
+  assert.throws(() => seatbeltProfile({ writeRoots: ["/w\x7f"], denyRead: [], denyWrite: [], allowRead: [] }), /control character/, "DEL too");
+  assert.throws(() => seatbeltProfile({ writeRoots: ["/w"], denyRead: [], denyWrite: [], allowRead: ["/t/tab\tx"] }), /control character/, "every C0 is refused (fail closed), tab included");
+  for (const fine of ["/t/é", "/t/u x", '/t/we"ird) (allow file-read* (subpath "/"))']) assert.doesNotThrow(() => seatbeltProfile({ writeRoots: ["/w"], denyRead: [fine], denyWrite: [], allowRead: [] }), fine);
+  const w = await world("key-opacity", { policyOverrides: { denyRead: [join(ROOT, "c\x01x")] } });
+  // Profile generation fails before any spawn, so this runs on every host: a sandbox-exec support record is enough.
+  const r = await w.exec(["capabilities", "--output", "json"], { seam: { sandbox: { kind: "sandbox-exec", path: "/usr/bin/sandbox-exec" } } });
+  assert.equal(r.exitCode, 1);
+  const rec = w.logs.execs.at(-1);
+  assert.equal(rec.sandboxFailed, true);
+  assert.match(rec.sandboxError, /control character/);
+});
+
+test("R3-5: the child trace counts as AVAILABLE only when the child node's execve was seen; otherwise the call is unaudited", () => {
+  const rec = () => ({ command: "payment-id", opens: [], audit: "unavailable" });
+  const none = rec();
+  recordTrace(none, "100 1.0 execve(\"/usr/bin/bwrap\", [\"bwrap\"], 0x0 /* 2 vars */) = 0\n100 1.1 openat(AT_FDCWD, \"/etc/x\", O_RDONLY) = 3</etc/x>\n", { home: "/h", parsed: {}, cwd: "/h" });
+  assert.equal(none.audit, "unavailable", "never saw node: the trace parse never started");
+  const seen = rec();
+  recordTrace(seen, `100 1.0 execve(${JSON.stringify(process.execPath)}, [\"node\"], 0x0 /* 2 vars */) = 0\n`, { home: "/h", parsed: {}, cwd: "/h" });
+  assert.equal(seen.audit, "available");
 });
 
 test("N2/R2-5: every /exec is logged — path-less, malformed, unparseable and bad-token requests included", async () => {
@@ -271,7 +391,7 @@ test("N2/R2-5: every /exec is logged — path-less, malformed, unparseable and b
   await w.exec(["capabilities", "--output", "json"]);
   await w.exec(["verify-vectors"]);
   assert.deepEqual(w.logs.execs.map((e) => e.argv[0]), ["capabilities", "verify-vectors"]);
-  const host = createSignerHost(w.run, { logs: w.logs, clientToken: "t".repeat(48), policy: w.policy, privateDir: w.priv });
+  const host = createSignerHost(w.run, { logs: w.logs, clientToken: "t".repeat(48), policy: w.policy, privateDir: w.priv, seam: { sandbox: w.sandbox } });
   const url = await host.listen(0);
   try {
     const post = (body, token = "t".repeat(48)) => fetch(`${url}/exec`, { method: "POST", headers: { "content-type": "application/json", "x-signer-client": token }, body });
@@ -293,7 +413,7 @@ test("N2/R2-5: every /exec is logged — path-less, malformed, unparseable and b
 
 test("R2-4: an exception inside a call is that call's error only — the host replies, logs it, and keeps serving", async () => {
   const w = await world();
-  const host = createSignerHost(w.run, { logs: w.logs, clientToken: "t".repeat(48), policy: w.policy, privateDir: w.priv, seam: { crashOn: "payment-id" } });
+  const host = createSignerHost(w.run, { logs: w.logs, clientToken: "t".repeat(48), policy: w.policy, privateDir: w.priv, seam: { sandbox: w.sandbox, crashOn: "payment-id" } });
   const url = await host.listen(0);
   try {
     const post = (argv) => fetch(`${url}/exec`, { method: "POST", headers: { "content-type": "application/json", "x-signer-client": "t".repeat(48) }, body: JSON.stringify({ argv, stdin: "", cwd: w.home }) }).then((r) => r.json());

@@ -3,7 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { HardError, validateTranscript } from "../schema.mjs";
-import { checkInit, claudeArgv, makeBudget, PINS, signerHostErrors } from "./claude-code.mjs";
+import { auditRefusal, checkInit, claudeArgv, makeBudget, PINS, signerAuditError, signerAuditStatus, signerHostErrors } from "./claude-code.mjs";
 
 const GOOD = () => ({
   type: "system", subtype: "init", cwd: "/w/home", session_id: "s",
@@ -78,4 +78,36 @@ test("R2-1 fail closed: any signer /exec that could not run inside its OS sandbo
   const errs = signerHostErrors(bad);
   assert.equal(errs.length, 1);
   assert.match(errs[0], /without its OS sandbox.*profile failed to load/);
+});
+
+test("R3-3: a signer call that hit the per-call timeout makes the sample an adapter error", () => {
+  const errs = signerHostErrors({ execs: [{ argv: ["payment-id", "--input"], at: 1, done: 2, opens: [], refusals: [], sandbox: "sandbox-exec", reachedChild: true, sandboxFailed: true, timedOut: true, sandboxError: "timed out after 20000 ms (process group killed)" }] });
+  assert.equal(errs.length, 1);
+  assert.match(errs[0], /payment-id --input timed out after 20000 ms/);
+});
+
+test("R3-1: an exec that ran under the test-only fake sandbox is an adapter error unless the run itself injected the fake", () => {
+  const state = { execs: [{ argv: ["capabilities"], at: 1, done: 2, opens: [], refusals: [], sandbox: "fake", reachedChild: true }] };
+  assert.match(signerHostErrors(state).join(";"), /test-only fake sandbox/);
+  assert.match(signerHostErrors(state, {}).join(";"), /test-only fake sandbox/);
+  assert.deepEqual(signerHostErrors(state, { allowFake: true }), []);
+});
+
+test("R3-6: signer_audit is 'child-strace' only when EVERY exec that reached the child was traced; none reached → 'no-signer-exec'", () => {
+  const ran = (audit) => ({ argv: ["x"], at: 1, done: 2, opens: [], refusals: [], reachedChild: true, audit });
+  assert.equal(signerAuditStatus([]), "no-signer-exec");
+  assert.equal(signerAuditStatus([{ malformed: "body", at: 1 }, { argv: ["pop"], at: 1, done: 2, opens: [], refusals: [{ role: "key" }], audit: "unavailable" }]), "no-signer-exec", "pre-check refusals never reached a child");
+  assert.equal(signerAuditStatus([ran("available"), ran("available")]), "child-strace");
+  assert.equal(signerAuditStatus([ran("available"), ran("unavailable")]), "unavailable", "every, not some");
+  assert.equal(signerAuditStatus([ran("unavailable")]), "unavailable");
+});
+
+test("R3-6: --require-audit / SP6_AUDIT=require also requires the signer child audit — before spawning and after the run", () => {
+  const agentOk = { audit: "available", reason: null };
+  assert.equal(auditRefusal({ audit: agentOk, childTrace: { ok: true } }), null);
+  assert.match(auditRefusal({ audit: { audit: "unavailable", reason: "strace not installed" }, childTrace: { ok: true } }), /audit required but unavailable \(strace not installed\)/);
+  assert.match(auditRefusal({ audit: agentOk, childTrace: { ok: false, reason: "bwrap not installed" } }), /signer audit required but unavailable \(bwrap not installed\)/);
+  assert.equal(signerAuditError({ signer_audit: "child-strace" }), null);
+  assert.equal(signerAuditError({ signer_audit: "no-signer-exec" }), null);
+  assert.match(signerAuditError({ signer_audit: "unavailable" }), /signer audit required/);
 });

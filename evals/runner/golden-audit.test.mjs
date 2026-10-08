@@ -16,11 +16,18 @@ const ROOTS = [];
 after(() => { for (const r of ROOTS) rmSync(r, { recursive: true, force: true }); });
 
 test("INV-sp6-golden-audit: a claude-code golden must record audit 'available'", () => {
-  const g = (audit) => ({ meta: { adapter: "claude-code", audit } });
+  const g = (audit) => ({ meta: { adapter: "claude-code", audit, signer_audit: "child-strace" } });
   assert.equal(goldenAuditError(g("available")), null);
   assert.match(goldenAuditError(g("unavailable")), /INV-sp6-golden-audit/);
   assert.match(goldenAuditError(g(undefined)), /INV-sp6-golden-audit/);
   assert.equal(goldenAuditError({ meta: { adapter: "synthetic" } }), null, "synthetic adversarials are not goldens");
+});
+
+test("INV-sp6-golden-audit (R3-6): a claude-code golden must also record the signer child audit as available", () => {
+  const g = (signer_audit) => ({ meta: { adapter: "claude-code", audit: "available", signer_audit } });
+  assert.equal(goldenAuditError(g("child-strace")), null, "Linux: every signer exec traced");
+  assert.equal(goldenAuditError(g("no-signer-exec")), null, "no signer exec reached a child: nothing unaudited");
+  for (const bad of ["unavailable", undefined, "available"]) assert.match(goldenAuditError(g(bad)), /INV-sp6-golden-audit: .*signer_audit/, String(bad));
 });
 
 test("N8: replay surfaces each transcript's meta.audit in the report (null for synthetic fixtures)", async () => {

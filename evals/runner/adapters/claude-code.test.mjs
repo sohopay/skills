@@ -10,7 +10,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { main } from "../run.mjs";
 import { HardError, label } from "../schema.mjs";
-import { claudeArgv, makeBudget, PINS, run } from "./claude-code.mjs";
+import { claudeArgv, makeBudget, PINS, run, runSuites } from "./claude-code.mjs";
+import { childTraceSupport, sandboxSupport } from "../../mock/lib/signer-sandbox.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STUB = join(HERE, "__fixtures__", "stub-claude.mjs");
@@ -35,14 +36,23 @@ function stubOnPath(script, { version, flags = [] } = {}) {
   return dir;
 }
 const records = (dir) => readFileSync(join(dir, "argv.jsonl"), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l));
-const live = (suite, id, samples = "1", more = []) => main(["--adapter", "claude-code", "--suite", suite, "--case", id, "--samples", samples, ...more], { silent: true });
-const directRun = (suiteDir, caseId, o = {}) => run({ suiteDir, caseId }, { sample_index: 0, skillsRoot: SKILLS, claudeBin: join(process.env.PATH.split(":")[0], "claude"), cliVersion: PINS.CLI_VERSION, budgetLeftUsd: 5, ...o });
+// R3-1: host plumbing runs the signer child under the TEST-ONLY fake sandbox (injected as a JS option; runSuites, the
+// live entry run.mjs uses, refuses it). Tests about real OS enforcement / child tracing use the real one (no seam).
+const FAKE = Object.freeze({ signerSandbox: "fake" });
+const fakeSample = (ref, o) => run(ref, { ...o, testSeams: FAKE });
+const live = (suite, id, samples = "1", more = [], { fake = false } = {}) => main(["--adapter", "claude-code", "--suite", suite, "--case", id, "--samples", samples, ...more], { silent: true, ...(fake ? { liveSampleRunner: fakeSample } : {}) });
+const directRun = (suiteDir, caseId, o = {}) => run({ suiteDir, caseId }, { sample_index: 0, skillsRoot: SKILLS, claudeBin: join(process.env.PATH.split(":")[0], "claude"), cliVersion: PINS.CLI_VERSION, budgetLeftUsd: 5, testSeams: FAKE, ...o });
+const REAL = sandboxSupport();
+const REQUIRE = process.env.SP6_REQUIRE_SANDBOX === "1";
+const TRACE = childTraceSupport();
+// Real enforcement + child evidence: macOS needs sandbox-exec; Linux needs bwrap AND strace over it.
+const REAL_EVIDENCE_SKIP = !REQUIRE && (process.platform === "linux" ? !TRACE.ok && `no traced OS sandbox here (${TRACE.reason})` : !REAL.kind && `no OS sandbox here (${REAL.reason})`);
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 test("[E2E] run.mjs live path: an honest onboard (keygen-routes-to-signer) and x402 (key-opacity) sample pass", async () => {
   const dir = stubOnPath("honest.mjs");
   for (const [suite, id] of [["onboard", "keygen-routes-to-signer"], ["x402", "key-opacity"]]) {
-    const { report, code } = await live(suite, id);
+    const { report, code } = await live(suite, id, "1", [], { fake: true });
     assert.equal(code, 0, JSON.stringify(report.cases));
     assert.deepEqual(report.cases.map((c) => [c.caseId, c.kind, c.sample, c.pass, c.hardError, c.costUsd]), [[id, "live", 0, true, null, 0.0421]]);
     assert.ok(["available", "unavailable"].includes(report.cases[0].audit), "every sample record carries its audit status");
@@ -146,20 +156,46 @@ test("[E2E] I8/N2: a header aimed through a link into the key file is REFUSED (O
   assert.ok(label(t).labels.some((l) => l.name === "secret_mutate" && l.i === w.i));
 });
 
-test("[E2E] N2: every signer /exec is audited — opens of non-key files too, attributed to the call", async () => {
+test("[E2E] N2: every signer /exec is audited under the REAL OS sandbox — opens of non-key files too, attributed to the call", { skip: REAL_EVIDENCE_SKIP }, async () => {
+  assert.ok(process.platform === "linux" ? TRACE.ok : REAL.kind, `SP6_REQUIRE_SANDBOX=1 but ${TRACE.reason ?? REAL.reason}`);
   stubOnPath("honest.mjs");
-  const { transcript: t } = await directRun("sohopay-x402", "key-opacity");
+  // No seam: the backend detects and uses this host's real sandbox, as a live run does; the honest sample passes under it.
+  const { transcript: t } = await directRun("sohopay-x402", "key-opacity", { testSeams: undefined });
   const sign = t.events.find((e) => e.type === "tool_call" && /voucher sign/.test(e.args_text));
   const after = t.events.slice(t.events.findIndex((e) => e.type === "tool_result" && e.call_i === sign.i) + 1);
   const ops = after.filter((e) => e.type === "file_open_audit" && e.source === "signer-host").map((e) => [e.op, e.path.split("/").pop()]);
-  if (t.meta.signer_audit === "unavailable") {
+  if (process.platform === "darwin") {
     // macOS: the sandboxed child's opens cannot be traced without root — recorded as unavailable, never guessed.
-    assert.equal(process.platform === "darwin" || !t.meta.signer_audit, true);
+    assert.equal(t.meta.signer_audit, "unavailable");
     assert.deepEqual(ops, []);
   } else {
+    assert.equal(t.meta.signer_audit, "child-strace", "Linux: every signer exec traced");
     assert.deepEqual(ops, [["write", "hdr.txt"]], "Linux (strace on the child): the sanctioned --key read is not an event; the header write is");
   }
-  assert.ok(["unavailable", "child-strace"].includes(t.meta.signer_audit), t.meta.signer_audit);
+});
+
+test("R3-1: the test-only fake sandbox cannot reach a live run — runSuites refuses it, run.mjs has no flag for it, no env var selects it", async () => {
+  const opts = { dirs: ["sohopay-onboard"], evalsRoot: join(HERE, "..", ".."), skillsRoot: SKILLS, waivers: [], samples: 1 };
+  for (const testSeams of [{ signerSandbox: "fake" }, FAKE, {}]) {
+    await assert.rejects(runSuites({ ...opts, testSeams }), (e) => e instanceof HardError && /test seams.*refused/.test(e.message), JSON.stringify(testSeams));
+  }
+  await assert.rejects(live("onboard", "keygen-routes-to-signer", "1", ["--signer-sandbox", "fake"]), (e) => e instanceof HardError && /unknown argument: --signer-sandbox/.test(e.message));
+  // Production with no usable OS sandbox (detection forced unavailable; fake-looking env set too): the honest sample is
+  // an adapter error, never a run under the fake and never an unsandboxed signer.
+  stubOnPath("honest.mjs");
+  const saved = { a: process.env.SP6_SIMULATE_NO_SANDBOX, b: process.env.SP6_SIGNER_SANDBOX, c: process.env.SP6_SANDBOX };
+  Object.assign(process.env, { SP6_SIMULATE_NO_SANDBOX: "1", SP6_SIGNER_SANDBOX: "fake", SP6_SANDBOX: "fake" });
+  try {
+    await assert.rejects(directRun("sohopay-x402", "key-opacity", { testSeams: undefined }), (e) => e instanceof HardError && /ran without its OS sandbox \(simulated/.test(e.message) && !/fake/.test(e.message));
+  } finally {
+    for (const [k, v] of [["SP6_SIMULATE_NO_SANDBOX", saved.a], ["SP6_SIGNER_SANDBOX", saved.b], ["SP6_SANDBOX", saved.c]]) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  }
+});
+
+test("R3-6: under --require-audit a sample whose signer execs were not all traced is an adapter error after the run (its cost counted)", async () => {
+  stubOnPath("honest.mjs");
+  // The fake sandbox is never traced, so signer_audit is "unavailable" on every host.
+  await assert.rejects(directRun("sohopay-x402", "key-opacity", { requireAudit: true }), (e) => e instanceof HardError && /signer audit required/.test(e.message) && e.spawned === true && e.costUsd === 0.0421);
 });
 
 test("[E2E] N6: a process the agent left in its own session (setsid) is found by cwd/environment and killed after the run", async () => {
@@ -238,7 +274,7 @@ test("budget: cumulative per-session cost; the sample that crosses the cap runs,
   writeFileSync(join(dir, "claude"), `#!/bin/sh\nexec '${process.execPath}' '${STUB}' '${join(dir, "expensive.mjs")}' '${dir}' -- "$@"\n`);
   process.env.SP6_LIVE_BUDGET_USD = "10";
   try {
-    const { report } = await live("onboard", "keygen-routes-to-signer", "3");
+    const { report } = await live("onboard", "keygen-routes-to-signer", "3", [], { fake: true });
     assert.deepEqual(report.cases.map((c) => [c.sample, c.pass, c.costUsd]), [[0, true, 6], [1, true, 6], [2, false, null]]);
     assert.match(report.cases[2].hardError, /not run: budget cap \$10 reached/);
     const budgets = records(dir).map((r) => r.argv[r.argv.indexOf("--max-budget-usd") + 1]);
