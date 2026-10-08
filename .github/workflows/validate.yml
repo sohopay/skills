@@ -36,4 +36,7 @@ jobs:
         run: |
           node --test evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs
           node evals/runner/run.mjs --adapter replay --suite all
-      - run: npm run validate
+      # m2: always(), so a red replay step (e.g. goldens not yet recorded) still shows every INV result.
+      - name: Skill invariants (INV-*)
+        if: always()
+        run: npm run validate
