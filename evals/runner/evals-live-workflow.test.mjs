@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PINS } from "./adapters/cc-guards.mjs";
-import { CONCURRENCY_PREFIX, FORK_EXPR, livePinError, liveWorkflowErrors, readWorkflow, stepsOf } from "./live-workflow-check.mjs";
+import { CONCURRENCY_PREFIX, FORK_EXPR, livePinError, liveWorkflowErrors, readWorkflow, stepsOf, unquotedHashErrors } from "./live-workflow-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -274,3 +274,26 @@ for (const [name, mutate, expected] of MUTATIONS) {
     assert.ok(errs.some((e) => expected.test(e)), `${name}: ${JSON.stringify(errs)}`);
   });
 }
+
+// The merge of #80 shipped `REF: ${{ … format('PR #{0}', …) … }}` unquoted: YAML cut the value at " #", GitHub rejected
+// the file (zero-job "failure" on every push; label and dispatch triggers dead) and the text-level rules never noticed.
+test("YAML: a \" #\" inside an unquoted ${{ }} value is refused; quoted or block values pass", () => {
+  const bad = "          REF: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}";
+  assert.equal(unquotedHashErrors(bad).length, 1);
+  assert.match(unquotedHashErrors(`a: 1\n${bad}`)[0], /^line 2: /);
+  assert.equal(unquotedHashErrors(`  - name: x\n    if: \${{ inputs.x == 'a #b' }}`).length, 1, "if: and list items too");
+  for (const ok of [
+    bad.replace("REF: ", 'REF: "').concat('"'),
+    bad.replace("REF: ${{", "REF: '${{").concat("'").replace("'PR #{0}'", "''PR #{0}''"),
+    "          run: echo ok # a real trailing comment",
+    "          REF: ${{ github.ref_name }} # a comment after the expression",
+    "          run: |\n            echo \"${{ format('PR #{0}', 1) }}\"",
+  ]) assert.deepEqual(unquotedHashErrors(ok), [], ok);
+});
+
+test("teeth: the committed evals-live.yml with the #80 unquoted REF restored is refused by liveWorkflowErrors", () => {
+  const quoted = /REF: "(\$\{\{[^\n]*format\('PR #\{0\}'[^\n]*\}\})"/g;
+  assert.ok(quoted.test(YML), "the committed workflow quotes REF");
+  const broken = YML.replace(quoted, "REF: $1");
+  assert.ok(liveWorkflowErrors(broken).some((e) => /unquoted value holds " #"/.test(e)));
+});

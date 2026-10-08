@@ -188,7 +188,7 @@ jobs:
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           # The PR NUMBER, not its branch name: this step writes GITHUB_OUTPUT, so it holds no attacker-settable text.
-          REF: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+          REF: "${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           ALLOW_REGEN: ${{ needs.gate.outputs.allow_regen }}
           CASE: ${{ needs.gate.outputs.case }}
@@ -214,7 +214,7 @@ jobs:
         if: ${{ always() && steps.verdict.outcome == 'success' }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REF: ${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}
+          REF: "${{ github.event.pull_request.number && format('PR #{0}', github.event.pull_request.number) || github.ref_name }}"
           SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
