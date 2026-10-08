@@ -43,9 +43,10 @@ const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
 // forms are optional and parsed as their 64-bit ops (m4).
 const CHILD_TRACE = ["openat,?openat2,?creat,?open,?newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,?renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,clone,?clone3,?fork,?vfork,?io_uring_setup,?io_uring_enter", ...COMPAT_TRACE].join(",");
 
-/** argv prefix wrapping the sandboxed child in strace; io_uring_setup fails with ENOSYS there too (R2-9). */
-export function childStraceArgv(file) {
-  return ["strace", "-f", "-y", "-qq", "-ttt", "-s", "4096", "-o", file, "-e", `trace=${CHILD_TRACE}`, "-e", IO_URING_INJECT, "--"];
+/** argv prefix wrapping the sandboxed child in strace; io_uring_setup fails with ENOSYS there too (R2-9). `bin` is the
+ *  absolute strace path childTraceSupport resolved (defaults to the bare name for direct unit tests). */
+export function childStraceArgv(file, bin = "strace") {
+  return [bin, "-f", "-y", "-qq", "-ttt", "-s", "4096", "-o", file, "-e", `trace=${CHILD_TRACE}`, "-e", IO_URING_INJECT, "--"];
 }
 
 /** Constant-time string equality (false on any length mismatch). */
@@ -220,8 +221,8 @@ async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, polic
   const home = policy.home;
   const work = mkdtempSync(join(privateDir, "x-"));
   try {
-    const traceable = childTraceSupport(support).ok;
-    const strace = traceable ? { file: join(work, "child.strace"), argv: childStraceArgv(join(work, "child.strace")) } : null;
+    const trace = childTraceSupport(support);
+    const strace = trace.ok ? { file: join(work, "child.strace"), argv: childStraceArgv(join(work, "child.strace"), trace.path) } : null;
     const childPolicy = { home, writeRoots: [...policy.writeRoots, ...extraWriteRoots], denyRead: policy.denyRead ?? [], denyWrite: policy.denyWrite ?? [], allowRead: policy.allowRead ?? [] };
     const before = snapshotTree(join(home, ".agents"));
     const out = await runSandboxed(support, { policy: childPolicy, cwd, request: { config, argv, stdin: typeof stdin === "string" ? stdin : "", home, state: logs.state }, strace, seam, timeoutMs: callTimeoutMs });

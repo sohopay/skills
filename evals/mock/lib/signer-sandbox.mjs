@@ -53,7 +53,7 @@ export function sandboxSupport(platform = process.platform, env = process.env, r
   if (env.SP6_SIMULATE_NO_SANDBOX === "1") return { kind: null, reason: "simulated: no OS sandbox (SP6_SIMULATE_NO_SANDBOX=1)" };
   if (platform === "darwin") return existsSync("/usr/bin/sandbox-exec") ? { kind: "sandbox-exec", path: "/usr/bin/sandbox-exec" } : { kind: null, reason: "no /usr/bin/sandbox-exec" };
   if (platform === "linux") {
-    const bw = (env.PATH ?? "/usr/bin:/bin").split(delimiter).map((d) => join(d, "bwrap")).find((p) => existsSync(p));
+    const bw = onPath("bwrap", env);
     if (!bw) return { kind: null, reason: "bwrap not installed" };
     const probe = probeBwrap(bw, run);
     return probe.ok ? { kind: "bwrap", path: bw } : { kind: null, reason: probe.reason }; // fail closed
@@ -61,11 +61,19 @@ export function sandboxSupport(platform = process.platform, env = process.env, r
   return { kind: null, reason: `no OS sandbox for ${platform}` };
 }
 
-/** Can the signer child's opens be traced here (Linux: bwrap under strace)? The single source for host and adapter. */
-export function childTraceSupport(support = sandboxSupport(), run = spawnSync) {
+/** First existing `<dir>/<name>` across PATH, as an ABSOLUTE path (or undefined). bwrap/strace are launched from this
+ *  fixed path, never a bare name, so a PATH entry the agent could plant can never substitute the sandbox or tracer. */
+export function onPath(name, env = process.env) {
+  return (env.PATH ?? "/usr/bin:/bin").split(delimiter).map((d) => join(d, name)).find((p) => existsSync(p));
+}
+
+/** Can the signer child's opens be traced here (Linux: bwrap under strace)? The single source for host and adapter.
+ *  Returns the resolved absolute `strace` path so the tracer is launched from it, not a PATH-resolved bare name. */
+export function childTraceSupport(support = sandboxSupport(), run = spawnSync, env = process.env) {
   if (support.kind !== "bwrap") return { ok: false, reason: support.kind ? `no root-free child trace under ${support.kind}` : support.reason };
-  if (run("strace", ["-V"], { stdio: "ignore" }).status !== 0) return { ok: false, reason: "strace not installed" };
-  return { ok: true, reason: null };
+  const strace = onPath("strace", env);
+  if (!strace || run(strace, ["-V"], { stdio: "ignore" }).status !== 0) return { ok: false, reason: "strace not installed" };
+  return { ok: true, reason: null, path: strace };
 }
 
 const canon = (p) => resolveLoose(p);
