@@ -114,8 +114,8 @@ test("I2 hash pin: evals/live-workflow.sha256 pins the committed workflow; any e
   assert.match(livePinError(Buffer.from(YML.replace("timeout-minutes", "timeout-minutes ")), pin), /INV-sp6-live-workflow: .*sha256 .* != pinned/);
   assert.match(livePinError(RAW, ""), /pin/);
   const owners = readFileSync(join(ROOT, "CODEOWNERS"), "utf8");
-  assert.match(owners, /^\/\.github\/workflows\/evals-live\.yml\s+@sohopay\/maintainers$/m);
-  assert.match(owners, /^\/evals\/live-workflow\.sha256\s+@sohopay\/maintainers$/m);
+  assert.match(owners, /^\/\.github\/workflows\/evals-live\.yml\s+@sohopay\/backend-write$/m);
+  assert.match(owners, /^\/evals\/live-workflow\.sha256\s+@sohopay\/backend-write$/m);
 });
 
 test("m7: the code that ENFORCES the pin (validate-skills.mjs, validate.yml) is maintainer-owned too; the repo-wide catch-all stays first", () => {
@@ -123,7 +123,7 @@ test("m7: the code that ENFORCES the pin (validate-skills.mjs, validate.yml) is 
   assert.match(lines[0], /^\*\s+@sohopay\/platform$/, "catch-all first (later, more specific lines win)");
   // Final review I2: committed transcripts (goldens + adversarials) are maintainer-owned as well.
   for (const p of ["/scripts/validate-skills.mjs", "/.github/workflows/validate.yml", "/evals/runner/", "/.github/workflows/evals-live.yml", "/evals/live-workflow.sha256", "/evals/*/transcripts/"]) {
-    assert.ok(lines.some((l) => l.split(/\s+/)[0] === p && /@sohopay\/maintainers/.test(l)), p);
+    assert.ok(lines.some((l) => l.split(/\s+/)[0] === p && /@sohopay\/backend-write/.test(l)), p);
   }
 });
 

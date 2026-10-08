@@ -63,7 +63,7 @@ Grep results:
 - Static INV enforcement: Task 10
 
 **Implementation:**
-- Task 0 creates `CODEOWNERS` at repo root with the five protected paths requiring `@sohopay/maintainers` review. Later tasks added `evals/live-workflow.sha256`, `scripts/validate-skills.mjs`, `validate.yml` (T17) and `evals/*/transcripts/` (final review I2); the repo-wide catch-all stays first.
+- Task 0 creates `CODEOWNERS` at repo root with the five protected paths requiring `@sohopay/backend-write` review. Later tasks added `evals/live-workflow.sha256`, `scripts/validate-skills.mjs`, `validate.yml` (T17) and `evals/*/transcripts/` (final review I2); the repo-wide catch-all stays first.
 - Task 10 enforces INV-sp6-floor-waivers: any waiver that attempts to disable a `never_appears` predicate is rejected at validation time.
 
 ---
