@@ -50,6 +50,12 @@ function prep(w) {
   writeFileSync(f, JSON.stringify(out.result));
   return f;
 }
+/** Alternate `at` between the real directory `real` (renamed in/out) and a symlink to `elsewhere`; returns stop(). */
+function dirLinkFlipper(at, real, elsewhere) {
+  const code = `const fs=require("fs");const [at,real,el]=process.argv.slice(1);for(;;){try{fs.renameSync(real,at)}catch{};try{fs.renameSync(at,real)}catch{};try{fs.symlinkSync(el,at)}catch{};try{fs.unlinkSync(at)}catch{}}`;
+  const c = spawn(process.execPath, ["-e", code, at, real, elsewhere], { stdio: "ignore" });
+  return () => new Promise((r) => { c.once("exit", r); c.kill("SIGKILL"); });
+}
 /** Flip `link` between two targets in a separate process as fast as it can; returns stop(). */
 function flipper(link, a, b) {
   const code = `const fs=require("fs");const [l,a,b]=process.argv.slice(1);let i=0;for(;;){try{fs.unlinkSync(l)}catch{};try{fs.symlinkSync(i++%2?a:b,l)}catch{}}`;
@@ -106,8 +112,8 @@ test("R2-1(c) race: a flip loop on the --key parent never makes the signer read 
   const opCanary = "FAKE-SP6-CANARY-PRIV-operatorkey~000000";
   writeFileSync(join(opKeyDir, "secret.json"), storedKeyFile(opCanary, w.run.identity.borrower_id, w.run.identity.terminal_id), { mode: 0o600 });
   const opJkt = publicFromPrivate(opCanary).jkt;
-  // The core checks its key root (no links BELOW it) and then reads; flip an ANCESTOR of the root (~/.agents itself)
-  // between the real store and an operator copy, so a check-then-read could land on the operator's key.
+  // The core refuses any key path that crosses a link, then reads by path. So the race alternates ~/.agents between
+  // the REAL directory (the core's checks pass) and a LINK to an operator copy (the following read lands there).
   const real = join(w.home, ".agents-real");
   renameSync(join(w.home, ".agents"), real);
   const opAgents = join(w.operator, "agents");
@@ -115,15 +121,16 @@ test("R2-1(c) race: a flip loop on the --key parent never makes the signer read 
   chmodSync(opAgents, 0o700);
   copyFileSync(join(opKeyDir, "secret.json"), join(opAgents, "sohopay-agent-workload", "secret.json"));
   chmodSync(join(opAgents, "sohopay-agent-workload", "secret.json"), 0o600);
-  const stop = flipper(join(w.home, ".agents"), real, opAgents);
+  const stop = dirLinkFlipper(join(w.home, ".agents"), real, opAgents);
   const outs = [];
   try {
-    for (let k = 0; k < 60; k++) {
-      const input = JSON.stringify({ fields: { borrowerId: w.run.identity.borrower_id, terminalId: w.run.identity.terminal_id, jkt: "x" } });
+    for (let k = 0; k < 250; k++) {
+      // jkt = the OPERATOR key's: only a read of the operator's key file can succeed (the real key mismatches).
+      const input = JSON.stringify({ fields: { borrowerId: w.run.identity.borrower_id, terminalId: w.run.identity.terminal_id, jkt: opJkt } });
       outs.push(await w.exec(["pop", "sign", "--key", w.key, "--input", "-", "--output", "json"], { stdin: input }));
     }
   } finally { await stop(); }
-  assert.ok(!outs.some((r) => r.stdout.includes(opJkt)), "the operator's key was never read");
+  assert.ok(!outs.some((r) => r.exitCode === 0), `the operator's key was never read (${outs.filter((r) => r.exitCode === 0).length} successful signs)`);
 });
 
 test("R2-1(b): duplicated path flags are refused with the real usage-error shape (exit 2) — P3 / P4b", async () => {
