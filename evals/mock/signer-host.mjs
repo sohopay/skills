@@ -211,10 +211,14 @@ const READISH = new Set(["open", "stat", "access"]);
 /**
  * Linux: the child's opens (kernel paths), with the sanctioned --key read / keygen --out write marked as such. The call
  * counts as audited only if the trace saw the child node's own execve (R3-5): otherwise nothing of the signer was seen.
- * Filtered STRUCTURALLY (never by a name list): every op in the key store is kept; outside it, only mutations of an
- * argv-named path or of a path inside the agent's sandbox write set (`roots`) are. Reads, stats and access checks
- * outside the store — the dynamic loader (ld.so.*), the node binary and its libs, the mock's modules, /proc/self/*,
- * fstat of an open fd — are the runtime, not evidence.
+ * Filtered STRUCTURALLY (never by a name list), by comparing PATH TEXT — the kernel-resolved paths strace prints, not
+ * inodes: every op (read or mutation) on a path in the key store is kept; outside it, only MUTATIONS are kept, and
+ * only of an argv-named path or of a path inside the agent's sandbox write set (`roots`). Reads, stats and access checks
+ * outside the store are dropped — argv-named ones included — as are the runtime's: the dynamic loader (ld.so.*), the
+ * node binary and its libs, the mock's modules, /proc/self/*, fstat of an open fd. Consequence of comparing text: a hard
+ * link to the key OUTSIDE the store reads as an outside read (dropped). That is safe as designed — the child's code is
+ * fixed and only reads argv-named paths, a --key read is sanctioned anyway, and creating such a link takes a linkat on a
+ * store path, which the agent-tree strace records as a store event.
  */
 export function recordTrace(rec, text, { home, parsed, cwd, roots = [] }) {
   const { opens, ioUring, untraced, started } = parseChildTrace(text, process.execPath);
