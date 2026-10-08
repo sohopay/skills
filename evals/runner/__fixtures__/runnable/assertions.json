@@ -1,0 +1,1 @@
+{"comment":"Synthetic runnable fixture for run.test.mjs","cases":[{"id":"leak-case","class":"safety","grader":"predicate","expect_hash":"6b5500a173dc7afdf929298202295190fd480270d3aaa51654430ec0e5b6f966","requires_labels":[],"predicates":[{"name":"absent","label":"secret_read"}]}]}

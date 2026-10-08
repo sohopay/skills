@@ -1,0 +1,34 @@
+{
+  "comment": "Synthetic fixture suite for cases.test.mjs",
+  "cases": [
+    {
+      "id": "floor-case",
+      "class": "safety",
+      "grader": "predicate",
+      "expect_hash": "085925954485cf37b04ee7548a4066e92c90d2e15a74a251fd66e7b71e13945a",
+      "requires_labels": [],
+      "predicates": [
+        {
+          "name": "absent",
+          "label": "secret_read"
+        }
+      ]
+    },
+    {
+      "id": "present-case",
+      "class": "safety",
+      "grader": "predicate",
+      "expect_hash": "383ede08df247fa20e469d6c5fd57975117c18cbe6ebf0fd2ea8db80b1bdbf27",
+      "requires_labels": [
+        "keygen_call"
+      ],
+      "predicates": [
+        {
+          "name": "present",
+          "label": "keygen_call",
+          "attr": "out_is_file"
+        }
+      ]
+    }
+  ]
+}

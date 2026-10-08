@@ -1,0 +1,152 @@
+// `claude-code/1` capture format: what the live adapter reads from one headless Claude Code run, and nothing else.
+//
+//   1. The session JSONL Claude Code writes to $HOME/.claude/projects/<cwd-slug>/<session-id>.jsonl (the adapter
+//      passes --session-id, so the file is found by id). It is the event source: one line per content block,
+//      every line timestamped, tool results carrying `toolUseResult` (Bash: {stdout, stderr, ...}; a failing Bash
+//      call: the string "Error: Exit code N\n...") and, for a permission denial, `toolDenialKind`.
+//   2. The `--output-format stream-json --verbose` stdout: only its `system/init` (model, version, tools, MCP
+//      status) and its final `result` (subtype, num_turns, total_cost_usd, permission_denials) are read.
+//
+// Mapping (see task-15-report.md): assistant text → model_text; assistant tool_use / server_tool_use → tool_call;
+// a tool_result block (user line, or a server tool result inside an assistant line) → tool_result paired by
+// tool_use_id; a denial (toolDenialKind, result.permission_denials, PermissionDenied hook) → denied:true on BOTH
+// the call and its result; result → stop. Not events: thinking blocks, the operator prompt, isMeta / system /
+// attachment / summary / file-history / hook-summary lines (spec: stop-hook and system entries are not events).
+import { HardError } from "../schema.mjs";
+
+/**
+ * JSON lines → objects. ANY unparseable line — including a torn final line from a process killed mid-write — is an
+ * adapter error (fail-open #1): silently dropping the torn last line let a truncated run's `result` become null and
+ * be graded anyway, so a truncated capture must quarantine, not degrade. A complete last line with no trailing
+ * newline still parses normally (it is not torn).
+ */
+export function jsonLines(text, what) {
+  const out = [];
+  text.split("\n").forEach((l, n) => {
+    if (l.trim() === "") return;
+    try { out.push(JSON.parse(l)); } catch { throw new HardError(`${what}: line ${n + 1} is not JSON`); }
+  });
+  return out;
+}
+
+/** The stream-json messages the adapter uses: the first system/init and the last result. */
+export function parseStream(text) {
+  const msgs = jsonLines(text, "stream-json");
+  const init = msgs.find((m) => m.type === "system" && m.subtype === "init") ?? null;
+  const result = [...msgs].reverse().find((m) => m.type === "result") ?? null;
+  return { init, result };
+}
+
+/** The CLI version an init message reports (a string, or a build-info object carrying VERSION). */
+export function initVersion(init) {
+  const v = init?.claude_code_version;
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object" && typeof v.VERSION === "string") return v.VERSION;
+  return null;
+}
+
+function blockText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return content === undefined || content === null ? "" : JSON.stringify(content);
+  return content.map((b) => {
+    if (b?.type === "text") return b.text ?? "";
+    // fail-open #4: the raw image bytes (b.source.data) are binary and out of scope for the text-based never_appears
+    // scan, but any text riding WITH the image (alt text, title/caption, a filename, a source URL) is attacker-
+    // controllable and must still be scanned — so fold it into the result text rather than collapsing to "[image]".
+    if (b?.type === "image") {
+      const meta = [b.text, b.alt, b.alt_text, b.title, b.caption, b.name, b.file_name, b.filename,
+        b.source?.url, b.source?.file_name, b.source?.filename, b.source?.path, b.source?.media_type]
+        .filter((x) => typeof x === "string" && x !== "");
+      return meta.length ? `[image] ${meta.join(" ")}` : "[image]";
+    }
+    return JSON.stringify(b);
+  }).join("\n");
+}
+
+const RESULT_BLOCK_RE = /(?:^|_)tool_result$/;
+// Every truncation the 2.1.292 CLI reports where the FULL output is not obtainable from a complete persisted file.
+const TRUNCATION_RE = /persist limit; only the first|could not all be saved|this session writes no files|It could not be saved, so only the first|<truncated-output>|<bash output unavailable|tool result was not saved|binary content was not saved|storage write failed|Output truncated \(/;
+
+/**
+ * M3 / N5: Claude Code persists a large output to a file and keeps only a preview in the message. Only the STRUCTURED
+ * `toolUseResult.persistedOutputPath` is trusted (a text marker can be printed by the agent itself); the full file is
+ * read into `stdout` so never_appears scans everything the tool produced. A truncation whose full output is not
+ * obtainable, or a persisted-output marker without the structured field, is an adapter error.
+ */
+function fillPersisted(r, tur, readPersisted) {
+  const obj = tur && typeof tur === "object" && !Array.isArray(tur) ? tur : {};
+  if (TRUNCATION_RE.test(r.text)) throw new HardError(`session: truncated or unsaved tool output for ${r.id} (the full output is not obtainable)`);
+  const path = typeof obj.persistedOutputPath === "string" ? obj.persistedOutputPath : null;
+  if (!path) {
+    if (Number.isFinite(obj.persistedOutputSize)) throw new HardError(`session: truncated output for ${r.id} names no persisted file`);
+    if (/<persisted-output>/.test(r.text)) throw new HardError(`session: persisted-output marker for ${r.id} without a structured persistedOutputPath (forged or unsupported)`);
+    return;
+  }
+  if (typeof readPersisted !== "function") throw new HardError(`session: persisted output ${path} cannot be read`);
+  try { r.stdout = readPersisted(path, Number.isFinite(obj.persistedOutputSize) ? obj.persistedOutputSize : undefined); } catch (e) {
+    throw e instanceof HardError ? e : new HardError(`session: persisted output ${path} cannot be read: ${e.message}`);
+  }
+}
+
+/**
+ * Session JSONL → ordered raw items:
+ *   {kind:"text", text, ts}
+ *   {kind:"call", id, name, input, ts, cwd, sidechain}
+ *   {kind:"result", id, isError, text, stdout?, stderr?, denialKind?, ts}
+ * Duplicate tool_use ids (a re-emitted block) keep the first; a result for an unknown id is kept (the assembler
+ * turns it into an adapter error rather than guessing).
+ */
+export function parseSession(text, { readPersisted } = {}) {
+  const items = [];
+  const seenCalls = new Set();
+  const seenResults = new Set();
+  for (const o of jsonLines(text, "session JSONL")) {
+    if (o.isMeta || o.isCompactSummary || o.isVisibleInTranscriptOnly) continue;
+    if (o.type !== "assistant" && o.type !== "user") continue;
+    const content = o.message?.content;
+    if (!Array.isArray(content)) continue; // the operator prompt (a string) and other non-block lines
+    const ts = Date.parse(o.timestamp ?? "") || null;
+    for (const b of content) {
+      if (!b || typeof b !== "object") continue;
+      if (o.type === "assistant" && b.type === "text") {
+        if (typeof b.text === "string" && b.text.trim() !== "") items.push({ kind: "text", text: b.text, ts });
+      } else if (b.type === "tool_use" || b.type === "server_tool_use") {
+        if (typeof b.id !== "string" || seenCalls.has(b.id)) continue;
+        seenCalls.add(b.id);
+        items.push({ kind: "call", id: b.id, name: String(b.name ?? ""), input: b.input ?? {}, ts, cwd: o.cwd ?? null, sidechain: o.isSidechain === true });
+      } else if (RESULT_BLOCK_RE.test(b.type ?? "") && typeof b.tool_use_id === "string") {
+        if (seenResults.has(b.tool_use_id)) continue;
+        seenResults.add(b.tool_use_id);
+        const r = { kind: "result", id: b.tool_use_id, isError: b.is_error === true, text: blockText(b.content), ts };
+        const tur = o.type === "user" ? o.toolUseResult : undefined;
+        if (tur && typeof tur === "object" && !Array.isArray(tur)) {
+          if (typeof tur.stdout === "string") r.stdout = tur.stdout;
+          if (typeof tur.stderr === "string") r.stderr = tur.stderr;
+        }
+        if (typeof o.toolDenialKind === "string" && o.toolDenialKind !== "") r.denialKind = o.toolDenialKind;
+        fillPersisted(r, tur, readPersisted);
+        items.push(r);
+      }
+    }
+  }
+  return items;
+}
+
+/** Map the run's end (stream-json result, or its absence) to the stop event's reason. */
+export function stopReason(result, exit) {
+  if (!result) return exit?.timedOut ? "timeout" : "crashed";
+  switch (result.subtype) {
+    case "success": return result.is_error ? "error" : "done";
+    case "error_max_turns": return "max_turns";
+    case "error_max_budget_usd": return "budget";
+    case "error_during_execution": return "error";
+    default: return String(result.subtype ?? "unknown");
+  }
+}
+
+/** tool_use ids the result message reports as permission-denied. */
+export function deniedIds(result) {
+  const out = new Set();
+  for (const d of result?.permission_denials ?? []) if (typeof d?.tool_use_id === "string") out.add(d.tool_use_id);
+  return out;
+}

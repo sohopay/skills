@@ -11,26 +11,30 @@ Required before Protocol V2 x402 (`prepare_x402_payment` → `VOUCHER_ISSUED`). 
 Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-specific gates on top of the shared resolver:
 
 1. **The npx tier is disallowed for `key generate`.** A secret-writing command runs only on a locally-installed signer: `$SOHOPAY_SIGNER`, then `sohopay-signer` on `PATH`. `$SOHOPAY_SIGNER` comes from the operator's environment — the agent **never** sets it inline.
-2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
+2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities --output json`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
 
-- No local signer resolves (npx disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
+- No local signer is installed (`$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
 
   ```text
-  npm i -g @sohopay/agent-signer@0.3.0
+  npm i -g @sohopay/agent-signer@0.3.1
   ```
 
   The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably.
 - A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
-- Resolution yields no answering candidate at all ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
+- A local signer is installed but none answers `capabilities --output json` (nonzero exit, stdout that is not JSON, or another `signer_protocol`) ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
 
 ### Generate + register (once per terminal)
 
-Use the **canonical key path defined in `{SKILL:sohopay-x402}` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path.
+Use the **canonical key path defined in `{SKILL:sohopay-x402}` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
+
+Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EOF`) exactly as shown, filling in the values — never `echo … |` or `printf … |`, and never an unquoted heredoc.
 
 1. **Generate (signer owns it):**
 
    ```text
-   <signer> key generate --out "$KEY" --input -
+   <signer> key generate --out "$KEY" --input - --output json <<'SOHOPAY_EOF'
+   { "borrower_id": "…", "terminal_id": "…" }
+   SOHOPAY_EOF
    ```
 
    stdin is the non-secret `{ "borrower_id": "…", "terminal_id": "…" }`. Capture the signer's stdout `{ public_jwk, jkt, borrower_id, terminal_id, created }`. **The agent never reads `secret.json`** — the signer writes and owns it. `created: false` means the key already existed for this borrower+terminal and was reused (a retry after a partial failure is safe — never regenerate).
@@ -38,7 +42,9 @@ Use the **canonical key path defined in `{SKILL:sohopay-x402}` `references/signe
 2. **Proof-of-possession (signer owns it):**
 
    ```text
-   <signer> pop sign --key "$KEY" --input -
+   <signer> pop sign --key "$KEY" --input - --output json <<'SOHOPAY_EOF'
+   { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
+   SOHOPAY_EOF
    ```
 
    stdin is exactly `{ "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }` (the `jkt` from step 1). The signer mints its own `nonce` + `iat` — **never** supply them (a client-supplied `nonce`/`iat` is rejected `MALFORMED_INPUT`). Capture `{ pop_signature, nonce, iat }`.

@@ -5,7 +5,7 @@
  * placeholder survives. Bump SIGNER_PIN here and nowhere else.
  */
 export const SIGNER_PKG = '@sohopay/agent-signer';
-export const SIGNER_PIN = '0.3.0';
-export const SIGNER_SPEC = `${SIGNER_PKG}@${SIGNER_PIN}`; // @sohopay/agent-signer@0.3.0
+export const SIGNER_PIN = '0.3.1';
+export const SIGNER_SPEC = `${SIGNER_PKG}@${SIGNER_PIN}`; // @sohopay/agent-signer@0.3.1
 export const KEYGEN_CONTRACT = 'workload-keygen/1';
 export const POPSIGN_CONTRACT = 'pop-sign/1';

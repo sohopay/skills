@@ -1,0 +1,13 @@
+#!/usr/bin/env node
+"use strict";
+// Mock SohoPay signer @ 0.3.1 for the SP6 live eval (evals/mock). Real binary name, real argv, real
+// stdout/stderr/exit contract; see signer-core.mjs. Never installed outside a hermetic eval workspace.
+const { join } = require("node:path");
+const { pathToFileURL } = require("node:url");
+
+import(pathToFileURL(join(__dirname, "signer-main.mjs")).href)
+  .then((m) => m.main())
+  .catch((e) => {
+    process.stderr.write(`${JSON.stringify({ error: { code: "MALFORMED_ENVELOPE", message: String(e && e.message) } })}\n`);
+    process.exitCode = 1;
+  });
