@@ -64,3 +64,24 @@ test("missing file and invalid JSON throw HardError", () => {
   writeFileSync(join(root, "s1", "transcripts", "adversarial", "bad.json"), "{");
   assert.throws(() => run({ ...ref, name: "bad" }, { rootDir: root, skillHashFor: () => "x" }), HardError);
 });
+
+// Final review I2: the kind of a transcript is bound to the adapter that produced it. A golden is a live claude-code
+// capture (skill_hash-gated, golden-audit-checked at validate); an adversarial is a hand-authored synthetic near-miss.
+// A synthetic file at the golden path would replay green, never go stale and bypass INV-sp6-golden-audit.
+test("I2: a synthetic transcript at the golden path is refused (HardError)", () => {
+  const { root, ref } = setup(synth(), "golden");
+  assert.throws(() => run(ref, { rootDir: root, skillHashFor: () => "x" }), (e) => e instanceof HardError && /golden .*claude-code/.test(e.message));
+});
+
+test("I2: a claude-code transcript under adversarial/ is refused (HardError)", () => {
+  const { root, ref } = setup(golden("aaa"), "adversarial");
+  assert.throws(() => run(ref, { rootDir: root, skillHashFor: () => "aaa" }), (e) => e instanceof HardError && /adversarial .*synthetic/.test(e.message));
+});
+
+test("I2: any other adapter is refused for both kinds", () => {
+  for (const kind of ["golden", "adversarial"]) {
+    const obj = synth(); obj.meta.adapter = "hand-written";
+    const { root, ref } = setup(obj, kind);
+    assert.throws(() => run(ref, { rootDir: root, skillHashFor: () => "x" }), HardError, kind);
+  }
+});

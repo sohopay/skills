@@ -7,7 +7,7 @@ import { join, resolve } from 'node:path';
 import { loadSuite, validateJoin } from '../evals/runner/cases.mjs';
 import { closureFiles, skillHash } from '../evals/runner/hashes.mjs';
 import { validateTranscript } from '../evals/runner/schema.mjs';
-import { goldenAuditError } from '../evals/runner/golden.mjs';
+import { goldenAuditError, transcriptKindError } from '../evals/runner/golden.mjs';
 import { validateWaivers } from '../evals/runner/waivers.mjs';
 import { livePinError, liveWorkflowErrors } from '../evals/runner/live-workflow-check.mjs';
 import {
@@ -577,11 +577,13 @@ function checkSp6Suite(name) {
     try {
       const t = JSON.parse(readFileSync(f, 'utf8'));
       const v = validateTranscript(t);
+      const kindErr = transcriptKindError(t, 'golden');
       if (!v.ok) fail(`INV-sp6-transcripts-present ${name}/${id}: ${v.errors.join('; ')}`);
-      else if (t.meta.adapter === 'claude-code' && hash && t.meta.skill_hash !== hash) {
+      else if (kindErr) fail(`${kindErr} — ${name}/${id}`);
+      else if (!hash || t.meta.skill_hash !== hash) {
         fail(`INV-sp6-transcripts-present ${name}/${id}: stale skill_hash (re-record)`);
       }
-      const auditErr = v.ok ? goldenAuditError(t) : null;
+      const auditErr = v.ok && !kindErr ? goldenAuditError(t) : null;
       if (auditErr) fail(`${auditErr} — ${name}/${id}`);
     } catch { fail(`INV-sp6-transcripts-present ${name}/${id}: invalid JSON`); }
   }
@@ -590,6 +592,13 @@ function checkSp6Suite(name) {
   const advFiles = existsSync(advDir) ? readdirSync(advDir).filter((f) => f.endsWith('.json')) : [];
   for (const id of suite.assertions.keys()) {
     if (!advFiles.some((f) => f.startsWith(`${id}.`))) fail(`INV-sp6-transcripts-present ${name}: case "${id}" has no adversarial transcript`);
+  }
+  // I2: every adversarial is a synthetic near-miss (a live capture filed under adversarial/ is refused).
+  for (const f of advFiles) {
+    let adv;
+    try { adv = JSON.parse(readFileSync(join(advDir, f), 'utf8')); } catch { fail(`INV-sp6-transcript-kind ${name}/adversarial/${f}: invalid JSON`); continue; }
+    const kindErr = transcriptKindError(adv, 'adversarial');
+    if (kindErr) fail(`${kindErr} — ${name}/adversarial/${f}`);
   }
   if (failCount === before) pass(`INV-sp6 suite ${name}`);
   return suite;

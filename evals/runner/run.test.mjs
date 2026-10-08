@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, copyFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,10 +27,11 @@ test("replay: an adversarial that grades pass -> exit 1", async (t) => {
   const root = mkdtempSync(join(tmpdir(), "run-weak-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   cpSync(join(FIX, "runnable"), join(root, "runnable"), { recursive: true });
-  // Overwrite the adversarial with the benign golden transcript so it grades pass.
-  copyFileSync(
-    join(root, "runnable", "transcripts", "leak-case.json"),
+  // Overwrite the adversarial with the benign golden's events (kept synthetic, I2) so it grades pass.
+  const benign = JSON.parse(readFileSync(join(root, "runnable", "transcripts", "leak-case.json"), "utf8"));
+  writeFileSync(
     join(root, "runnable", "transcripts", "adversarial", "leak-case.leak.json"),
+    JSON.stringify({ ...benign, meta: { adapter: "synthetic", adapter_version: "synthetic/1", grader_hash: "x" } }),
   );
   const { report, code } = await main(["--adapter", "replay", "--suite", "all"], { ...opts(root), skillsRoot: root });
   assert.equal(code, 1);

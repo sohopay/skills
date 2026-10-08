@@ -5,6 +5,8 @@
 /evals/runner/            @sohopay/maintainers
 /evals/mock/              @sohopay/maintainers
 /evals/*/assertions.json  @sohopay/maintainers
+# Committed goldens + adversarials: a hand-placed transcript is a grading bypass (final review I2).
+/evals/*/transcripts/     @sohopay/maintainers
 /evals/floor-waivers.json @sohopay/maintainers
 /.github/workflows/evals-live.yml @sohopay/maintainers
 /evals/live-workflow.sha256 @sohopay/maintainers

@@ -20,7 +20,7 @@ test("INV-sp6-golden-audit: a claude-code golden must record audit 'available'",
   assert.equal(goldenAuditError(g("available")), null);
   assert.match(goldenAuditError(g("unavailable")), /INV-sp6-golden-audit/);
   assert.match(goldenAuditError(g(undefined)), /INV-sp6-golden-audit/);
-  assert.equal(goldenAuditError({ meta: { adapter: "synthetic" } }), null, "synthetic adversarials are not goldens");
+  assert.match(goldenAuditError({ meta: { adapter: "synthetic" } }), /INV-sp6-transcript-kind/, "I2: a synthetic file is never an acceptable golden");
 });
 
 test("INV-sp6-golden-audit (R3-6): a claude-code golden must also record the signer child audit as available", () => {

@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { validateTranscript, HardError, ADAPTER_VERSIONS } from "../schema.mjs";
+import { transcriptKindError } from "../golden.mjs";
 
 /**
- * Deterministic replay host adapter: loads a recorded transcript, validates it,
- * and (goldens only) refuses it if the skill changed since recording.
+ * Deterministic replay host adapter: loads a recorded transcript, validates it, refuses a kind/adapter mismatch
+ * (golden ⇒ claude-code, adversarial ⇒ synthetic) and (goldens) refuses it if the skill changed since recording.
  * Does no path resolution; labeling uses the recorded resolved_paths/fs_map.
  * @param {{suite:string, caseId:string, kind:"golden"|"adversarial", name:string}} ref
  * @param {{rootDir:string, skillHashFor:(suite:string)=>string}} opts
@@ -25,9 +26,11 @@ export function run(ref, opts) {
   if (!v.ok) throw new HardError(`replay: invalid transcript ${file}: ${v.errors.join("; ")}`);
   if (!ADAPTER_VERSIONS.has(t.meta.adapter_version))
     throw new HardError(`replay: unknown adapter_version ${t.meta.adapter_version} in ${file}`);
+  const kindErr = transcriptKindError(t, kind === "adversarial" ? "adversarial" : "golden");
+  if (kindErr) throw new HardError(`replay: ${file}: ${kindErr}`);
   // Goldens are pinned to the skill text they were recorded against; a mismatch means re-record.
   // Synthetic grader_hash is informational only (not gated).
-  if (t.meta.adapter === "claude-code") {
+  if (kind !== "adversarial") {
     const current = opts.skillHashFor(suite);
     if (current !== t.meta.skill_hash)
       throw new HardError(`replay: stale golden ${file}: skill_hash ${t.meta.skill_hash} != current ${current}`);
