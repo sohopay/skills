@@ -1,8 +1,11 @@
 // Linux: what the sandboxed signer child opened, from `strace -f -y -ttt` output. Only events after the child's node
-// execve count (bwrap's own setup is not the signer). Kernel-resolved paths are used where strace prints them
-// (`= N</path>` for opens, `N</path>` for fd arguments); other path syscalls are taken as the absolute strings.
-// io_uring use is reported (its I/O would be unobservable).
-const LINE_RE = /^(\d+)\s+(\d+\.\d+)\s+(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?:<([^>]*)>)?/;
+// execve SUCCEEDED count (bwrap's own setup is not the signer); a trace that never shows it is `started: false`, and the
+// caller must not treat it as an audit (R3-5). Records are joined across `<unfinished ...>` / `<... resumed>` halves
+// (node is multithreaded under -f) by the same joiner the agent-tree audit uses. Kernel-resolved paths are used where
+// strace prints them (`= N</path>` for opens, `N</path>` for fd arguments); other path syscalls are taken as the
+// absolute strings. io_uring use is reported (its I/O would be unobservable).
+import { straceRecords } from "./strace-records.mjs";
+
 const WRITE_FLAGS = /O_(WRONLY|RDWR|CREAT|TRUNC|APPEND)/;
 const PATH_SYS = /^(newfstatat|statx|faccessat2?|readlinkat|unlinkat|renameat2?|linkat|symlinkat|fchmodat2?|fchownat|mkdirat|mknodat|utimensat|truncate|stat|lstat|access|unlink|rename|link|symlink|chmod|chown|mkdir|rmdir)$/;
 const FD_SYS = /^(fchmod|fchown|ftruncate|fsetxattr|fremovexattr)$/;
@@ -14,18 +17,14 @@ function opOf(sys, args) {
   return sys.replace(/at2?$/, "").replace(/^f(?=chmod|chown|truncate)/, "").replace(/^(f|l)?(set|remove)xattr$/, "setxattr");
 }
 
-/** @returns {{opens: {path:string, op:string, at:number}[], ioUring: boolean}} */
+/** @returns {{opens: {path:string, op:string, at:number}[], ioUring: boolean, started: boolean}} */
 export function parseChildTrace(text, nodePath) {
   const opens = [];
   let started = false;
   let ioUring = false;
-  for (const raw of text.split("\n")) {
-    const m = LINE_RE.exec(raw);
-    if (!m) continue;
-    const [, , t, sys, args, ret, kpath] = m;
+  for (const { sys, args, ret, kpath, at } of straceRecords(text)) {
     if (!started) { if (sys === "execve" && args.startsWith(JSON.stringify(nodePath)) && ret === "0") started = true; continue; }
     if (/^io_uring_(setup|enter)$/.test(sys)) { ioUring = true; continue; }
-    const at = Math.round(Number(t) * 1000);
     if (/^(open|openat|openat2|creat)$/.test(sys)) {
       const p = kpath ?? (/"(\/[^"]*)"/.exec(args)?.[1] ?? null);
       if (p) opens.push({ path: p, op: opOf(sys, args), at });
@@ -39,5 +38,5 @@ export function parseChildTrace(text, nodePath) {
       }
     }
   }
-  return { opens, ioUring };
+  return { opens, ioUring, started };
 }

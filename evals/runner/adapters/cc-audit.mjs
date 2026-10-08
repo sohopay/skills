@@ -13,6 +13,7 @@
 import { spawnSync } from "node:child_process";
 import { posix } from "node:path";
 import { HardError } from "../schema.mjs";
+import { straceRecords } from "../../mock/lib/strace-records.mjs";
 
 // *at / fd forms exist on every Linux arch; `?name` = optional (strace or the kernel may not know it).
 const COMMON = [
@@ -56,9 +57,6 @@ export function probeAudit({ platform = process.platform, arch = process.arch, r
   return { audit: "available", backend: "strace", reason: null, killOnExit };
 }
 
-const LINE_RE = /^(\d+)\s+(\d+\.\d+)\s+(\w+)\((.*)\)\s+=\s+(-?\d+|\?)(?:<([^>]*)>)?/;
-const RESUMED_RE = /^(\d+)\s+(\d+\.\d+)\s+<\.\.\.\s+(\w+)\s+resumed>(.*)\)\s+=\s+(-?\d+|\?)(?:<([^>]*)>)?/;
-const UNFINISHED_RE = /^(\d+)\s+(\d+\.\d+)\s+(\w+)\((.*)<unfinished \.\.\.>/;
 const unesc = (s) => s.replace(/\\(x[0-9a-f]{2}|[0-7]{1,3}|.)/gi, (_, c) => (c[0] === "x" ? String.fromCharCode(parseInt(c.slice(1), 16)) : /^[0-7]+$/.test(c) ? String.fromCharCode(parseInt(c, 8)) : c === "n" ? "\n" : c === "t" ? "\t" : c));
 const CLONE_RE = /^(clone|clone3|fork|vfork)$/;
 const FD_OPS = new Set(["fchmod", "fchown", "ftruncate", "fsetxattr", "fremovexattr"]);
@@ -112,27 +110,6 @@ function opOf(sys, args) {
   return sys;
 }
 
-/** strace text → ordered records {pid, at, sys, args, ret, kpath}; kpath = the kernel's `= N</path>` annotation. */
-function records(text) {
-  const pending = new Map();
-  const out = [];
-  for (const raw of text.split("\n")) {
-    const u = UNFINISHED_RE.exec(raw);
-    if (u) { pending.set(`${u[1]}:${u[3]}`, { at: Math.round(Number(u[2]) * 1000), args: u[4] }); continue; }
-    const r = RESUMED_RE.exec(raw);
-    if (r) {
-      const key = `${r[1]}:${r[3]}`;
-      const p = pending.get(key);
-      pending.delete(key);
-      out.push({ pid: Number(r[1]), at: p?.at ?? Math.round(Number(r[2]) * 1000), sys: r[3], args: (p?.args ?? "") + r[4], ret: r[5], kpath: r[6] ?? null });
-      continue;
-    }
-    const m = LINE_RE.exec(raw);
-    if (m) out.push({ pid: Number(m[1]), at: Math.round(Number(m[2]) * 1000), sys: m[3], args: m[4], ret: m[5], kpath: m[6] ?? null });
-  }
-  return out;
-}
-
 /** Resolve a path through the links the trace itself created (parents always; the final component if `final`). */
 function follower(links) {
   const follow = (p, final, depth = 0) => {
@@ -184,7 +161,7 @@ function pathsOf(rec, parts, cwd, op, follow) {
 export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), windows = [] }) {
   const HOOK_SPAN_MS = 60_000;
   const isHookClone = (child, at) => excludePids.has(child) && at <= excludePids.get(child) + 1000 && excludePids.get(child) - at <= HOOK_SPAN_MS;
-  const recs = records(text);
+  const recs = straceRecords(text);
   const procs = new Map(); // pid → {kind: "cli"|"tool"|"excluded"|"orphan", callId, cwd}
   const buffered = new Map(); // pid → its records seen before its parent's clone returned
   const links = new Map(); // link path → resolved target, for links created in the trace

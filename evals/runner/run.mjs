@@ -82,7 +82,7 @@ function runReplaySuite(dir, ctx) {
 /**
  * CLI entry. Returns `{ report, code }` so it is testable without spawning a process.
  * @param {string[]} argv flags only (no node/script prefix)
- * @param {{evalsRoot?:string, skillsRoot?:string, suites?:Record<string,string>, silent?:boolean}} [opts]
+ * @param {{evalsRoot?:string, skillsRoot?:string, suites?:Record<string,string>, silent?:boolean, liveSampleRunner?:Function}} [opts]
  */
 export async function main(argv, opts = {}) {
   const evalsRoot = opts.evalsRoot ?? DEFAULT_EVALS_ROOT;
@@ -96,7 +96,8 @@ export async function main(argv, opts = {}) {
   } else {
     // Loaded lazily: the live adapter must never be reachable from the static import graph.
     const live = await import("./adapters/claude-code.mjs");
-    cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit });
+    // opts.liveSampleRunner: a JS-only injection for tests of the sample loop; the CLI below never passes one.
+    cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit, ...(opts.liveSampleRunner ? { runSample: opts.liveSampleRunner } : {}) });
   }
   const failed = cases.filter((c) => !c.pass).length;
   const report = {

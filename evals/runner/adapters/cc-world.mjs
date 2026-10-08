@@ -21,6 +21,7 @@ import { MKTEMP_DIR_RE, trustedMktempDir } from "../sanction.mjs";
 import { buildRun, findOnPath, KEY_REL, seedHome } from "../../mock/run-config.mjs";
 import { brokenInstallEntry } from "../../mock/signer-main.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
+import { SIGNER_CALL_TIMEOUT_MS, unsafeSandboxPath } from "../../mock/lib/signer-sandbox.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, "..", "..", "mock", "backend.mjs");
@@ -192,25 +193,47 @@ export function confinement({ home, runRoot, prefix = dirname(home), base = real
   };
 }
 
+/**
+ * R3-2: the ONE source of the sandbox filesystem lists. The agent's `sandbox.filesystem` (runSettings) and the signer
+ * child / pre-check policy (signerPolicy) are both built here, so they cannot drift: denyRead is the confinement's plus
+ * HOME/.claude/projects (the session JSONL and persisted tool results).
+ */
+export function sandboxFilesystem(confine, home) {
+  const projects = join(home, ".claude", "projects");
+  return {
+    denyRead: [...new Set([...confine.denyRead, projects])],
+    denyWrite: [...confine.denyWrite],
+    allowRead: [...confine.allowRead],
+  };
+}
+
+/** The signer host's policy: the agent's sandbox set (HOME, the sandbox TMPDIR, fresh mktemp dirs) and its lists. */
+export function signerPolicy({ home, confine, since }) {
+  return {
+    home, writeRoots: [home, ...tmpSpellings(sandboxTmpDir({}))], ...sandboxFilesystem(confine, home),
+    mktemp: [MKTEMP_DIR_RE.source.replace(/^\^/, "").replace(/\$/, "")], since,
+  };
+}
+
 /** Claude Code settings for the run (passed with --settings from the run root; never written into HOME). */
 export function runSettings({ runRoot, home, hookWrapper, node, confine }) {
   // N1: no run-root path and no token in any hook command (Claude Code records the command in the session JSONL).
   const hook = (event) => [{ matcher: "*", hooks: [{ type: "command", command: `${shq(node)} ${shq(hookWrapper)} ${shq(event)}`, timeout: 60 }] }];
   const scoped = (p) => [`Read(/${p}/**)`, `Edit(/${p}/**)`];
   const darwinSpellings = (p) => (p.startsWith("/private/var/") ? [p, p.slice("/private".length)] : [p]);
-  const projects = join(home, ".claude", "projects");
+  const fs = sandboxFilesystem(confine, home);
   return {
     permissions: {
       defaultMode: "dontAsk",
       // File tools only inside the workspace HOME (= cwd) and the sandbox TMPDIR (signer.md's scratch dir).
       allow: ["Bash", "TodoWrite", "Skill", `mcp__${MCP_SERVER}`, ...scoped(home), ...tmpSpellings(confine.sandboxTmp).flatMap(scoped), ...(confine.mktempGlobs ?? []).flatMap(darwinSpellings).flatMap(scoped)],
       // The session JSONL (hook attachments, tool results) under ~/.claude/projects is not the agent's to read.
-      deny: ["WebFetch", "WebSearch", "Agent", "Task", "ToolSearch", ...confine.denyRead.flatMap(scoped), ...scoped(projects), `Edit(/${join(home, ".claude")}/**)`, `Edit(/${runRoot}/**)`],
+      deny: ["WebFetch", "WebSearch", "Agent", "Task", "ToolSearch", ...fs.denyRead.flatMap(scoped), `Edit(/${join(home, ".claude")}/**)`, `Edit(/${runRoot}/**)`],
     },
     sandbox: {
       enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
       network: { allowedDomains: ["127.0.0.1", "localhost"] },
-      filesystem: { denyRead: [...confine.denyRead, projects], denyWrite: confine.denyWrite, allowRead: confine.allowRead },
+      filesystem: fs,
     },
     hooks: { PreToolUse: hook("pre"), PostToolUse: hook("post"), PostToolUseFailure: hook("post"), PermissionDenied: hook("denied") },
   };
@@ -253,6 +276,11 @@ export function assertHermetic(w) {
   if (within(runRoot, home) || within(runRoot, realpathSync(dirname(w.home)))) throw new HardError(`hermetic: run root ${runRoot} is reachable from HOME or HOME's parent`);
   if ((statSync(runRoot).mode & 0o077) !== 0) throw new HardError(`hermetic: run root ${runRoot} is not 0700`);
   const c = w.confine;
+  // R3-4: Seatbelt cannot express a path with a control character (its rule would silently not match), so a sandbox
+  // list carrying one — e.g. a pre-existing $TMPDIR entry — makes the run an adapter error before anything starts.
+  const fsl = sandboxFilesystem(c, w.home);
+  const bad = [w.home, w.prefix, w.runRoot, w.base, ...tmpSpellings(c.sandboxTmp), ...fsl.denyRead, ...fsl.denyWrite, ...fsl.allowRead].find((p) => unsafeSandboxPath(String(p)));
+  if (bad !== undefined) throw new HardError(`hermetic: sandbox path ${JSON.stringify(bad)} contains a control character (cannot be expressed in the sandbox profile)`);
   if (!c.denyRead.includes(w.runRoot) || !c.denyWrite.includes(w.runRoot)) throw new HardError("hermetic: run root is not denied to the agent for read and write");
   if ([c.operatorHome, c.repoRoot].some((d) => within(realpathSync(w.prefix), d))) throw new HardError("hermetic: the workspace sits inside a root denied to the agent");
   // R2-7: the run base (hook wrapper + relay registry with tokens) must be denied and outside anything the agent reads.
@@ -281,7 +309,10 @@ export function assertHermetic(w) {
  * Build the world for one sample. Returns { run, runRoot, prefix, home, binDir, env, urls, paths, confine, ctlToken,
  * fetchState, cleanup }. `cleanup()` stops the backend and removes both roots.
  */
-export async function createWorld({ suiteDir, caseId, skillsRoot }) {
+export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox, signerCallTimeoutMs = SIGNER_CALL_TIMEOUT_MS }) {
+  // R3-1: the only value accepted is the test-only "fake" (set by run() from testSeams); anything else is a wiring bug.
+  if (signerSandbox !== undefined && signerSandbox !== "fake") throw new HardError(`claude-code adapter: unknown signer sandbox seam ${JSON.stringify(signerSandbox)}`);
+  if (!Number.isInteger(signerCallTimeoutMs) || signerCallTimeoutMs < 100 || signerCallTimeoutMs > 600_000) throw new HardError(`claude-code adapter: signer call timeout must be an integer 100..600000 ms, got ${signerCallTimeoutMs}`);
   mkdirSync(runRootBase(), { recursive: true, mode: 0o700 });
   const base = realpathSync(runRootBase());
   const runRoot = realpathSync(mkdtempSync(join(base, "sp6-run-")));
@@ -314,11 +345,9 @@ export async function createWorld({ suiteDir, caseId, skillsRoot }) {
     const confine = confinement({ home, runRoot, prefix, base });
     // The signer host mirrors the agent's sandbox (R2-1): write roots, denyRead / denyWrite / allowRead, and fresh mktemp
     // dirs (owned by us, created after `since`); its child runs under the same policy in an OS sandbox.
-    const policy = {
-      home, writeRoots: [home, ...tmpSpellings(sandboxTmpDir({}))], denyRead: confine.denyRead, denyWrite: confine.denyWrite, allowRead: confine.allowRead,
-      mktemp: [MKTEMP_DIR_RE.source.replace(/^\^/, "").replace(/\$/, "")], since: Date.now(),
-    };
-    writeFileSync(paths.tokens, JSON.stringify({ ctl: ctlToken, client: clientToken, mcp: mcpToken, policy, privateDir: paths.privateDir }), { mode: 0o600 });
+    const policy = signerPolicy({ home, confine, since: Date.now() });
+    const tokens = { ctl: ctlToken, client: clientToken, mcp: mcpToken, policy, privateDir: paths.privateDir, signerCallTimeoutMs, ...(signerSandbox === "fake" ? { signerSandbox } : {}) };
+    writeFileSync(paths.tokens, JSON.stringify(tokens), { mode: 0o600 });
     seedHome(run);
     backend = await startBackend(paths.runPath, paths.tokens, ctlToken);
     const binDir = installSigner(run, prefix, backend.urls.signer, clientToken);

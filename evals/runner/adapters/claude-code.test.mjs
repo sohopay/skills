@@ -46,7 +46,7 @@ const REAL = sandboxSupport();
 const REQUIRE = process.env.SP6_REQUIRE_SANDBOX === "1";
 const TRACE = childTraceSupport();
 // Real enforcement + child evidence: macOS needs sandbox-exec; Linux needs bwrap AND strace over it.
-const REAL_EVIDENCE_SKIP = !REQUIRE && (process.platform === "linux" ? !TRACE.ok && `no traced OS sandbox here (${TRACE.reason})` : !REAL.kind && `no OS sandbox here (${REAL.reason})`);
+const REAL_EVIDENCE_SKIP = !REQUIRE && (process.platform === "linux" ? !TRACE.ok && `no traced OS sandbox here (${TRACE.reason}); SP6_REQUIRE_SANDBOX=1 makes this required` : !REAL.kind && `no OS sandbox here (${REAL.reason}); SP6_REQUIRE_SANDBOX=1 makes this required`);
 const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
 
 test("[E2E] run.mjs live path: an honest onboard (keygen-routes-to-signer) and x402 (key-opacity) sample pass", async () => {

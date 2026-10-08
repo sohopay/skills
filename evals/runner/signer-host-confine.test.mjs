@@ -314,13 +314,16 @@ test("fail closed: no usable sandbox (none / missing wrapper / unloadable profil
   }
 });
 
+/** Replace a test world's deny / allow lists with the ones production builds for that HOME (signerPolicy). */
+function useProductionLists(w) {
+  const confine = confinement({ home: w.home, runRoot: w.runRoot, prefix: w.dir, base: w.operator, platform: process.platform, listTmp: () => [] });
+  const { denyRead, denyWrite, allowRead } = signerPolicy({ home: w.home, confine, since: w.policy.since });
+  Object.assign(w.policy, { denyRead, denyWrite, allowRead });
+}
 test("R3-2: the child / pre-check policy denies HOME/.claude/projects (the session JSONL) like the agent's sandbox — built from ONE source", async () => {
-  const base = await world();
-  const confine = confinement({ home: base.home, runRoot: base.runRoot, prefix: base.dir, base: base.operator, platform: process.platform, listTmp: () => [] });
-  const policy = signerPolicy({ home: base.home, confine, since: Date.now() });
-  const projects = join(base.home, ".claude", "projects");
-  assert.ok(policy.denyRead.includes(projects), JSON.stringify(policy.denyRead));
-  const w = await world("key-opacity", { policyOverrides: { denyRead: policy.denyRead, denyWrite: policy.denyWrite, allowRead: policy.allowRead } });
+  const w = await world();
+  useProductionLists(w);
+  assert.ok(w.policy.denyRead.includes(join(w.home, ".claude", "projects")), JSON.stringify(w.policy.denyRead));
   const f = join(w.home, ".claude", "projects", "-slug", "s.jsonl");
   mkdirSync(dirname(f), { recursive: true });
   writeFileSync(f, '{"type":"user"}\n');
@@ -331,10 +334,8 @@ test("R3-2: the child / pre-check policy denies HOME/.claude/projects (the sessi
 
 test("R3-2 KERNEL: with the pre-check off, the sandboxed child cannot read HOME/.claude/projects either", { skip: KERNEL_SKIP }, async () => {
   needReal();
-  const base = await world();
-  const confine = confinement({ home: base.home, runRoot: base.runRoot, prefix: base.dir, base: base.operator, platform: process.platform, listTmp: () => [] });
-  const policy = signerPolicy({ home: base.home, confine, since: Date.now() });
-  const w = await world("key-opacity", { sandbox: REAL, policyOverrides: { denyRead: policy.denyRead, denyWrite: policy.denyWrite, allowRead: policy.allowRead } });
+  const w = await world("key-opacity", { sandbox: REAL });
+  useProductionLists(w);
   const f = join(w.home, ".claude", "projects", "-slug", "s.jsonl");
   mkdirSync(dirname(f), { recursive: true });
   writeFileSync(f, '{"type":"user"}\n');

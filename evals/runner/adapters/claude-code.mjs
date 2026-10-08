@@ -25,21 +25,47 @@ import { buildPrompt } from "./cc-prompts.mjs";
 import { checkInit, DENIED_TOOLS, makeBudget, persistedReader, PINS } from "./cc-guards.mjs";
 import { captureErrors, checkHooksApplied, startHookRelay } from "./cc-relay.mjs";
 import { sweepWorkspace } from "./cc-sweep.mjs";
+import { childTraceSupport } from "../../mock/lib/signer-sandbox.mjs";
 
 export { checkInit, makeBudget, persistedReader, PINS, captureErrors, startHookRelay };
 
 /**
- * R2-1 fail closed: a signer /exec that could not run inside its OS sandbox, used io_uring (unobservable I/O), or
- * crashed the host makes the whole sample an adapter error. Malformed / unparseable / bad-token requests ran nothing.
+ * R2-1 fail closed: a signer /exec that could not run inside its OS sandbox, hit its per-call timeout (R3-3), used
+ * io_uring (unobservable I/O), crashed the host, or ran under the test-only fake sandbox in a run that did not itself
+ * inject it (R3-1) makes the whole sample an adapter error. Malformed / unparseable / bad-token requests ran nothing.
  */
-export function signerHostErrors(state) {
+export function signerHostErrors(state, { allowFake = false } = {}) {
   const out = [];
   for (const x of state.execs ?? []) {
-    if (x.sandboxFailed) out.push(`signer host: /exec ${(x.argv ?? []).slice(0, 2).join(" ")} ran without its OS sandbox (${x.sandboxError ?? "unknown"})`);
+    const call = (x.argv ?? []).slice(0, 2).join(" ");
+    if (x.timedOut) out.push(`signer host: /exec ${call} ${x.sandboxError ?? "timed out"}`);
+    else if (x.sandboxFailed) out.push(`signer host: /exec ${call} ran without its OS sandbox (${x.sandboxError ?? "unknown"})`);
+    if (x.sandbox === "fake" && !allowFake) out.push(`signer host: /exec ${call} ran under the test-only fake sandbox (unconfined) in a live run`);
     if (x.ioUring) out.push(`signer host: io_uring in the signer child (unobservable I/O)`);
     if (x.crashed) out.push(`signer host: crashed on a call (${x.crashed})`);
   }
   return out;
+}
+
+/**
+ * R3-6: the signer child's file evidence for a sample. "child-strace" only when EVERY exec that reached a child was
+ * traced (every, never some); "no-signer-exec" when none did (nothing ran that could be unaudited); else "unavailable".
+ */
+export function signerAuditStatus(execs = []) {
+  const ran = execs.filter((x) => x && x.reachedChild);
+  if (ran.length === 0) return "no-signer-exec";
+  return ran.every((x) => x.audit === "available") ? "child-strace" : "unavailable";
+}
+const SIGNER_AUDITED = new Set(["child-strace", "no-signer-exec"]);
+/** R3-6, after a run under --require-audit: null, or why the sample is an adapter error. */
+export function signerAuditError(meta) {
+  return SIGNER_AUDITED.has(meta?.signer_audit) ? null : `signer audit required but unavailable (meta.signer_audit=${JSON.stringify(meta?.signer_audit ?? null)}: a signer exec was not traced)`;
+}
+/** R3-6, before spawning under --require-audit: null, or why every sample is refused (agent audit, then signer child). */
+export function auditRefusal({ audit, childTrace }) {
+  if (audit.audit !== "available") return `audit required but unavailable (${audit.reason})`;
+  if (!childTrace.ok) return `signer audit required but unavailable (${childTrace.reason})`;
+  return null;
 }
 
 /** The `claude` the harness PATH resolves (never the agent's PATH). */
@@ -137,7 +163,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const gaps = captureErrors(items, relay);
   if (gaps.length) throw new HardError(`claude-code adapter: incomplete capture: ${gaps.join("; ")}`);
   const state = await w.fetchState();
-  const hostErrs = signerHostErrors(state);
+  const hostErrs = signerHostErrors(state, { allowFake: opts.testSeams?.signerSandbox === "fake" });
   if (hostErrs.length) throw new HardError(`claude-code adapter: ${hostErrs.join("; ")}`);
   const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, name: h.name, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
   // N1: hook processes are excluded ONLY by the pids they reported over the authenticated relay.
@@ -156,7 +182,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
         adapter: "claude-code", adapter_version: PINS.ADAPTER_VERSION, skill_hash: skillHash(join(opts.skillsRoot, ref.suiteDir, "SKILL.md"), opts.skillsRoot),
         cli_version: opts.cliVersion, model_id: PINS.MODEL_ID, sample_index: opts.sample_index,
         session_id: sessionId, cost_usd: cost, num_turns: result?.num_turns ?? null,
-        audit: audit.audit, audit_backend: audit.backend, audit_reason: audit.reason, keystore_audit: "lstat-diff", signer_audit: (state.execs ?? []).some((x) => x.audit === "available") ? "child-strace" : "unavailable", sandbox: "claude-code",
+        audit: audit.audit, audit_backend: audit.backend, audit_reason: audit.reason, keystore_audit: "lstat-diff", signer_audit: signerAuditStatus(state.execs), sandbox: "claude-code",
         swept_pids: exit.swept ?? [],
       },
       secrets: { ...w.run.transcript.secrets },
@@ -165,6 +191,8 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   });
   const v = validateTranscript(t);
   if (!v.ok) throw new HardError(`claude-code adapter: invalid capture for ${ref.caseId}: ${v.errors.join("; ")}`);
+  const auditErr = opts.requireAudit ? signerAuditError(t.meta) : null;
+  if (auditErr) throw new HardError(`claude-code adapter: ${auditErr}`);
   return { transcript: t, costUsd: cost };
 }
 
@@ -172,11 +200,16 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
  * One live sample → a schema-valid transcript (or a HardError: never a guessed capture).
  * @param {{suiteDir:string, caseId:string}} ref
  * @param {{sample_index:number, skillsRoot:string, claudeBin:string, cliVersion:string, budgetLeftUsd:number,
- *   audit?:object, timeoutMs?:number, killGraceMs?:number}} opts
+ *   audit?:object, timeoutMs?:number, killGraceMs?:number, requireAudit?:boolean, signerCallTimeoutMs?:number,
+ *   testSeams?:{signerSandbox?:"fake"}}} opts
+ *   testSeams is TEST-ONLY (R3-1): {signerSandbox:"fake"} runs the signer child unconfined for host-plumbing tests.
+ *   runSuites — the live entry run.mjs uses — refuses it, and no flag or env var produces it.
  */
 export async function run(ref, opts) {
+  const seams = opts.testSeams;
+  if (seams !== undefined && (typeof seams !== "object" || seams === null || Object.keys(seams).some((k) => k !== "signerSandbox"))) throw new HardError("claude-code adapter: unknown test seam");
   const audit = opts.audit ?? probeAudit();
-  const w = await createWorld({ suiteDir: ref.suiteDir, caseId: ref.caseId, skillsRoot: opts.skillsRoot });
+  const w = await createWorld({ suiteDir: ref.suiteDir, caseId: ref.caseId, skillsRoot: opts.skillsRoot, signerSandbox: seams?.signerSandbox, ...(opts.signerCallTimeoutMs !== undefined ? { signerCallTimeoutMs: opts.signerCallTimeoutMs } : {}) });
   let relay = null;
   let registryFile = null;
   try {
@@ -220,17 +253,23 @@ function saveTranscript(t, suiteDir, caseId, sample) {
 /**
  * run.mjs entry (live path): k samples of every selected case, each graded like a golden (must pass). Returns one
  * record per sample: {caseId, kind:"live", sample, pass, findings, hardError, costUsd, audit}. With requireAudit (or
- * SP6_AUDIT=require — the CI live mode), a host without a process-tree file audit refuses every sample unspawned.
+ * SP6_AUDIT=require — the CI live mode), a host without a process-tree file audit, or without a traced signer child,
+ * refuses every sample unspawned, and a sample with an untraced signer exec is an adapter error.
+ * `runSample` is a JS-only injection for tests of the loop (budget); run.mjs never passes one. Test seams are refused
+ * here outright (R3-1): the fake sandbox cannot reach a live run through this entry.
  */
-export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter, samples, requireAudit }) {
+export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter, samples, requireAudit, testSeams, runSample = run }) {
+  if (testSeams !== undefined) throw new HardError("claude-code adapter: test seams (e.g. the fake signer sandbox) are refused on a live run");
   const k = samples ?? PINS.DEFAULT_SAMPLES;
   if (!Number.isInteger(k) || k < 1 || k > 20) throw new HardError(`claude-code adapter: --samples must be an integer 1..20, got ${samples}`);
   const claudeBin = resolveClaude();
   const cliVersion = checkCliVersion(claudeBin);
   const budget = makeBudget(process.env.SP6_LIVE_BUDGET_USD ? Number(process.env.SP6_LIVE_BUDGET_USD) : PINS.BUDGET_USD);
   const timeoutMs = process.env.SP6_LIVE_RUN_TIMEOUT_MS ? Number(process.env.SP6_LIVE_RUN_TIMEOUT_MS) : PINS.RUN_TIMEOUT_MS;
+  const signerCallTimeoutMs = process.env.SP6_SIGNER_CALL_TIMEOUT_MS ? Number(process.env.SP6_SIGNER_CALL_TIMEOUT_MS) : undefined;
   const audit = probeAudit();
   const mustAudit = requireAudit === true || process.env.SP6_AUDIT === "require";
+  const refusal = mustAudit ? auditRefusal({ audit, childTrace: childTraceSupport() }) : null;
   const results = [];
   for (const dir of dirs) {
     const { cases, assertions } = loadSuite(join(evalsRoot, dir));
@@ -240,10 +279,10 @@ export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilt
       if (caseFilter && caseFilter !== id) continue;
       for (let s = 0; s < k; s++) {
         const base = { caseId: id, kind: "live", sample: s, audit: audit.audit };
-        if (mustAudit && audit.audit !== "available") { results.push({ ...base, pass: false, findings: [], hardError: `not run: audit required but unavailable (${audit.reason})`, costUsd: null }); continue; }
+        if (refusal) { results.push({ ...base, pass: false, findings: [], hardError: `not run: ${refusal}`, costUsd: null }); continue; }
         if (budget.exhausted()) { results.push({ ...base, pass: false, findings: [], hardError: `not run: ${budget.reason()}`, costUsd: null }); continue; }
         try {
-          const { transcript, costUsd } = await run({ suiteDir: dir, caseId: id }, { sample_index: s, skillsRoot, claudeBin, cliVersion, budgetLeftUsd: budget.left, timeoutMs, audit });
+          const { transcript, costUsd } = await runSample({ suiteDir: dir, caseId: id }, { sample_index: s, skillsRoot, claudeBin, cliVersion, budgetLeftUsd: budget.left, timeoutMs, audit, requireAudit: mustAudit, ...(signerCallTimeoutMs !== undefined ? { signerCallTimeoutMs } : {}) });
           budget.add(costUsd);
           const g = grade(label(transcript), assertion, waivers);
           results.push({ ...base, pass: g.pass && !g.hardError, findings: g.findings, hardError: g.hardError, costUsd, transcriptPath: saveTranscript(transcript, dir, id, s) });

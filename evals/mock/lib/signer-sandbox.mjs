@@ -6,7 +6,15 @@
 //           /dev/null), allowRead re-bound; all namespaces unshared (no network). Under strace (-f -y) when available,
 //           so the child's opens are recorded (the host has no other way to see them).
 // No sandbox, or a sandbox that does not start the child, is reported — the caller refuses; never an unsandboxed run.
-import { spawn } from "node:child_process";
+//
+// R3-1 test seam: FAKE_SANDBOX runs the child UNCONFINED. Detection (`sandboxSupport`) never returns it and no env var
+// or CLI flag selects it: a caller must pass the object itself (the signer host's `seam.sandbox`, set only by tests and
+// by the adapter's `testSeams`, which runSuites refuses). SP6_SIMULATE_NO_SANDBOX=1 can only force detection to
+// "unavailable" — every signer call then fails closed — which is how a host without bwrap (the merge gate) is
+// simulated locally.
+// R3-3: every call has a time limit; the child leads its own process group and the whole group is killed on expiry.
+// R3-4: a path with a control character is never put into a Seatbelt profile (fail closed).
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync } from "node:fs";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,26 +22,48 @@ import { resolveLoose } from "./realpath-loose.mjs";
 
 const MOCK_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const CHILD = join(MOCK_DIR, "signer-child.mjs");
+/** Default per-call limit for the sandboxed signer child (a real signer call takes well under a second). */
+export const SIGNER_CALL_TIMEOUT_MS = 20_000;
+/** TEST-ONLY: the child runs unconfined. Never returned by detection; only ever passed in as this object. */
+export const FAKE_SANDBOX = Object.freeze({ kind: "fake", reason: "test-only: unconfined signer child" });
 
-/** Which OS sandbox this host can run the signer under. */
-export function sandboxSupport(platform = process.platform) {
+/** Which OS sandbox this host can run the signer under (never the fake). */
+export function sandboxSupport(platform = process.platform, env = process.env) {
+  if (env.SP6_SIMULATE_NO_SANDBOX === "1") return { kind: null, reason: "simulated: no OS sandbox (SP6_SIMULATE_NO_SANDBOX=1)" };
   if (platform === "darwin") return existsSync("/usr/bin/sandbox-exec") ? { kind: "sandbox-exec", path: "/usr/bin/sandbox-exec" } : { kind: null, reason: "no /usr/bin/sandbox-exec" };
   if (platform === "linux") {
-    const bw = (process.env.PATH ?? "/usr/bin:/bin").split(delimiter).map((d) => join(d, "bwrap")).find((p) => existsSync(p));
+    const bw = (env.PATH ?? "/usr/bin:/bin").split(delimiter).map((d) => join(d, "bwrap")).find((p) => existsSync(p));
     return bw ? { kind: "bwrap", path: bw } : { kind: null, reason: "bwrap not installed" };
   }
   return { kind: null, reason: `no OS sandbox for ${platform}` };
 }
 
+/** Can the signer child's opens be traced here (Linux: bwrap under strace)? The single source for host and adapter. */
+export function childTraceSupport(support = sandboxSupport(), run = spawnSync) {
+  if (support.kind !== "bwrap") return { ok: false, reason: support.kind ? `no root-free child trace under ${support.kind}` : support.reason };
+  if (run("strace", ["-V"], { stdio: "ignore" }).status !== 0) return { ok: false, reason: "strace not installed" };
+  return { ok: true, reason: null };
+}
+
 const canon = (p) => resolveLoose(p);
-const sbpl = (p) => JSON.stringify(p); // SBPL string literals take the same escapes as JSON for these paths
+const CONTROL = /[\x00-\x1f\x7f]/;
+/** Is `p` unsafe to put into a Seatbelt string literal (any C0 control character or DEL)? */
+export const unsafeSandboxPath = (p) => CONTROL.test(p);
+// SBPL string literals take JSON's quote / backslash escapes, but Seatbelt does not decode `\u00XX`, so a C0 character
+// would leave its rule silently ineffective (R3-4). Such a path is refused, never escaped.
+const sbpl = (p) => {
+  if (unsafeSandboxPath(p)) throw new Error(`sandbox path contains a control character: ${JSON.stringify(p)}`);
+  return JSON.stringify(p);
+};
 const ancestors = (p) => { const out = []; let c = ""; for (const s of p.split("/").filter(Boolean)) { c += `/${s}`; out.push(c); } return out; };
 
 /**
- * Seatbelt profile mirroring the agent's sandbox. Later rules win, so re-allows come after denies.
+ * Seatbelt profile mirroring the agent's sandbox. Later rules win, so re-allows come after denies. Throws on a path
+ * that cannot be represented (control characters).
  * @param {{writeRoots:string[], denyRead:string[], denyWrite:string[], allowRead:string[]}} p  canonical paths
  */
 export function seatbeltProfile({ writeRoots, denyRead, denyWrite, allowRead }) {
+  for (const p of [...writeRoots, ...denyRead, ...denyWrite, ...allowRead]) sbpl(p); // check the raw spellings too
   const sub = (ps) => ps.map((p) => `(subpath ${sbpl(p)})`).join(" ");
   const reads = [...allowRead, MOCK_DIR].map(canon);
   const lines = ["(version 1)", "(allow default)", "(deny network*)", "(deny file-write*)", `(allow file-write* (literal "/dev/null") ${sub(writeRoots.map(canon))})`];
@@ -58,32 +88,52 @@ export function bwrapArgs({ writeRoots, denyRead, denyWrite, allowRead, cwd }) {
   return a;
 }
 
-/**
- * Run one signer invocation in the sandboxed child.
- * @returns {Promise<{ok:true, reply:object, trace:string|null} | {ok:false, error:string}>}
- */
-export function runSandboxed(support, { policy, cwd, request, strace = null, seam = {} }) {
-  if (!support.kind) return Promise.resolve({ ok: false, error: support.reason });
-  let argv;
+/** argv for one call under `support`, or throws when the policy cannot be expressed. */
+function childArgv(support, { policy, cwd, strace, seam }) {
+  if (support.kind === "fake") return [process.execPath, CHILD];
   if (support.kind === "sandbox-exec") {
     const profile = seam.brokenProfile ? "(version 1)(this is not a profile" : seatbeltProfile(policy);
-    argv = [seam.sandboxCommand ?? support.path, "-p", profile, process.execPath, CHILD];
-  } else {
-    argv = [seam.sandboxCommand ?? support.path, ...(seam.brokenProfile ? ["--no-such-flag"] : []), ...bwrapArgs({ ...policy, cwd }), process.execPath, CHILD];
-    if (strace) argv = [...strace.argv, ...argv];
+    return [seam.sandboxCommand ?? support.path, "-p", profile, process.execPath, CHILD];
   }
+  const argv = [seam.sandboxCommand ?? support.path, ...(seam.brokenProfile ? ["--no-such-flag"] : []), ...bwrapArgs({ ...policy, cwd }), process.execPath, CHILD];
+  return strace ? [...strace.argv, ...argv] : argv;
+}
+
+const killGroup = (pid) => { try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ } };
+
+/**
+ * Run one signer invocation in the sandboxed child.
+ * @returns {Promise<{ok:true, reply:object, trace:string|null, pid:number} | {ok:false, error:string, pid?:number, timedOut?:boolean}>}
+ */
+export function runSandboxed(support, { policy, cwd, request, strace = null, seam = {}, timeoutMs = SIGNER_CALL_TIMEOUT_MS }) {
+  if (!support.kind) return Promise.resolve({ ok: false, error: support.reason });
+  let argv;
+  try { argv = childArgv(support, { policy, cwd, strace, seam }); } catch (e) { return Promise.resolve({ ok: false, error: `sandbox policy refused: ${e.message}` }); }
   return new Promise((done) => {
-    const c = spawn(argv[0], argv.slice(1), { cwd, env: { HOME: policy.home, PATH: "/usr/bin:/bin" }, stdio: ["pipe", "pipe", "pipe"] });
+    let settled = false;
+    const finish = (r) => { if (!settled) { settled = true; done(r); } };
+    // detached: the child leads its own process group, so a timeout kills the wrapper and everything under it.
+    const c = spawn(argv[0], argv.slice(1), { cwd, env: { HOME: policy.home, PATH: "/usr/bin:/bin" }, stdio: ["pipe", "pipe", "pipe"], detached: true });
     const out = [];
     const err = [];
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup(c.pid);
+      // A group SIGKILL closes the pipes; should 'close' still not arrive, answer anyway (the call is refused).
+      setTimeout(() => finish({ ok: false, timedOut: true, pid: c.pid, error: `timed out after ${timeoutMs} ms (process group killed)` }), 2000).unref();
+    }, timeoutMs);
     c.stdout.on("data", (d) => out.push(d));
     c.stderr.on("data", (d) => err.push(d));
-    c.once("error", (e) => done({ ok: false, error: `sandbox did not start: ${e.message}` }));
+    c.stdin.on("error", () => { /* the child may die before reading its request; reported via close */ });
+    c.once("error", (e) => { clearTimeout(timer); finish({ ok: false, error: `sandbox did not start: ${e.message}` }); });
     c.once("close", (code) => {
+      clearTimeout(timer);
+      if (timedOut) return finish({ ok: false, timedOut: true, pid: c.pid, error: `timed out after ${timeoutMs} ms (process group killed)` });
       let reply = null;
       try { reply = JSON.parse(Buffer.concat(out).toString("utf8")); } catch { reply = null; }
-      if (!reply || !reply.result) return done({ ok: false, error: `sandboxed signer produced no reply (exit ${code}): ${Buffer.concat(err).toString("utf8").trim().slice(0, 300)}` });
-      done({ ok: true, reply, trace: strace && existsSync(strace.file) ? readFileSync(strace.file, "utf8") : null });
+      if (!reply || !reply.result) return finish({ ok: false, pid: c.pid, error: `sandboxed signer produced no reply (exit ${code}): ${Buffer.concat(err).toString("utf8").trim().slice(0, 300)}` });
+      finish({ ok: true, pid: c.pid, reply, trace: strace && existsSync(strace.file) ? readFileSync(strace.file, "utf8") : null });
     });
     c.stdin.end(JSON.stringify(request));
   });

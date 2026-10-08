@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { initialState, merchantChallenge, ToolError, TOOLS } from "./lib/backend-tools.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "./lib/tool-catalog.mjs";
 import { createSignerHost, newLogs, tokenEquals } from "./signer-host.mjs";
+import { FAKE_SANDBOX } from "./lib/signer-sandbox.mjs";
 
 export const HOST = "127.0.0.1";
 const PROTOCOL_VERSION = "2025-06-18";
@@ -178,7 +179,11 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const tokens = live ? JSON.parse(readFileSync(arg("--tokens"), "utf8")) : null;
   const logs = live ? newLogs() : null;
   const backend = createBackend(run, live ? { sink: logs.journal, mcpToken: tokens.mcp, ctl: { token: tokens.ctl, state: () => ({ journal: logs.journal, owned: logs.owned, execs: logs.execs }) } } : {});
-  const signer = live ? createSignerHost(run, { logs, clientToken: tokens.client, policy: tokens.policy, privateDir: tokens.privateDir }) : null;
+  // R3-1: the test-only fake sandbox is honoured ONLY from the harness-written tokens file (in the agent-denied run root;
+  // createWorld writes it only for a run() given testSeams, which runSuites refuses). No flag or env var selects it,
+  // and the adapter rejects a fake exec in any run that did not inject it.
+  const seam = tokens?.signerSandbox === "fake" ? { sandbox: FAKE_SANDBOX } : {};
+  const signer = live ? createSignerHost(run, { logs, clientToken: tokens.client, policy: tokens.policy, privateDir: tokens.privateDir, seam, callTimeoutMs: tokens.signerCallTimeoutMs }) : null;
   Promise.all([backend.listen(Number(arg("--port") ?? 0)), signer ? signer.listen(0) : null]).then(([url, signerUrl]) =>
     process.stdout.write(`${JSON.stringify({ url, mcp: `${url}/mcp`, merchant: merchantUrl(url), ...(signerUrl ? { signer: signerUrl } : {}) })}\n`));
 }

@@ -12,12 +12,15 @@
 //     and any final-component link. Comparisons use realpathSync.native (on-disk case). This is a FAST refusal only;
 //     the boundary is the kernel.
 // HOME and the key roots come from the policy; forwarded env is ignored. No sandbox → refusal + sandboxFailed (the
-// adapter makes the sample an adapter error); never an unsandboxed run.
+// adapter makes the sample an adapter error); never an unsandboxed run. Every call has a time limit (R3-3): on expiry
+// the child's process group is killed and the call is a refusal + sandboxFailed + timedOut.
+// Test seam (R3-1): `seam.sandbox` replaces detection — tests pass FAKE_SANDBOX (an unconfined child) for host plumbing
+// that is not about kernel enforcement. Only a caller holding the object can select it; the backend sets it only from
+// the harness-written tokens file, and the adapter rejects any fake exec in a run that did not inject it itself.
 // Evidence: EVERY /exec is logged in memory (argv, cwd, times, refusals, sandbox, and — Linux, under strace — every
 // file the child opened; macOS has no root-free tracing, so opens are `audit: unavailable`). Malformed, unparseable
 // and bad-token requests are logged too. The log leaves only over the backend's authenticated control channel.
 // `/exec` requires the client token baked into the installed client (agent-readable by necessity).
-import { spawnSync } from "node:child_process";
 import { lstatSync, mkdtempSync, readlinkSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
@@ -25,7 +28,7 @@ import { timingSafeEqual } from "node:crypto";
 import { parseArgs } from "./signer-core.mjs";
 import { diffSnapshots, snapshotTree } from "./lib/keystore-snapshot.mjs";
 import { resolveLoose } from "./lib/realpath-loose.mjs";
-import { runSandboxed, sandboxSupport } from "./lib/signer-sandbox.mjs";
+import { childTraceSupport, runSandboxed, sandboxSupport, SIGNER_CALL_TIMEOUT_MS } from "./lib/signer-sandbox.mjs";
 import { parseChildTrace } from "./lib/child-trace.mjs";
 
 export { sandboxSupport };
@@ -130,9 +133,10 @@ function precheck(parsed, { cwd, policy, rec }) {
  * @param {object} config  run config
  * @param {{argv:string[], stdin:string, cwd:string}} inv   (any forwarded env is ignored)
  * @param {object} logs    newLogs()
- * @param {{policy:object, privateDir:string, seam?:{precheck?:boolean, sandboxCommand?:string, brokenProfile?:boolean}}} o
+ * @param {{policy:object, privateDir:string, callTimeoutMs?:number,
+ *   seam?:{sandbox?:object, precheck?:boolean, sandboxCommand?:string, brokenProfile?:boolean, crashOn?:string}}} o
  */
-export async function execForwarded(config, inv, logs, { policy, privateDir, seam = {} }) {
+export async function execForwarded(config, inv, logs, { policy, privateDir, seam = {}, callTimeoutMs = SIGNER_CALL_TIMEOUT_MS }) {
   const { argv, stdin, cwd } = inv ?? {};
   if (!Array.isArray(argv) || argv.some((a) => typeof a !== "string") || typeof cwd !== "string" || !isAbsolute(cwd)) {
     logs.execs.push({ malformed: "argv", at: Date.now() });
@@ -155,27 +159,30 @@ export async function execForwarded(config, inv, logs, { policy, privateDir, sea
     } else if (parsed) {
       for (const k of ["input", "writeHeader"]) if (typeof parsed[k] === "string") { const mk = freshMktempDir(resolve(cwd, parsed[k]), policy); if (mk) extraWriteRoots.push(mk); }
     }
-    return await runChild(config, { argv: parsed ? rebuild(parsed) : argv, stdin, cwd, parsed }, { logs, rec, policy, privateDir, seam, extraWriteRoots });
+    return await runChild(config, { argv: parsed ? rebuild(parsed) : argv, stdin, cwd, parsed }, { logs, rec, policy, privateDir, seam, extraWriteRoots, callTimeoutMs });
   } finally {
     rec.done = Date.now();
   }
 }
 
-async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, policy, privateDir, seam, extraWriteRoots }) {
-  const support = sandboxSupport();
+async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, policy, privateDir, seam, extraWriteRoots, callTimeoutMs }) {
+  const support = seam.sandbox ?? sandboxSupport();
   rec.sandbox = support.kind;
+  rec.reachedChild = true; // past every pre-check: this call's evidence is the child's (R3-6 counts these)
   const home = policy.home;
   const work = mkdtempSync(join(privateDir, "x-"));
   try {
-    const traceable = support.kind === "bwrap" && spawnSync("strace", ["-V"], { stdio: "ignore" }).status === 0;
+    const traceable = childTraceSupport(support).ok;
     const strace = traceable ? { file: join(work, "child.strace"), argv: ["strace", "-f", "-y", "-qq", "-ttt", "-s", "4096", "-o", join(work, "child.strace"), "-e", `trace=${CHILD_TRACE}`, "--"] } : null;
     const childPolicy = { home, writeRoots: [...policy.writeRoots, ...extraWriteRoots], denyRead: policy.denyRead ?? [], denyWrite: policy.denyWrite ?? [], allowRead: policy.allowRead ?? [] };
     const before = snapshotTree(join(home, ".agents"));
-    const out = await runSandboxed(support, { policy: childPolicy, cwd, request: { config, argv, stdin: typeof stdin === "string" ? stdin : "", home, state: logs.state }, strace, seam });
+    const out = await runSandboxed(support, { policy: childPolicy, cwd, request: { config, argv, stdin: typeof stdin === "string" ? stdin : "", home, state: logs.state }, strace, seam, timeoutMs: callTimeoutMs });
+    if (Number.isInteger(out.pid)) rec.childPid = out.pid;
     if (!out.ok) {
       rec.sandboxFailed = true;
       rec.sandboxError = out.error;
-      return signerError("MALFORMED_ENVELOPE", "signer sandbox unavailable");
+      if (out.timedOut) rec.timedOut = true;
+      return signerError("MALFORMED_ENVELOPE", out.timedOut ? "signer timed out" : "signer sandbox unavailable");
     }
     logs.state = out.reply.state ?? logs.state;
     for (const n of out.reply.notes ?? []) logs.journal.push({ source: "signer", condition: n.condition, at: n.at });
@@ -189,11 +196,15 @@ async function runChild(config, { argv, stdin, cwd, parsed }, { logs, rec, polic
   }
 }
 
-/** Linux: the child's opens (kernel paths), with the sanctioned --key read / keygen --out write marked as such. */
-function recordTrace(rec, text, { home, parsed, cwd }) {
-  const { opens, ioUring } = parseChildTrace(text, process.execPath);
-  rec.audit = "available";
+/**
+ * Linux: the child's opens (kernel paths), with the sanctioned --key read / keygen --out write marked as such. The call
+ * counts as audited only if the trace saw the child node's own execve (R3-5): otherwise nothing of the signer was seen.
+ */
+export function recordTrace(rec, text, { home, parsed, cwd }) {
+  const { opens, ioUring, started } = parseChildTrace(text, process.execPath);
   if (ioUring) rec.ioUring = true;
+  if (!started) return;
+  rec.audit = "available";
   const store = resolveLoose(join(home, ".agents"));
   const key = typeof parsed?.key === "string" && parsed.key !== "-" ? resolveLoose(resolve(cwd, parsed.key)) : null;
   const outDir = rec.command === "key generate" && typeof parsed?.out === "string" ? dirname(resolveLoose(resolve(cwd, parsed.out))) : null;
@@ -220,7 +231,7 @@ function readJson(req) {
 }
 
 /** HTTP host on 127.0.0.1 (random port): POST /exec {argv, stdin, cwd} with x-signer-client → {stdout, stderr, exitCode}. */
-export function createSignerHost(config, { logs, clientToken, policy, privateDir, seam }) {
+export function createSignerHost(config, { logs, clientToken, policy, privateDir, seam, callTimeoutMs }) {
   if (!policy || !isAbsolute(policy.home) || !privateDir) throw new Error("signer host needs a policy and a private dir");
   const server = createServer((req, res) => {
     const reply = (status, body) => { if (!res.headersSent) { res.writeHead(status, { "content-type": "application/json" }); res.end(JSON.stringify(body)); } };
@@ -230,7 +241,7 @@ export function createSignerHost(config, { logs, clientToken, policy, privateDir
     (async () => {
       let inv;
       try { inv = await readJson(req); } catch { logs.execs.push({ malformed: "body", at: Date.now() }); return reply(400, { stdout: "", stderr: "malformed invocation\n", exitCode: 2 }); }
-      try { reply(200, await execForwarded(config, inv, logs, { policy, privateDir, seam })); } catch (e) {
+      try { reply(200, await execForwarded(config, inv, logs, { policy, privateDir, seam, callTimeoutMs })); } catch (e) {
         logs.execs.push({ crashed: String(e?.message ?? e), at: Date.now() });
         reply(200, signerError("MALFORMED_ENVELOPE", "signer host internal error"));
       }
