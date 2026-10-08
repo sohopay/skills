@@ -91,13 +91,16 @@ jobs:
     name: Live run (protected environment)
     needs: gate
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    # Above the live step's own limit (M2), so a slow run is stopped by its step timeout and the verdict, egress scan
+    # and uploads still run within the job.
+    timeout-minutes: 340
     environment: sp6-live-evals
     permissions:
       contents: read
+    # Downstream jobs act only on a verdict that passed the egress scan (C1).
     outputs:
-      safety_failures: ${{ steps.verdict.outputs.safety_failures }}
-      regen_count: ${{ steps.verdict.outputs.regen_count }}
+      safety_failures: ${{ steps.egress.outcome == 'success' && steps.verdict.outputs.safety_failures || 'false' }}
+      regen_count: ${{ steps.egress.outcome == 'success' && steps.verdict.outputs.regen_count || '0' }}
     env:
       # Kernel-enforcement and child-evidence tests must RUN here (none skipped); see the test step below.
       SP6_REQUIRE_SANDBOX: "1"
@@ -140,11 +143,13 @@ jobs:
           SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run-tests
         run: |
           set -euo pipefail
-          node --test evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs | tee "$RUNNER_TEMP/sp6-tests.txt"
+          # I1: force the spec reporter — Node 22 prints TAP (`# skipped N`) when stdout is a pipe.
+          node --test --test-reporter=spec evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs | tee "$RUNNER_TEMP/sp6-tests.txt"
           grep -qx 'ℹ skipped 0' "$RUNNER_TEMP/sp6-tests.txt" || { echo "::error::a runner test was skipped under SP6_REQUIRE_SANDBOX=1"; exit 1; }
 
       - name: Live run (k samples per case, budget-capped)
         id: run
+        timeout-minutes: 300
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           SP6_AUDIT: require
@@ -159,7 +164,9 @@ jobs:
           set -uo pipefail
           [ -n "$ANTHROPIC_API_KEY" ] || { echo "::error::ANTHROPIC_API_KEY is not set in the sp6-live-evals environment"; exit 1; }
           mkdir -p "$SP6_LIVE_OUT_DIR"
-          args=(--adapter claude-code --suite all --samples "$SAMPLES" --require-audit)
+          # --live: the only switch that lets the adapter spawn the real CLI (M4). The key reaches the CLI through an
+          # apiKeyHelper reading a 0600 file in the agent-denied run root, never through the agent's env (C1).
+          args=(--adapter claude-code --live --suite all --samples "$SAMPLES" --require-audit)
           if [ -n "$CASE" ]; then args+=(--case "$CASE"); fi
           node evals/runner/run.mjs "${args[@]}" > "$RUNNER_TEMP/sp6-live/report.json"
           code=$?
@@ -171,7 +178,8 @@ jobs:
 
       - name: Verdict (regression issues, golden candidates)
         id: verdict
-        if: ${{ !cancelled() && contains(fromJSON('["0","1"]'), steps.run.outputs.exit_code) }}
+        # always(): a run stopped by its timeout or cancelled still gets whatever verdict its report allows (M2).
+        if: ${{ always() }}
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           REF: ${{ github.event.pull_request.head.ref || github.ref_name }}
@@ -181,16 +189,43 @@ jobs:
           SAMPLES: ${{ needs.gate.outputs.samples }}
         run: |
           set -euo pipefail
+          if [ ! -s "$RUNNER_TEMP/sp6-live/report.json" ]; then
+            echo "::warning::no live report (the run was stopped or failed before reporting): no verdict; transcripts saved so far are still uploaded"
+            exit 0
+          fi
           flags=()
           # Regenerate only from a full k=5, all-case run on a same-repo PR (gate decided allow_regen).
           if [ "$ALLOW_REGEN" = "true" ] && [ "$SAMPLES" = "5" ] && [ -z "$CASE" ]; then flags+=(--allow-regen); fi
           node evals/runner/live-ci.mjs --report "$RUNNER_TEMP/sp6-live/report.json" --live-dir "$RUNNER_TEMP/sp6-live/transcripts" \
             --out "$RUNNER_TEMP/sp6-verdict" --samples "$SAMPLES" "${flags[@]}" | tee -a "$GITHUB_OUTPUT"
 
-      # Transcripts carry only the mock world's FAKE-SP6-CANARY-* values (no real key, token or PII); the unwaivable
-      # never_appears floor is what guards real secrets. Short retention all the same.
+      # C1 egress: nothing leaves this job unless it is free of the real key. The adapter already quarantines any
+      # sample whose capture holds a harness secret (in any never_appears encoding); this is the independent last
+      # check over everything about to be uploaded (transcripts, report, issue bodies, golden candidates). A hit
+      # deletes the directories (quarantine) and fails: no upload, no issue, no regen.
+      - name: Egress scan (real API key) before any upload
+        id: egress
+        if: ${{ always() }}
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -uo pipefail
+          dirs=()
+          for d in "$RUNNER_TEMP/sp6-live" "$RUNNER_TEMP/sp6-verdict"; do [ -e "$d" ] && dirs+=("$d"); done
+          [ "${#dirs[@]}" -gt 0 ] || { echo "nothing to scan"; exit 0; }
+          [ -n "$ANTHROPIC_API_KEY" ] || { echo "no key in this job: nothing it could leak"; exit 0; }
+          b64="$(printf %s "$ANTHROPIC_API_KEY" | base64 -w0)"
+          grep -rqF -e "$ANTHROPIC_API_KEY" -e "$b64" -e "${b64%%=*}" "${dirs[@]}"
+          rc=$?
+          if [ "$rc" -eq 1 ]; then echo "egress scan clean"; exit 0; fi
+          rm -rf "${dirs[@]}"
+          echo "::error::egress scan: the real API key (or its base64) was found in the live output (grep rc=$rc); quarantined — nothing is uploaded"
+          exit 1
+
+      # Transcripts carry only the mock world's FAKE-SP6-CANARY-* values: the agent never holds a real credential
+      # (allowlisted env, key via apiKeyHelper), and the scan above refuses any that slipped through. Short retention.
       - name: Upload transcripts and report
-        if: ${{ !cancelled() }}
+        if: ${{ always() && steps.egress.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sp6-live-transcripts-${{ github.run_id }}
@@ -198,13 +233,13 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
       - name: Upload verdict
-        if: ${{ !cancelled() && steps.verdict.outcome == 'success' }}
+        if: ${{ always() && steps.egress.outcome == 'success' && steps.verdict.outcome == 'success' }}
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: sp6-live-verdict-${{ github.run_id }}
           path: ${{ runner.temp }}/sp6-verdict
           retention-days: 3
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Fail the job when any sample failed (advisory, never a merge gate)
         if: ${{ steps.run.outputs.exit_code != '0' }}
@@ -215,7 +250,7 @@ jobs:
   issues:
     name: Open / update sp6-live-regression issues
     needs: [gate, live]
-    if: ${{ !cancelled() && needs.live.outputs.safety_failures == 'true' }}
+    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -229,28 +264,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           VERDICT: ${{ runner.temp }}/verdict
+        # M3: per-id error handling — one gh failure never stops the other case ids; the step fails at the end.
         run: |
-          set -euo pipefail
-          gh label create sp6-live-regression --force --color B60205 --description "SP6 live eval: a safety case failed in a live sample"
+          set -uo pipefail
+          gh label create sp6-live-regression --force --color B60205 --description "SP6 live eval: a safety case failed in a live sample" \
+            || echo "::warning::could not create/update the sp6-live-regression label"
+          failed=0
           shopt -s nullglob
           for f in "$VERDICT"/issues/*.md; do
             id="$(basename "$f" .md)"
-            [[ "$id" =~ ^[a-z0-9][a-z0-9-]{0,80}$ ]] || { echo "::error::unexpected case id in verdict: $id"; exit 1; }
+            if ! [[ "$id" =~ ^[a-z0-9][a-z0-9-]{0,80}$ ]]; then echo "::error::unexpected case id in verdict: $id"; failed=$((failed + 1)); continue; fi
             title="sp6-live-regression: $id"
-            num="$(gh issue list --label sp6-live-regression --state open --limit 200 --json number,title \
-              --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)"
+            if ! num="$(gh issue list --label sp6-live-regression --state open --limit 200 --json number,title \
+              --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)"; then
+              echo "::error::$id: could not list issues"; failed=$((failed + 1)); continue
+            fi
             if [ -n "$num" ]; then
-              gh issue comment "$num" --body-file "$f"
+              gh issue comment "$num" --body-file "$f" || { echo "::error::$id: comment on #$num failed"; failed=$((failed + 1)); }
             else
-              gh issue create --title "$title" --label sp6-live-regression --body-file "$f"
+              gh issue create --title "$title" --label sp6-live-regression --body-file "$f" || { echo "::error::$id: create failed"; failed=$((failed + 1)); }
             fi
           done
+          exit "$(( failed > 0 ))"
 
   regen:
     name: Commit regenerated goldens onto the PR head branch
     needs: [gate, live]
     if: >-
-      ${{ !cancelled() && github.event_name == 'pull_request' &&
+      ${{ !cancelled() && needs.gate.result == 'success' && github.event_name == 'pull_request' &&
           github.event.pull_request.head.repo.full_name == github.repository &&
           needs.gate.outputs.allow_regen == 'true' &&
           needs.live.outputs.regen_count != '' && needs.live.outputs.regen_count != '0' }}

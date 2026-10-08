@@ -157,7 +157,7 @@ const MUTATIONS = [
   ["environment on gate", (y) => y.replace("    runs-on: ubuntu-latest\n    permissions: {}\n    outputs:", "    runs-on: ubuntu-latest\n    environment: sp6-live-evals\n    permissions: {}\n    outputs:"), /first job gate must not load an environment|exactly one job/],
   ["fork refusal removed", (y) => y.split(FORK_EXPR).join("false"), /must refuse a fork PR/],
   ["label gate removed", (y) => y.replace("contains(github.event.pull_request.labels.*.name, 'run-live-evals') &&\n", "true &&\n"), /run-live-evals label/],
-  ["issues job skips the gate", (y) => y.replace("    needs: [gate, live]\n    if: ${{ !cancelled() && needs.live.outputs.safety_failures", "    needs: [live]\n    if: ${{ !cancelled() && needs.live.outputs.safety_failures"), /job issues must need the gate job/],
+  ["issues job skips the gate", (y) => y.replace("    needs: [gate, live]\n    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures", "    needs: [live]\n    if: ${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures"), /job issues must need the gate job/],
   ["secret in issues job", (y) => y.replace("          GH_REPO: ${{ github.repository }}", "          GH_REPO: ${{ github.repository }}\n          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}"), /references ANTHROPIC_API_KEY outside/],
   ["write on live job", (y) => y.replace("    permissions:\n      contents: read\n", "    permissions:\n      contents: write\n"), /environment job live/],
   ["two writes on regen", (y) => y.replace("    permissions:\n      contents: write\n", "    permissions:\n      contents: write\n      issues: write\n"), /more than one write/],

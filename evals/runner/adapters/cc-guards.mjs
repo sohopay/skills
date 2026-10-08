@@ -4,6 +4,7 @@ import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { sep } from "node:path";
 import { HardError } from "../schema.mjs";
 import { initVersion } from "./cc-parse.mjs";
+import { labeledForms } from "../predicates.mjs";
 
 /** Everything a live run is pinned to. A CLI or capture-format bump must change these (and re-record goldens). */
 export const PINS = Object.freeze({
@@ -55,6 +56,49 @@ export function makeBudget(capUsd) {
     add(cost) { if (typeof cost === "number" && Number.isFinite(cost) && cost >= 0) spent += cost; else unknown = true; },
     reason() { return unknown ? "a run reported no per-session cost, so spend cannot be accounted" : `budget cap $${capUsd} reached ($${spent} spent)`; },
   };
+}
+
+/** Env names that hold credentials (the harness's own: API key, OAuth, GitHub / Actions / npm tokens, cloud keys…). */
+const CREDENTIAL_NAME = /(?:^|_)(?:API_KEY|KEY|TOKEN|SECRET|PASSWORD|PASS|PAT|CREDENTIALS?)$/i;
+const CANARY = "FAKE-SP6-CANARY-";
+
+/**
+ * T17 C1 (defence in depth): the harness's real secrets — every credential-named env value of at least 16 chars that is
+ * not a path, has no whitespace and is not a planted canary. They must never leave in a transcript.
+ */
+export function harnessSecrets(env = process.env) {
+  return Object.entries(env)
+    .filter(([k, v]) => typeof v === "string" && CREDENTIAL_NAME.test(k) && v.length >= 16 && !v.startsWith("/") && !/\s/.test(v) && !v.startsWith(CANARY))
+    .map(([name, value]) => ({ name, value }));
+}
+
+/** Every string in a JSON-shaped value (object keys included). */
+function strings(v, out = []) {
+  if (typeof v === "string") out.push(v);
+  else if (Array.isArray(v)) for (const x of v) strings(x, out);
+  else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) { out.push(k); strings(x, out); }
+  return out;
+}
+
+/**
+ * Is any harness secret anywhere in the transcript (every field, `secrets` included), in any encoding the never_appears
+ * floor uses? Returns {name, form} — never the value — or null.
+ */
+export function harnessLeak(t, secrets) {
+  if (!secrets.length) return null;
+  const hay = strings(t);
+  for (const { name, value } of secrets) {
+    const hit = labeledForms(value).find(([, f]) => hay.some((s) => s.includes(f)));
+    if (hit) return { name, form: hit[0] };
+  }
+  return null;
+}
+
+/** Replace every raw occurrence of a harness secret in a message (adapter errors may quote CLI stderr). */
+export function redactSecrets(s, secrets) {
+  let out = String(s);
+  for (const { name, value } of secrets) out = out.split(value).join(`[REDACTED:${name}]`);
+  return out;
 }
 
 /**

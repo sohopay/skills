@@ -12,21 +12,30 @@ const DEFAULT_EVALS_ROOT = resolve(HERE, "..");
 const DEFAULT_SKILLS_ROOT = resolve(HERE, "..", "..", "plugins", "sohopay", "skills");
 const DEFAULT_SUITES = { onboard: "sohopay-onboard", x402: "sohopay-x402" };
 
+const BOOLEAN_FLAGS = { "--require-audit": "requireAudit", "--live": "live" };
+
 /** Parse `--flag value` pairs; unknown flags are rejected so typos never silently widen a run. */
-function parseArgs(argv) {
-  const out = { adapter: "replay", suite: "all", case: undefined, samples: undefined, requireAudit: false };
+export function parseArgs(argv) {
+  const out = { adapter: "replay", suite: "all", case: undefined, samples: undefined, requireAudit: false, live: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    // Boolean flag: a live sample without a process-tree file audit is an adapter error (CI live mode; also SP6_AUDIT=require).
-    if (a === "--require-audit") { out.requireAudit = true; continue; }
+    // Boolean flags: --require-audit (a live sample without a process-tree file audit is an adapter error; also
+    // SP6_AUDIT=require) and --live (T17 M4: the explicit opt-in to spawn the real, paid CLI).
+    if (Object.hasOwn(BOOLEAN_FLAGS, a)) { out[BOOLEAN_FLAGS[a]] = true; continue; }
     const key = a.startsWith("--") ? a.slice(2) : null;
-    if (!key || !(key in out) || key === "requireAudit") throw new HardError(`unknown argument: ${a}`);
+    if (!key || !Object.hasOwn(out, key) || Object.values(BOOLEAN_FLAGS).includes(key)) throw new HardError(`unknown argument: ${a}`);
     const v = argv[++i];
     if (v === undefined) throw new HardError(`missing value for ${a}`);
     out[key] = v;
   }
   if (!["replay", "claude-code"].includes(out.adapter)) throw new HardError(`unknown adapter: ${out.adapter}`);
+  if (out.live && out.adapter !== "claude-code") throw new HardError("--live applies only to --adapter claude-code");
   return out;
+}
+
+/** T17 M4: the env a parsed run adds for its duration — SP6_LIVE=1 only for an explicit `--adapter claude-code --live`. */
+export function liveEnv(args) {
+  return args.adapter === "claude-code" && args.live === true ? { SP6_LIVE: "1" } : {};
 }
 
 /** Resolve requested suite names to dirs; only suites with an assertions.json exist (absent ones are skipped for "all"). */
@@ -96,8 +105,16 @@ export async function main(argv, opts = {}) {
   } else {
     // Loaded lazily: the live adapter must never be reachable from the static import graph.
     const live = await import("./adapters/claude-code.mjs");
-    // opts.liveSampleRunner: a JS-only injection for tests of the sample loop; the CLI below never passes one.
-    cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit, ...(opts.liveSampleRunner ? { runSample: opts.liveSampleRunner } : {}) });
+    // M4: SP6_LIVE=1 (the adapter's permission to spawn a real CLI) only for --live, only for this call, then restored.
+    const added = liveEnv(args);
+    const prior = Object.fromEntries(Object.keys(added).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, added);
+    try {
+      // opts.liveSampleRunner: a JS-only injection for tests of the sample loop; the CLI below never passes one.
+      cases = await live.runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilter: args.case, samples: args.samples && Number(args.samples), requireAudit: args.requireAudit, ...(opts.liveSampleRunner ? { runSample: opts.liveSampleRunner } : {}) });
+    } finally {
+      for (const [k, v] of Object.entries(prior)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+    }
   }
   const failed = cases.filter((c) => !c.pass).length;
   const report = {

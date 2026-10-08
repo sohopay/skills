@@ -9,7 +9,7 @@ import { closureFiles, skillHash } from '../evals/runner/hashes.mjs';
 import { validateTranscript } from '../evals/runner/schema.mjs';
 import { goldenAuditError } from '../evals/runner/golden.mjs';
 import { validateWaivers } from '../evals/runner/waivers.mjs';
-import { liveWorkflowErrors } from '../evals/runner/live-workflow-check.mjs';
+import { livePinError, liveWorkflowErrors } from '../evals/runner/live-workflow-check.mjs';
 import {
   HOSTED_BASE,
   HOSTED_SKILL_DIRS,
@@ -608,13 +608,18 @@ function checkSp6Invariants() {
  * INV-sp6-live-workflow: the opt-in live workflow keeps its safety properties (no pull_request_target, fork refusal in
  * a secret-free first job, per-PR concurrency, permissions {} + least privilege, environment only on the run job,
  * SHA-pinned actions, sandbox + audit required, label gate, no push to develop/main). Same checker as the runner test.
+ * First layer: the workflow's sha256 must equal the committed pin evals/live-workflow.sha256 (CODEOWNERS covers both).
  */
 function checkSp6LiveWorkflow() {
   const f = join(ROOT, '.github/workflows/evals-live.yml');
   if (!existsSync(f)) { fail('INV-sp6-live-workflow: .github/workflows/evals-live.yml missing'); return; }
-  const errs = liveWorkflowErrors(readFileSync(f, 'utf8'));
+  const text = readFileSync(f, 'utf8');
+  const pinFile = join(ROOT, 'evals/live-workflow.sha256');
+  const pinErr = livePinError(text, existsSync(pinFile) ? readFileSync(pinFile, 'utf8') : '');
+  if (pinErr) fail(pinErr);
+  const errs = liveWorkflowErrors(text);
   for (const e of errs) fail(`INV-sp6-live-workflow: ${e}`);
-  if (!errs.length) pass('INV-sp6-live-workflow');
+  if (!pinErr && !errs.length) pass('INV-sp6-live-workflow (hash pin + rules)');
 }
 checkSp6Invariants();
 

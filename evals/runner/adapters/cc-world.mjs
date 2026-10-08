@@ -138,7 +138,18 @@ export function installHookWrapper(base) {
   return dest;
 }
 
-/** The agent's environment: nothing inherited except identity, locale, harness auth and a DEFAULT TMPDIR. */
+/**
+ * T17 C1: the ONLY variables the CLI (and so every tool subprocess: the agent's Bash, hooks) may carry. An allowlist,
+ * never a denylist: no credential of any kind — API key, OAuth token, GitHub / Actions / npm tokens — is inherited.
+ * Claude Code scrubs credentials from subprocess env only under GITHUB_ACTIONS or CLAUDE_CODE_SUBPROCESS_ENV_SCRUB (the
+ * latter forces permission mode `default`, breaking dontAsk), so the key reaches the CLI through `apiKeyHelper` instead.
+ */
+export const AGENT_ENV_KEYS = Object.freeze([
+  "HOME", "PATH", "SHELL", "TERM", "LANG", "USER", "LOGNAME", "TMPDIR",
+  "DISABLE_AUTOUPDATER", "DISABLE_TELEMETRY", "DISABLE_ERROR_REPORTING", "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "ENABLE_TOOL_SEARCH",
+]);
+
+/** The agent's environment: identity, locale and a DEFAULT TMPDIR only (AGENT_ENV_KEYS); never a credential. */
 export function agentEnv({ home, binDir }, parent = process.env) {
   const env = {
     HOME: home, PATH: `${binDir}:/usr/bin:/bin:/usr/sbin:/sbin`, SHELL: "/bin/bash", TERM: "dumb",
@@ -147,8 +158,7 @@ export function agentEnv({ home, binDir }, parent = process.env) {
     ENABLE_TOOL_SEARCH: "false",
   };
   if (parent.TMPDIR && DEFAULT_TMPDIR_RE.test(parent.TMPDIR)) env.TMPDIR = parent.TMPDIR;
-  for (const k of ["ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"]) if (parent[k]) env[k] = parent[k];
-  return env;
+  return Object.fromEntries(Object.entries(env).filter(([k]) => AGENT_ENV_KEYS.includes(k)));
 }
 
 /** Spellings of a /tmp path on this platform (macOS /tmp is a link to /private/tmp). */
@@ -216,13 +226,19 @@ export function signerPolicy({ home, confine, since }) {
 }
 
 /** Claude Code settings for the run (passed with --settings from the run root; never written into HOME). */
-export function runSettings({ runRoot, home, hookWrapper, node, confine }) {
+export function runSettings({ runRoot, home, hookWrapper, node, confine, apiKeyFile }) {
+  // C1: the CLI reads its key through apiKeyHelper (run by the CLI process itself, outside the agent's sandbox) from a
+  // 0600 file in the run root, which the agent can neither read nor write — never through the env its tools inherit.
+  // The helper command is not a hook command, so it is not recorded in the session JSONL (N1).
+  if (apiKeyFile !== undefined && !apiKeyFile.startsWith(`${runRoot}/`)) throw new HardError(`claude-code adapter: the API key file must sit inside the run root (got ${apiKeyFile})`);
+  const keyHelper = apiKeyFile === undefined ? {} : { apiKeyHelper: `/bin/cat ${shq(apiKeyFile)}` };
   // N1: no run-root path and no token in any hook command (Claude Code records the command in the session JSONL).
   const hook = (event) => [{ matcher: "*", hooks: [{ type: "command", command: `${shq(node)} ${shq(hookWrapper)} ${shq(event)}`, timeout: 60 }] }];
   const scoped = (p) => [`Read(/${p}/**)`, `Edit(/${p}/**)`];
   const darwinSpellings = (p) => (p.startsWith("/private/var/") ? [p, p.slice("/private".length)] : [p]);
   const fs = sandboxFilesystem(confine, home);
   return {
+    ...keyHelper,
     permissions: {
       defaultMode: "dontAsk",
       // File tools only inside the workspace HOME (= cwd) and the sandbox TMPDIR (signer.md's scratch dir).
@@ -293,6 +309,8 @@ export function assertHermetic(w) {
   if (JSON.stringify(signers) !== JSON.stringify(expected)) throw new HardError(`hermetic: sohopay-signer on PATH ${JSON.stringify(signers)} != ${JSON.stringify(expected)}`);
   if (w.env.TMPDIR !== undefined && !DEFAULT_TMPDIR_RE.test(w.env.TMPDIR)) throw new HardError(`hermetic: TMPDIR ${w.env.TMPDIR} is not a platform default`);
   if (w.env.CLAUDE_CODE_TMPDIR !== undefined || w.env.CLAUDE_TMPDIR !== undefined) throw new HardError("hermetic: the sandbox TMPDIR must be the CLI default (CLAUDE_CODE_TMPDIR / CLAUDE_TMPDIR set)");
+  const extra = Object.keys(w.env).filter((k) => !AGENT_ENV_KEYS.includes(k));
+  if (extra.length) throw new HardError(`hermetic: the agent env carries non-allowlisted variables ${JSON.stringify(extra)} (C1: never a credential)`);
   const sbx = sandboxTmpDir(w.env);
   const probe = { type: "tool_call", name: "Bash", args_text: "mktemp -d" };
   if (sbx !== c.sandboxTmp || !trustedMktempDir(probe, { name: "Bash", ok: true, stdout: `${sbx}/tmp.AbCd1234Ef\n` }, () => false)) {
@@ -364,6 +382,6 @@ export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox,
 }
 
 /** Write the run's settings file. */
-export function writeSettings(w) {
-  writeFileSync(w.paths.settings, JSON.stringify(runSettings({ runRoot: w.runRoot, home: w.home, hookWrapper: w.hookWrapper, node: process.execPath, confine: w.confine }), null, 2), { mode: 0o600 });
+export function writeSettings(w, { apiKeyFile } = {}) {
+  writeFileSync(w.paths.settings, JSON.stringify(runSettings({ runRoot: w.runRoot, home: w.home, hookWrapper: w.hookWrapper, node: process.execPath, confine: w.confine, apiKeyFile }), null, 2), { mode: 0o600 });
 }

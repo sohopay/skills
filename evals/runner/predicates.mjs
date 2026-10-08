@@ -40,6 +40,8 @@ function labeledForms(v) {
   return out.filter(([, f]) => f.length > 0 && !seen.has(f) && seen.add(f));
 }
 export function encodedForms(v) { return labeledForms(v).map(([, f]) => f); }
+/** [label, form] pairs — the same encodings never_appears checks (the live adapter's harness-secret guard reuses them). */
+export { labeledForms };
 
 const FIELDS = ["text", "args_text", "stdout", "stderr", "path", "content"];
 /** Model-visible strings; non-string fields are JSON-stringified so they cannot hide a leak. */

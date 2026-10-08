@@ -7,3 +7,4 @@
 /evals/*/assertions.json  @sohopay/maintainers
 /evals/floor-waivers.json @sohopay/maintainers
 /.github/workflows/evals-live.yml @sohopay/maintainers
+/evals/live-workflow.sha256 @sohopay/maintainers

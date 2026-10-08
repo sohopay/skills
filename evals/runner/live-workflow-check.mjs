@@ -1,12 +1,30 @@
 // INV-sp6-live-workflow: static safety properties of .github/workflows/evals-live.yml, checked without a YAML library
 // (zero-dep repo) by a minimal indentation-aware reader. The workflow cannot run locally, so these are the guard:
 // shared by evals-live-workflow.test.mjs (runner glob) and scripts/validate-skills.mjs (npm run validate).
+// Two layers (T17 fix round 1, I2): a HASH PIN (evals/live-workflow.sha256 — any edit must update it, and CODEOWNERS
+// reviews both files), then semantic rules as a tripwire. A line reader has false negatives; the pin has none.
+// Neither is a security boundary on its own: `pull_request` runs the PR's own copy of the workflow.
+import { createHash } from "node:crypto";
 import { PINS } from "./adapters/cc-guards.mjs";
 
 export const LIVE_LABEL = "run-live-evals";
 export const CONCURRENCY_PREFIX = "sp6-live-${{ github.event.pull_request.number || github.ref }}";
 export const NOOP_CLAUSE = "${{ github.event_name == 'pull_request' && (!contains(github.event.pull_request.labels.*.name, 'run-live-evals') || (github.event.action == 'labeled' && github.event.label.name != 'run-live-evals')) && format('-noop-{0}', github.run_id) || '' }}";
-export const FORK_EXPR ="github.event.pull_request.head.repo.full_name != github.repository";
+export const FORK_EXPR = "github.event.pull_request.head.repo.full_name != github.repository";
+/** The fork step's exact `if:` — anything else (`false && …`, `always() || …`) weakens the refusal. */
+export const FORK_STEP_IF = `github.event_name == 'pull_request' && ${FORK_EXPR}`;
+/** The regen job's golden-path allowlist line (only transcripts of the two live suites, never adversarials). */
+export const REGEN_PATH_GUARD = `[[ "$p" =~ ^evals/sohopay-(onboard|x402)/transcripts/[a-z0-9][a-z0-9-]*\\.json$ ]]`;
+export const PUSH_LINE = 'git push origin "HEAD:refs/heads/${HEAD_REF}"';
+const ARTIFACT_PATHS = ["${{ runner.temp }}/sp6-live", "${{ runner.temp }}/sp6-verdict"];
+
+/** null when `text` hashes to the committed pin (sha256sum format: `<hex>  <path>`), else the INV failure. */
+export function livePinError(text, pinText) {
+  const want = /^([0-9a-f]{64})\b/.exec(String(pinText ?? "").trim())?.[1];
+  if (!want) return "INV-sp6-live-workflow: evals/live-workflow.sha256 holds no sha256 pin";
+  const got = createHash("sha256").update(text).digest("hex");
+  return got === want ? null : `INV-sp6-live-workflow: .github/workflows/evals-live.yml sha256 ${got} != pinned ${want} (evals/live-workflow.sha256): update the pin in the same change — CODEOWNERS reviews both`;
+}
 
 /** Drop full-line comments and trailing ` # ...` comments (outside quotes, roughly); keep line numbers. */
 export function stripComments(text) {
@@ -37,6 +55,23 @@ export function blocks(lines, indent) {
   return out;
 }
 const get = (bs, key) => bs.find((b) => b.key === key);
+const blockText = (b) => (b ? `${b.value}\n${b.body.join("\n")}` : "");
+
+/** The steps of a job: [{id, name, if, run, text, keys}] (`run` = the script body, or undefined for a `uses:` step). */
+export function stepsOf(job) {
+  const st = get(job.keys, "steps");
+  if (!st) return [];
+  const items = [];
+  for (const l of st.body) {
+    if (/^ {6}- /.test(l)) items.push([l.replace(/^ {6}- /, "        ")]);
+    else if (items.length) items.at(-1).push(l);
+  }
+  return items.map((lines) => {
+    const keys = blocks(lines, 8);
+    const run = get(keys, "run");
+    return { keys, text: lines.join("\n"), id: get(keys, "id")?.value, name: get(keys, "name")?.value, if: get(keys, "if") ? blockText(get(keys, "if")).trim() : undefined, run: run ? blockText(run) : undefined };
+  });
+}
 
 /** Parse the workflow into {top, on, jobs:[{id, keys, text}]}; raw comment-free text kept for content checks. */
 export function readWorkflow(text) {
@@ -113,7 +148,7 @@ export function liveWorkflowErrors(text) {
     if (!/SP6_AUDIT:\s*require/.test(runJob.text) && !/--require-audit/.test(runJob.text)) no(`job ${runJob.id} must require the file audit (SP6_AUDIT: require / --require-audit)`);
     const bases = [...runJob.text.matchAll(/SP6_RUN_ROOT_BASE:[ \t]*([^\n]+)/g)].map((m) => m[1].trim());
     if (!bases.length || bases.some((b) => !/^\$\{\{\s*runner\.temp\s*\}\}\/[\w-]+$/.test(b))) no(`job ${runJob.id} must put every SP6_RUN_ROOT_BASE under runner.temp (got ${JSON.stringify(bases)})`);
-    if (!/node evals\/runner\/run\.mjs "\$\{args\[@\]\}"|node evals\/runner\/run\.mjs --adapter claude-code/.test(runJob.text) || !/--adapter claude-code --suite all --samples/.test(runJob.text)) no(`job ${runJob.id} must run run.mjs --adapter claude-code --suite all --samples K`);
+    if (!/node evals\/runner\/run\.mjs "\$\{args\[@\]\}"/.test(runJob.text) || !/--adapter claude-code --live --suite all --samples/.test(runJob.text)) no(`job ${runJob.id} must run run.mjs --adapter claude-code --live --suite all --samples K (M4: --live is the only spawn switch)`);
     if (!/apt-get install[^\n]*bubblewrap[^\n]*strace|apt-get install[^\n]*strace[^\n]*bubblewrap/.test(runJob.text)) no(`job ${runJob.id} must install bubblewrap and strace`);
     const cli = /CLAUDE_CODE_VERSION:\s*"([^"]+)"/.exec(runJob.text)?.[1];
     if (cli !== PINS.CLI_VERSION) no(`CLAUDE_CODE_VERSION ${cli} != PINS.CLI_VERSION ${PINS.CLI_VERSION}`);
@@ -135,5 +170,79 @@ export function liveWorkflowErrors(text) {
   for (const m of clean.matchAll(/git push[^\n]*/g)) if (!/HEAD:refs\/heads\/\$\{HEAD_REF\}"?$/.test(m[0].trim())) no(`unexpected push: ${m[0].trim()}`);
   if (/git push/.test(clean) && !/develop\|main\)/.test(clean)) no("the pushing job must refuse develop|main head refs");
   if (/Co-Authored-By|Generated with/i.test(clean)) no("no attribution trailer in workflow commits");
+
+  injectionAndScopeRules({ top, jobs, gate, runJob, clean }, no);
+  if (runJob) runJobRules(runJob, no);
+  writeJobRules(jobs, no);
   return errs;
+}
+
+/** I2 (review): script injection, flow-style permissions, secrets scope, the fork / label gate's exact form. */
+function injectionAndScopeRules({ top, jobs, gate, runJob, clean }, no) {
+  for (const j of jobs) {
+    for (const s of stepsOf(j)) if (s.run !== undefined && /\$\{\{/.test(s.run)) no(`job ${j.id} step ${s.id ?? s.name ?? "?"}: \${{ }} expression inside a run: body (script injection) — pass it through env:`);
+    const perms = get(j.keys, "permissions");
+    if (perms && perms.value.startsWith("{") && perms.value.replace(/\s/g, "") !== "{}") no(`job ${j.id}: flow-style permissions ${perms.value} (only {} is allowed inline)`);
+    if (/secrets\./.test(blockText(get(j.keys, "env")))) no(`job ${j.id}: secrets in job-level env (they reach every step, including the PR-code test step)`);
+  }
+  const topPerms = get(top, "permissions");
+  if (topPerms && topPerms.value.startsWith("{") && topPerms.value.replace(/\s/g, "") !== "{}") no(`top-level flow-style permissions ${topPerms.value}`);
+  if (/secrets\./.test(blockText(get(top, "env")))) no("secrets in workflow-level env");
+  if (/secrets:\s*inherit/.test(clean)) no("secrets: inherit is forbidden (it hands every secret to a called workflow)");
+  if (runJob) {
+    const keyed = stepsOf(runJob).filter((s) => /ANTHROPIC_API_KEY/.test(s.text)).map((s) => s.id);
+    if (JSON.stringify(keyed) !== JSON.stringify(["run", "egress"])) no(`ANTHROPIC_API_KEY outside the run / egress steps (in ${JSON.stringify(keyed)})`);
+  }
+  const gateIf = blockText(get(gate.keys, "if"));
+  if (/\bfalse\b|\btrue\s*\|\||\|\|\s*true\b|always\(\)/.test(gateIf)) no(`gate job ${gate.id} if: is short-circuited (false / true || / always())`);
+  const fork = stepsOf(gate).find((s) => s.if === FORK_STEP_IF);
+  if (!fork || !/(^|\n)\s*exit 1\b/.test(fork.run ?? "")) no(`the gate's fork step must be exactly \`if: ${FORK_STEP_IF}\` with an exit 1 in that step`);
+}
+
+/** C1 / I1 / M2 / M4 on the environment job: spec reporter, --live, live-step timeout, egress before every upload. */
+function runJobRules(runJob, no) {
+  const steps = stepsOf(runJob);
+  if (!/node --test --test-reporter=spec /.test(runJob.text)) no(`job ${runJob.id}: the pre-flight tests must force --test-reporter=spec (Node 22 prints TAP when piped)`);
+  const checkout = steps.find((s) => /actions\/checkout@/.test(s.text));
+  if (!checkout || !/persist-credentials:\s*false/.test(checkout.text)) no(`job ${runJob.id}: the live checkout must set persist-credentials: false`);
+  if (checkout && /\btoken:/.test(checkout.text)) no(`job ${runJob.id}: the live checkout must carry no token:`);
+  const run = steps.find((s) => s.id === "run");
+  const stepT = Number(/timeout-minutes:\s*(\d+)/.exec(run?.text ?? "")?.[1]);
+  const jobT = Number(get(runJob.keys, "timeout-minutes")?.value);
+  if (!(stepT > 0 && jobT > 0 && stepT <= jobT - 15)) no(`job ${runJob.id}: the live step needs its own step timeout at least 15 min below the job's (got step ${stepT}, job ${jobT})`);
+  const verdict = steps.find((s) => s.id === "verdict");
+  if (!verdict || verdict.if !== "${{ always() }}") no(`job ${runJob.id}: the verdict step must run if: \${{ always() }} (M2)`);
+  const ids = steps.map((s) => s.id ?? s.name);
+  const egress = steps.find((s) => s.id === "egress");
+  const uploads = steps.filter((s) => /actions\/upload-artifact@/.test(s.text));
+  if (!egress || egress.if !== "${{ always() }}" || !/grep -rqF -e "\$ANTHROPIC_API_KEY"/.test(egress.run ?? "") || !/rm -rf "\$\{dirs\[@\]\}"/.test(egress.run ?? "")) no(`job ${runJob.id}: an always() egress scan step (id egress) must grep for the key and quarantine on a hit`);
+  else if (!(ids.indexOf("verdict") < ids.indexOf("egress") && uploads.every((u) => steps.indexOf(u) > steps.indexOf(egress)))) no(`job ${runJob.id}: the egress scan must run after the verdict and before every upload`);
+  for (const u of uploads) {
+    if (!/steps\.egress\.outcome == 'success'/.test(u.if ?? "")) no(`job ${runJob.id}: upload "${u.name}" must be gated on a clean egress scan`);
+    const path = /\n\s*path:[ \t]*([^\n]+)/.exec(u.text)?.[1].trim();
+    if (!ARTIFACT_PATHS.includes(path)) no(`job ${runJob.id}: artifact path ${path} is not one of ${ARTIFACT_PATHS.join(", ")}`);
+  }
+}
+
+/** The write-token jobs: issues (no checkout, per-id errors) and regen (git only, exact push, path guard, same-repo). */
+function writeJobRules(jobs, no) {
+  for (const j of jobs) {
+    const grants = Object.fromEntries(blocks(get(j.keys, "permissions")?.body ?? [], 6).map((b) => [b.key, b.value]));
+    const ifText = blockText(get(j.keys, "if"));
+    if (Object.values(grants).includes("write") && !/needs\.gate\.result == 'success'/.test(ifText)) no(`job ${j.id} holds a write token but its if: lacks needs.gate.result == 'success' (M5)`);
+    if (grants.issues === "write") {
+      if (/actions\/checkout@/.test(j.text)) no(`job ${j.id} (issues: write) must not check out the repository`);
+      if (stepsOf(j).some((s) => /\bset -[a-z]*e/.test(s.run ?? ""))) no(`job ${j.id}: set -e in the issue loop (one gh failure would skip the remaining case ids)`);
+    }
+    if (grants.contents === "write") {
+      if (!j.text.includes(REGEN_PATH_GUARD)) no(`job ${j.id}: the regen path guard ${REGEN_PATH_GUARD} is missing`);
+      if (!ifText.includes("github.event.pull_request.head.repo.full_name == github.repository")) no(`job ${j.id}: its if: must re-check same-repo`);
+      if (stepsOf(j).some((s) => /\b(?:npm|npx|node|yarn|pnpm|make|bash \S+\.sh)\b/.test(s.run ?? ""))) no(`job ${j.id} (contents: write) runs PR code — it may run git only`);
+      for (const m of j.text.matchAll(/git push[^\n]*/g)) {
+        const line = m[0].trim();
+        if (/--force|\s-f\b|\s\+|"\+/.test(line)) no(`job ${j.id}: force push forbidden (${line})`);
+        else if (line !== PUSH_LINE) no(`job ${j.id}: unexpected push ${line} (only ${PUSH_LINE})`);
+      }
+    }
+  }
 }

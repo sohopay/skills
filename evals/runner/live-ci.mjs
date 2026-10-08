@@ -87,9 +87,16 @@ export async function liveVerdict(report, { evalsRoot, skillsRoot, liveDir, suit
   const adapterErrors = rows.filter((r) => r.hardError).map((r) => ({ caseId: r.caseId, sample: r.sample, hardError: escapeFinding(r.hardError) }));
   for (const [caseId, rs] of byCase) {
     const { suite, class: cls } = idx.get(caseId);
-    const graded = rs.filter((r) => !r.pass && !r.hardError && (r.findings ?? []).length > 0);
-    if (cls === "safety" && graded.length) {
-      safety.push({ caseId, suite, samples: graded.map((r) => ({ sample: r.sample, findings: r.findings.slice(0, MAX_FINDINGS_PER_SAMPLE).map((f) => ({ predicate: escapeFinding(f.predicate), message: escapeFinding(f.message) })) })) });
+    // M1: a safety sample that failed graded (findings) OR ended in an adapter error (the agent may have tripped a
+    // fail-closed guard) counts; a `not run: …` row (budget, audit refusal) is not the agent's doing.
+    const failing = rs.filter((r) => !r.pass && (r.hardError ? !String(r.hardError).startsWith("not run:") : (r.findings ?? []).length > 0)).sort((a, b) => a.sample - b.sample);
+    if (cls === "safety" && failing.length) {
+      safety.push({
+        caseId, suite,
+        samples: failing.map((r) => (r.hardError
+          ? { sample: r.sample, kind: "adapter-error", findings: [{ predicate: "adapter-error", message: escapeFinding(r.hardError) }] }
+          : { sample: r.sample, kind: "graded", findings: r.findings.slice(0, MAX_FINDINGS_PER_SAMPLE).map((f) => ({ predicate: escapeFinding(f.predicate), message: escapeFinding(f.message) })) })),
+      });
     }
     if (!allowRegen) continue;
     const sampleSet = new Set(rs.map((r) => r.sample));
@@ -103,22 +110,37 @@ export async function liveVerdict(report, { evalsRoot, skillsRoot, liveDir, suit
   return { safety, regen, skipped, adapterErrors };
 }
 
-/** Markdown body for the case's `sp6-live-regression` issue (or the comment updating it). Findings only. */
+/** M3: issue / comment bodies stay well under GitHub's 65,536-char limit. */
+export const MAX_ISSUE_BODY = 50_000;
+const KIND_LABEL = { graded: "graded", "adapter-error": "adapter error" };
+
+/** Markdown body for the case's `sp6-live-regression` issue (or the comment updating it). Findings only, capped. */
 export function issueBody(entry, { runUrl, ref, sha }) {
-  const lines = [
+  const head = [
     `<!-- sp6-live-regression:${entry.caseId} -->`,
     `**SP6 live regression:** safety case \`${entry.caseId}\` (suite \`${entry.suite}\`) failed in ${entry.samples.length} sample(s) of a live run.`,
     "",
     `- Run: ${runUrl}`,
     `- Ref: \`${escapeFinding(ref)}\` @ \`${escapeFinding(sha)}\``,
     "",
-    "| Sample | Findings |",
-    "| --- | --- |",
-    ...entry.samples.map((s) => `| ${s.sample} | ${s.findings.map((f) => `\`${f.predicate}\`: \`${f.message}\``).join("<br>") || "(none)"} |`),
-    "",
-    "Findings only: transcripts stay in the run's short-retention artifact (they carry only FAKE-SP6-CANARY values).",
-  ];
-  return `${lines.join("\n")}\n`;
+    "| Sample | Kind | Findings |",
+    "| --- | --- | --- |",
+  ].join("\n");
+  const foot = "\n\nFindings only: transcripts stay in the run's short-retention artifact (they carry only FAKE-SP6-CANARY values).\n";
+  const note = (n) => `\n| … | … | ${n} more sample row(s) truncated: body capped at ${MAX_ISSUE_BODY} chars, see the run |`;
+  let body = head;
+  for (const [k, s] of entry.samples.entries()) {
+    const row = `\n| ${s.sample} | ${KIND_LABEL[s.kind] ?? "graded"} | ${s.findings.map((f) => `\`${f.predicate}\`: \`${f.message}\``).join("<br>") || "(none)"} |`;
+    const rest = entry.samples.length - k;
+    if (body.length + row.length + note(rest).length + foot.length > MAX_ISSUE_BODY) {
+      // Even a single row can be too long: cut it at the cap, then say so.
+      const room = MAX_ISSUE_BODY - body.length - note(rest).length - foot.length - 20;
+      if (room > 200) body += `${row.slice(0, room)}… |`;
+      return `${body}${note(room > 200 ? rest - 1 : rest)}${foot}`;
+    }
+    body += row;
+  }
+  return `${body}${foot}`;
 }
 
 /** Write the verdict directory the workflow's issue / regen jobs consume; returns GITHUB_OUTPUT lines. */

@@ -8,7 +8,7 @@
 // adapter error (HardError), never a graded sample. Spend comes from the CLI's own per-session cost.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { HardError, label, validateTranscript } from "../schema.mjs";
 import { grade } from "../grader.mjs";
@@ -22,7 +22,7 @@ import { assemble } from "./cc-assemble.mjs";
 import { assertHermetic, createWorld, writeSettings } from "./cc-world.mjs";
 import { parseStrace, probeAudit, straceArgv } from "./cc-audit.mjs";
 import { buildPrompt } from "./cc-prompts.mjs";
-import { checkInit, DENIED_TOOLS, makeBudget, persistedReader, PINS } from "./cc-guards.mjs";
+import { checkInit, DENIED_TOOLS, harnessLeak, harnessSecrets, makeBudget, persistedReader, PINS, redactSecrets } from "./cc-guards.mjs";
 import { captureErrors, checkHooksApplied, startHookRelay } from "./cc-relay.mjs";
 import { sweepWorkspace } from "./cc-sweep.mjs";
 import { childTraceSupport } from "../../mock/lib/signer-sandbox.mjs";
@@ -73,6 +73,24 @@ export function resolveClaude(pathValue = process.env.PATH ?? "") {
   const [bin] = findOnPath("claude", pathValue);
   if (!bin) throw new HardError("claude-code adapter: no `claude` on PATH");
   return bin;
+}
+
+/** Marks a test stub `claude` (in its first bytes). Only a marked stub may be spawned without SP6_LIVE=1. */
+export const TEST_STUB_MARKER = "SP6-TEST-STUB-CLAUDE";
+
+/**
+ * T17 M4: structural guard against an accidental paid session. A real `claude` is spawned only when SP6_LIVE=1 — which
+ * run.mjs sets only for `--adapter claude-code --live` (the live workflow passes it; tests never do). Without it, only
+ * a `claude` carrying TEST_STUB_MARKER in its first 512 bytes may be executed (the stub E2E tests).
+ */
+export function assertSpawnAllowed(bin, env = process.env) {
+  if (env.SP6_LIVE === "1") return;
+  let head = "";
+  try {
+    const fd = openSync(bin, "r");
+    try { const buf = Buffer.alloc(512); head = buf.subarray(0, readSync(fd, buf, 0, 512, 0)).toString("latin1"); } finally { closeSync(fd); }
+  } catch { /* unreadable → not a marked stub */ }
+  if (!head.includes(TEST_STUB_MARKER)) throw new HardError(`claude-code adapter: refusing to spawn ${bin}: it is not a marked test stub and SP6_LIVE=1 is not set (a live run is run.mjs --adapter claude-code --live)`);
 }
 
 /** Refuse anything but the pinned exact CLI version. */
@@ -189,6 +207,10 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
       sensitive_paths: { ...w.run.transcript.sensitive_paths },
     },
   });
+  // T17 C1 (defence in depth): a harness secret anywhere in the capture, in any never_appears encoding, quarantines the
+  // sample — an adapter error, so runSuites never saves the transcript (no artifact, no golden candidate).
+  const leak = harnessLeak(t, harnessSecrets(process.env));
+  if (leak) throw new HardError(`claude-code adapter: harness secret ${leak.name} found in the capture (form: ${leak.form}); transcript quarantined (not saved)`);
   const v = validateTranscript(t);
   if (!v.ok) throw new HardError(`claude-code adapter: invalid capture for ${ref.caseId}: ${v.errors.join("; ")}`);
   const auditErr = opts.requireAudit ? signerAuditError(t.meta) : null;
@@ -208,6 +230,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
 export async function run(ref, opts) {
   const seams = opts.testSeams;
   if (seams !== undefined && (typeof seams !== "object" || seams === null || Object.keys(seams).some((k) => k !== "signerSandbox"))) throw new HardError("claude-code adapter: unknown test seam");
+  assertSpawnAllowed(opts.claudeBin); // M4: before anything is built or spawned
   const audit = opts.audit ?? probeAudit();
   const w = await createWorld({ suiteDir: ref.suiteDir, caseId: ref.caseId, skillsRoot: opts.skillsRoot, signerSandbox: seams?.signerSandbox, ...(opts.signerCallTimeoutMs !== undefined ? { signerCallTimeoutMs: opts.signerCallTimeoutMs } : {}) });
   let relay = null;
@@ -219,7 +242,14 @@ export async function run(ref, opts) {
     const sessionId = randomUUID();
     registryFile = join(w.base, "relays", `${sessionId}.json`);
     relay = await startHookRelay(w, keyCtx, { registryFile });
-    writeSettings(w);
+    // C1: the harness key goes 0600 into the agent-denied run root, read by the CLI's apiKeyHelper; never into its env.
+    // The run root (and the file) is removed by w.cleanup().
+    let apiKeyFile;
+    if (process.env.ANTHROPIC_API_KEY) {
+      apiKeyFile = join(w.runRoot, "api-key");
+      writeFileSync(apiKeyFile, process.env.ANTHROPIC_API_KEY, { mode: 0o600 });
+    }
+    writeSettings(w, { apiKeyFile });
     assertHermetic(w);
     const args = claudeArgv({ prompt: buildPrompt(ref.suiteDir, ref.caseId, w), sessionId, settings: w.paths.settings, mcpConfig: w.paths.mcp, budgetLeftUsd: opts.budgetLeftUsd });
     const [argv0, ...argv] = audit.audit === "available" ? [...straceArgv(w.paths.audit, { killOnExit: audit.killOnExit }), opts.claudeBin, ...args] : [opts.claudeBin, ...args];
@@ -232,6 +262,8 @@ export async function run(ref, opts) {
       // The CLI ran, so it may have spent: carry the cost it reported (or none → the budget treats it as unknown). An
       // unexpected exception while reading the capture is still this sample's adapter error, never a runSuites crash.
       const he = e instanceof HardError ? e : new HardError(`claude-code adapter: capture failed: ${e?.message ?? e}`);
+      // C1: an adapter error may quote CLI stderr; it reaches the report and (M1) an issue, so harness secrets are cut.
+      he.message = redactSecrets(he.message, harnessSecrets(process.env));
       throw Object.assign(he, { spawned: true, costUsd: typeof result?.total_cost_usd === "number" ? result.total_cost_usd : null });
     }
   } finally {
@@ -263,6 +295,7 @@ export async function runSuites({ dirs, evalsRoot, skillsRoot, waivers, caseFilt
   const k = samples ?? PINS.DEFAULT_SAMPLES;
   if (!Number.isInteger(k) || k < 1 || k > 20) throw new HardError(`claude-code adapter: --samples must be an integer 1..20, got ${samples}`);
   const claudeBin = resolveClaude();
+  assertSpawnAllowed(claudeBin); // M4: even `claude --version` is a spawn
   const cliVersion = checkCliVersion(claudeBin);
   const budget = makeBudget(process.env.SP6_LIVE_BUDGET_USD ? Number(process.env.SP6_LIVE_BUDGET_USD) : PINS.BUDGET_USD);
   const timeoutMs = process.env.SP6_LIVE_RUN_TIMEOUT_MS ? Number(process.env.SP6_LIVE_RUN_TIMEOUT_MS) : PINS.RUN_TIMEOUT_MS;

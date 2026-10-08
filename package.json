@@ -10,7 +10,7 @@
     "build": "npm run generate:hosted && npm run generate:llms-full",
     "eval": "node evals/runner/run.mjs --adapter replay --suite all",
     "eval:replay": "node evals/runner/run.mjs --adapter replay",
-    "eval:live": "node evals/runner/run.mjs --adapter claude-code"
+    "eval:live": "node evals/runner/run.mjs --adapter claude-code --live"
   },
   "engines": {
     "node": ">=22"
