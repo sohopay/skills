@@ -244,7 +244,7 @@ Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two 
 - No local signer is installed (`$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
 
   ```text
-  npm i -g @sohopay/agent-signer@0.3.0
+  npm i -g @sohopay/agent-signer@0.3.1
   ```
 
   The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably.

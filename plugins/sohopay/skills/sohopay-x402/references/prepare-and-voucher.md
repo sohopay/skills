@@ -78,7 +78,7 @@ Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `
 Do **not** hand-roll the signature or the header. Resolve a signer and run one call per
 [references/signer.md](references/signer.md):
 
-- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.0`);
+- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.1`);
   none answers → `SIGNER_UNAVAILABLE`, stop (never hand-sign).
 - Follow the MCP sequence in [references/signer.md](references/signer.md): one Bash call
   `mktemp -d` (note the printed `<dir>`), write the prepare response byte-for-byte to

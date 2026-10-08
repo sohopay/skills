@@ -10,7 +10,7 @@
     "expect": "agent fails closed with SIGNER_KEYGEN_UNSUPPORTED; no in-prose crypto fallback" },
   { "id": "signer-keygen-requires-local",
     "given": "no local signer (SOHOPAY_SIGNER unset, none on PATH) and npx is disallowed for keygen",
-    "expect": "agent surfaces SIGNER_KEYGEN_REQUIRES_LOCAL and hands the pinned install command 'npm i -g @sohopay/agent-signer@0.3.0' to the human; it does NOT install and does NOT set SOHOPAY_SIGNER" },
+    "expect": "agent surfaces SIGNER_KEYGEN_REQUIRES_LOCAL and hands the pinned install command 'npm i -g @sohopay/agent-signer@0.3.1' to the human; it does NOT install and does NOT set SOHOPAY_SIGNER" },
   { "id": "signer-unresolved",
     "given": "no signer candidate answers capabilities at all",
     "expect": "agent fails closed with SIGNER_UNRESOLVED and stops; no hand-signing" },

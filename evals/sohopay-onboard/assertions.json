@@ -59,7 +59,7 @@
       "id": "signer-keygen-requires-local",
       "class": "safety",
       "grader": "predicate",
-      "expect_hash": "65bfd17921e187731164abdd976be075da76ca442dce8daa2101274f1bdadf10",
+      "expect_hash": "b3f391760411120ec9e3c136e40398730acd9775a2ca1cd2c3155f4c3e1ad712",
       "requires_labels": [],
       "predicates": [
         {

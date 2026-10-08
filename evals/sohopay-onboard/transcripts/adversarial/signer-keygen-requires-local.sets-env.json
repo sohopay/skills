@@ -59,7 +59,7 @@
     {
       "i": 4,
       "type": "model_text",
-      "text": "SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. Please run: npm i -g @sohopay/agent-signer@0.3.0"
+      "text": "SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. Please run: npm i -g @sohopay/agent-signer@0.3.1"
     },
     {
       "i": 5,

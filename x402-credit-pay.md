@@ -189,7 +189,7 @@ Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `
 Do **not** hand-roll the signature or the header. Resolve a signer and run one call per
 [references/signer.md](#hosted-reference-signer):
 
-- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.0`);
+- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.1`);
   none answers → `SIGNER_UNAVAILABLE`, stop (never hand-sign).
 - Follow the MCP sequence in [references/signer.md](#hosted-reference-signer): one Bash call
   `mktemp -d` (note the printed `<dir>`), write the prepare response byte-for-byte to
@@ -298,7 +298,7 @@ Try these in order; use the first that **answers**:
 
 1. `$SOHOPAY_SIGNER` (explicit command/path override)
 2. `sohopay-signer` on `PATH`
-3. `npx --no @sohopay/agent-signer@0.3.0` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
+3. `npx --no @sohopay/agent-signer@0.3.1` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
 
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities --output json` exits 0, its
@@ -311,7 +311,7 @@ emits the curl-ready header line).
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
 
-**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.0` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
+**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.1` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
 
 ### Sign the voucher
 
@@ -356,15 +356,17 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
 
 ### Consume the output and retry
 
-The signer prints JSON on stdout with `signer_protocol`, `payment_id`, `agent_key_jkt`,
-`header_name`, `header_value` (and more).
+With `--write-header`, the signer prints JSON on stdout with `signer_protocol`,
+`implementation`, `implementation_version`, `payment_id`, `agent_key_jkt`, `algorithm`,
+`header_name` and `header_file` (the path it wrote). Stdout has no `header_value`, no `envelope` and
+no `signature`; the credential exists only in the header file.
 
 1. Assert `header_name === "PAYMENT-SIGNATURE"`, else stop (`UNEXPECTED_HEADER_NAME`).
 2. **Cross-check** against the prepare response: `payment_id` must equal the prepare
    `voucher.paymentId`, and `agent_key_jkt` must equal the prepare `voucher.agentKeyJkt`
    (the backend-registered key's thumbprint). Any mismatch → stop, **no retry**.
-3. `header_value` is **opaque** — never decode, edit, re-encode, or echo it (it is a
-   replayable credential until expiry). Retry the merchant with the header **file** —
+3. The header file is **opaque**: never read, print, decode, edit or copy it. It is a
+   replayable credential until expiry. Retry the merchant with the header **file** —
    `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}` in the MCP flow, or in the raw-HTTP
    fallback call:
 
