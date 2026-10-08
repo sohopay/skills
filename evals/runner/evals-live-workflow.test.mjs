@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PINS } from "./adapters/cc-guards.mjs";
-import { CONCURRENCY_PREFIX, FORK_EXPR, liveWorkflowErrors, readWorkflow } from "./live-workflow-check.mjs";
+import { CONCURRENCY_PREFIX, FORK_EXPR, livePinError, liveWorkflowErrors, readWorkflow, stepsOf } from "./live-workflow-check.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, "..", "..");
@@ -15,6 +15,7 @@ const YML = readFileSync(join(ROOT, ".github", "workflows", "evals-live.yml"), "
 const wf = readWorkflow(YML);
 const job = (id) => wf.jobs.find((j) => j.id === id);
 const key = (j, k) => j.keys.find((b) => b.key === k);
+const steps = (id) => stepsOf(job(id));
 
 test("INV-sp6-live-workflow: the committed evals-live.yml satisfies every ruling", () => {
   assert.deepEqual(liveWorkflowErrors(YML), []);
@@ -59,14 +60,63 @@ test("run job: sandbox required, audit required, runner-private run root, pinned
   assert.match(live, new RegExp(`CLAUDE_CODE_VERSION: "${PINS.CLI_VERSION.replace(/\./g, "\\.")}"`));
   assert.match(live, /npm install -g [^\n]*"@anthropic-ai\/claude-code@\$\{CLAUDE_CODE_VERSION\}"/);
   assert.match(live, /SP6_LIVE_BUDGET_USD: "10"/);
-  assert.match(live, /--adapter claude-code --suite all --samples "\$SAMPLES"/);
+  assert.match(live, /--adapter claude-code --live --suite all --samples "\$SAMPLES"/, "M4: the live spawn guard is opened only by an explicit --live");
   assert.equal(PINS.MODEL_ID, "claude-sonnet-5-5");
   assert.equal(PINS.MAX_TURNS, 20);
-  // The kernel/evidence tests must run (none skipped) before the live run, without the API key in reach.
-  const tests = live.indexOf("node --test evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs");
-  assert.ok(tests > 0 && tests < live.indexOf("node evals/runner/run.mjs"), "runner tests precede the live run");
+  // The kernel/evidence tests must run (none skipped) before the live run, without the API key in reach. I1: Node 22
+  // prints TAP (`# skipped N`) when piped unless the spec reporter is forced; the grep matches the spec summary line.
+  const tests = live.indexOf("node --test --test-reporter=spec evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs");
+  assert.ok(tests > 0 && tests < live.indexOf("node evals/runner/run.mjs"), "runner tests (spec reporter) precede the live run");
   assert.match(live, /grep -qx 'ℹ skipped 0'/);
-  assert.equal((live.match(/ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/g) ?? []).length, 1, "the key is exposed to one step only");
+  // C1: the key is exposed to exactly two steps — the live run and the egress scan that looks for it.
+  const keyed = steps("live").filter((s) => /ANTHROPIC_API_KEY: \$\{\{ secrets\.ANTHROPIC_API_KEY \}\}/.test(s.text)).map((s) => s.id);
+  assert.deepEqual(keyed, ["run", "egress"]);
+});
+
+test("C1 egress: a scan for the literal key (and its base64) runs after the verdict and before both uploads; uploads only on a clean scan", () => {
+  const ids = steps("live").map((s) => s.id ?? s.name);
+  const at = (x) => ids.indexOf(x);
+  assert.ok(at("verdict") < at("egress") && at("egress") < at("Upload transcripts and report") && at("egress") < at("Upload verdict"), ids.join(" → "));
+  const egress = steps("live").find((s) => s.id === "egress");
+  assert.match(egress.text, /if: \$\{\{ always\(\) \}\}/);
+  assert.match(egress.text, /grep -rqF -e "\$ANTHROPIC_API_KEY" -e "\$b64"/);
+  assert.match(egress.text, /rm -rf "\$\{dirs\[@\]\}"/, "a hit quarantines (deletes) the artifact dirs");
+  for (const name of ["Upload transcripts and report", "Upload verdict"]) {
+    assert.match(steps("live").find((s) => s.name === name).text, /always\(\) && steps\.egress\.outcome == 'success'/, name);
+  }
+  // Downstream jobs act only on a verdict that passed the scan.
+  assert.match(job("live").text, /safety_failures: \$\{\{ steps\.egress\.outcome == 'success' && steps\.verdict\.outputs\.safety_failures \|\| 'false' \}\}/);
+  assert.match(job("live").text, /regen_count: \$\{\{ steps\.egress\.outcome == 'success' && steps\.verdict\.outputs\.regen_count \|\| '0' \}\}/);
+});
+
+test("M2: the live step has its own timeout below the job's; verdict always runs, so spend never goes unreported", () => {
+  const jobT = Number(key(job("live"), "timeout-minutes").value);
+  const runStep = steps("live").find((s) => s.id === "run");
+  const stepT = Number(/timeout-minutes: (\d+)/.exec(runStep.text)?.[1]);
+  assert.ok(stepT > 0 && stepT < jobT - 15, `step ${stepT} < job ${jobT} - 15`);
+  assert.match(steps("live").find((s) => s.id === "verdict").text, /if: \$\{\{ always\(\) \}\}/);
+});
+
+test("M3 + M5: issues are filed per case id with per-id error handling (no set -e abort); both write jobs require gate success", () => {
+  const issues = job("issues").text;
+  assert.ok(!/set -e/.test(issues), "one gh failure must not stop the other case ids");
+  assert.match(issues, /failed=\$\(\(failed \+ 1\)\)/);
+  assert.match(issues, /exit "\$\(\( failed > 0 \)\)"/);
+  for (const id of ["issues", "regen"]) assert.match(`${key(job(id), "if").value}\n${key(job(id), "if").body.join("\n")}`, /needs\.gate\.result == 'success'/, id);
+});
+
+test("I2 hash pin: evals/live-workflow.sha256 pins the committed workflow; any edit must update it (CODEOWNERS covers both)", () => {
+  const pin = readFileSync(join(ROOT, "evals", "live-workflow.sha256"), "utf8");
+  assert.equal(livePinError(YML, pin), null);
+  assert.match(livePinError(YML.replace("timeout-minutes", "timeout-minutes "), pin), /INV-sp6-live-workflow: .*sha256 .* != pinned/);
+  assert.match(livePinError(YML, ""), /pin/);
+  const owners = readFileSync(join(ROOT, "CODEOWNERS"), "utf8");
+  assert.match(owners, /^\/\.github\/workflows\/evals-live\.yml\s+@sohopay\/maintainers$/m);
+  assert.match(owners, /^\/evals\/live-workflow\.sha256\s+@sohopay\/maintainers$/m);
+});
+
+test("I2: no `${{ }}` expression inside any run: body (script injection); every value reaches the shell through env", () => {
+  for (const j of wf.jobs) for (const s of steps(j.id)) if (s.run) assert.ok(!/\$\{\{/.test(s.run), `${j.id}/${s.id ?? s.name}`);
 });
 
 test("actions are SHA-pinned with a version comment; artifacts short-lived", () => {
@@ -120,6 +170,39 @@ const MUTATIONS = [
   ["budget drift", (y) => y.replace('SP6_LIVE_BUDGET_USD: "10"', 'SP6_LIVE_BUDGET_USD: "100"'), /SP6_LIVE_BUDGET_USD/],
   ["push to develop", (y) => y.replace('git push origin "HEAD:refs/heads/${HEAD_REF}"', "git push origin HEAD:develop"), /develop\/main|unexpected push/],
   ["long retention", (y) => y.replace("retention-days: 7", "retention-days: 90"), /retention/],
+  // ── I2 (review): mutations the first checker accepted ──
+  ["injection: PR title in a gate run body", (y) => y.replace('        run: |\n          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then', '        run: |\n          echo "${{ github.event.pull_request.title }}"\n          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then'), /expression inside a run: body/],
+  ["injection: label name in a gate run body", (y) => y.replace('        run: |\n          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then', '        run: |\n          echo "${{ github.event.label.name }}"\n          set -euo pipefail\n          if [ "$EVENT" = "pull_request" ]; then'), /expression inside a run: body/],
+  ["injection: PR body in an issues run body", (y) => y.replace("          shopt -s nullglob\n", "          shopt -s nullglob\n          echo \"${{ github.event.pull_request.body }}\"\n"), /expression inside a run: body/],
+  ["injection: head.ref in the regen push", (y) => y.replace('git push origin "HEAD:refs/heads/${HEAD_REF}"', 'git push origin "HEAD:refs/heads/${{ github.event.pull_request.head.ref }}"'), /expression inside a run: body/],
+  ["injection: dispatch input in a run body", (y) => y.replace('          if [ -n "$CASE" ]; then args+=(--case "$CASE"); fi', '          if [ -n "${{ inputs.case }}" ]; then args+=(--case "$CASE"); fi'), /expression inside a run: body/],
+  ["flow-style permissions with write", (y) => y.replace("    permissions:\n      issues: write\n", "    permissions: { issues: write, contents: write, actions: write }\n"), /flow-style permissions/],
+  ["key in workflow-level env", (y) => y.replace("\njobs:\n", "\nenv:\n  ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n\njobs:\n"), /workflow-level env|ANTHROPIC_API_KEY outside/],
+  ["key in the live job env (reaches the PR-code test step)", (y) => y.replace('      SP6_REQUIRE_SANDBOX: "1"\n', '      SP6_REQUIRE_SANDBOX: "1"\n      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n'), /job-level env|ANTHROPIC_API_KEY outside/],
+  ["key in the test step env", (y) => y.replace("          SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run-tests\n", "          SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run-tests\n          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}\n"), /ANTHROPIC_API_KEY outside/],
+  ["fork step disabled with false &&", (y) => y.replace("if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository", "if: false && github.event.pull_request.head.repo.full_name != github.repository"), /fork step/],
+  ["fork step no longer exits 1", (y) => y.replace('live evals run only on same-repo branches"\n          exit 1', 'live evals run only on same-repo branches"\n          exit 0'), /fork step/],
+  ["gate if short-circuited with true ||", (y) => y.replace("      github.event_name == 'workflow_dispatch' ||", "      true || github.event_name == 'workflow_dispatch' ||"), /gate .*if/],
+  ["gate if short-circuited with always()", (y) => y.replace("      github.event_name == 'workflow_dispatch' ||", "      always() || github.event_name == 'workflow_dispatch' ||"), /gate .*if/],
+  ["force push (--force)", (y) => y.replace('git push origin "HEAD', 'git push --force origin "HEAD'), /force|unexpected push/],
+  ["force push (-f)", (y) => y.replace('git push origin "HEAD', 'git push -f origin "HEAD'), /force|unexpected push/],
+  ["force push (+refspec)", (y) => y.replace('"HEAD:refs/heads/${HEAD_REF}"', '"+HEAD:refs/heads/${HEAD_REF}"'), /force|unexpected push/],
+  ["live checkout persists credentials", (y) => y.replace("          persist-credentials: false\n", ""), /persist-credentials/],
+  ["live checkout gets a token", (y) => y.replace("          persist-credentials: false\n", "          persist-credentials: false\n          token: ${{ secrets.GITHUB_TOKEN }}\n"), /live checkout/],
+  ["regen path regex removed", (y) => y.split("\n").filter((l) => !l.includes('[[ "$p" =~ ^evals/sohopay-')).join("\n"), /regen path/],
+  ["regen same-repo clause removed", (y) => y.replace("          github.event.pull_request.head.repo.full_name == github.repository &&\n", ""), /same-repo/],
+  ["regen runs PR code", (y) => y.replace("          git add -- \"${paths[@]}\"\n", "          npm ci && node scripts/validate-skills.mjs\n          git add -- \"${paths[@]}\"\n"), /runs PR code/],
+  ["issues job checks out the repo", (y) => y.replace("    permissions:\n      issues: write\n    steps:\n", "    permissions:\n      issues: write\n    steps:\n      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0\n"), /must not check out/],
+  ["secrets: inherit", (y) => y.replace("  regen:\n", "  extra:\n    needs: gate\n    uses: ./.github/workflows/validate.yml\n    secrets: inherit\n\n  regen:\n"), /secrets: inherit/],
+  ["artifact path widened to all of runner.temp", (y) => y.replace("          path: ${{ runner.temp }}/sp6-live\n", "          path: ${{ runner.temp }}\n"), /artifact path/],
+  // ── fix round 1 (C1, I1, M2–M5) ──
+  ["I1: spec reporter dropped", (y) => y.replace("node --test --test-reporter=spec ", "node --test "), /test-reporter=spec/],
+  ["M4: --live dropped", (y) => y.replace("--adapter claude-code --live --suite", "--adapter claude-code --suite"), /--live/],
+  ["C1: egress scan removed", (y) => y.replace(/      - name: Egress scan[\s\S]*?(?=      # Transcripts carry)/, ""), /egress/],
+  ["C1: transcript upload not gated on the scan", (y) => y.replace("if: ${{ always() && steps.egress.outcome == 'success' }}\n        uses: actions/upload-artifact", "if: ${{ always() }}\n        uses: actions/upload-artifact"), /egress/],
+  ["M2: no live-step timeout", (y) => y.replace("        timeout-minutes: 300\n", ""), /step timeout/],
+  ["M5: issues without gate success", (y) => y.replace("${{ !cancelled() && needs.gate.result == 'success' && needs.live.outputs.safety_failures", "${{ !cancelled() && needs.live.outputs.safety_failures"), /needs\.gate\.result/],
+  ["M3: set -e in the issues loop", (y) => y.replace("          set -uo pipefail\n          gh label create", "          set -euo pipefail\n          gh label create"), /set -e/],
 ];
 for (const [name, mutate, expected] of MUTATIONS) {
   test(`teeth: ${name} is reported`, () => {

@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillHash } from "./hashes.mjs";
-import { escapeFinding, issueBody, liveVerdict, writeVerdict } from "./live-ci.mjs";
+import { escapeFinding, issueBody, liveVerdict, MAX_ISSUE_BODY, writeVerdict } from "./live-ci.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, "__fixtures__", "runnable");
@@ -57,7 +57,7 @@ test("a graded failure in ANY sample of a safety case → one issue per case id 
   const body = issueBody(v.safety[0], CTX);
   assert.match(body, /<!-- sp6-live-regression:leak-case -->/);
   assert.match(body, /https:\/\/github\.com\/sohopay\/skills\/actions\/runs\/1/);
-  assert.match(body, /\| 3 \| `absent`: `secret_read at event 4` \|/);
+  assert.match(body, /\| 3 \| graded \| `absent`: `secret_read at event 4` \|/);
   assert.match(body, /feat\/x/);
   assert.match(body, /abc123/);
 });
@@ -79,15 +79,31 @@ test("findings are neutralised for markdown: no code-span breakout, no table bre
   assert.ok(out.length <= 503, String(out.length));
 });
 
-test("an adapter error (hardError) is not a safety regression but blocks regen; so does a budget not-run sample", async () => {
+test("M1: a SAFETY case whose sample ended in an adapter error gets a regression issue too, labelled as an adapter error; it blocks regen", async () => {
   const w = world();
   const adapterErr = report([...[0, 1, 2, 3].map((s) => row(s)), row(4, { pass: false, hardError: "capture gap: x" })]);
   const v = await liveVerdict(adapterErr, { ...w, samples: 5, allowRegen: true });
-  assert.deepEqual(v.safety, []);
+  assert.deepEqual(v.safety.map((s) => [s.caseId, s.samples.map((x) => [x.sample, x.kind])]), [["leak-case", [[4, "adapter-error"]]]]);
   assert.deepEqual(v.adapterErrors.map((e) => [e.caseId, e.sample]), [["leak-case", 4]]);
   assert.deepEqual(v.regen, []);
+  assert.match(issueBody(v.safety[0], CTX), /\| 4 \| adapter error \| `adapter-error`: `capture gap: x` \|/);
+});
+
+test("a budget / audit refusal (`not run: …`) is not the agent's failure: no issue, but it blocks regen", async () => {
+  const w = world();
   const budget = report([...[0, 1, 2].map((s) => row(s)), ...[3, 4].map((s) => row(s, { pass: false, hardError: "not run: budget cap $10 reached", costUsd: null }))]);
-  assert.deepEqual((await liveVerdict(budget, { ...w, samples: 5, allowRegen: true })).regen, []);
+  const v = await liveVerdict(budget, { ...w, samples: 5, allowRegen: true });
+  assert.deepEqual(v.safety, []);
+  assert.deepEqual(v.regen, []);
+});
+
+test("M3: an issue body is capped well under GitHub's 65,536 chars, with a truncation note; marker and run link survive", () => {
+  const big = { caseId: "leak-case", suite: "runnable", samples: Array.from({ length: 5 }, (_, s) => ({ sample: s, kind: "graded", findings: Array.from({ length: 20 }, () => ({ predicate: "p".repeat(500), message: "m".repeat(500) })) })) };
+  const body = issueBody(big, CTX);
+  assert.ok(MAX_ISSUE_BODY <= 60_000 && body.length <= MAX_ISSUE_BODY, String(body.length));
+  assert.match(body, /truncated/);
+  assert.match(body, /^<!-- sp6-live-regression:leak-case -->/);
+  assert.match(body, /actions\/runs\/1/);
 });
 
 test("regen refuses: fewer than k samples, regen not allowed (fork / dispatch), an unaudited sample 0, a stale skill hash", async () => {

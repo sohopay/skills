@@ -14,7 +14,7 @@
 // Usage: node stub-claude.mjs <script.mjs> <recordDir> [<version>] [nohooks] -- <claude args...>
 //   recordDir gets argv.jsonl; <version> overrides --version; `nohooks` behaves like a CLI that ignored --settings.
 import { spawnSync } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -39,9 +39,16 @@ for (let i = 0; i < argv.length; i++) {
 }
 const { ANTHROPIC_API_KEY: _k, CLAUDE_CODE_OAUTH_TOKEN: _t, ...recordedEnv } = process.env;
 const runRootListing = readdirSync(dirname(opts.settings)).sort();
-appendFileSync(join(recordDir, "argv.jsonl"), `${JSON.stringify({ argv, cwd: process.cwd(), env: recordedEnv, runRootListing })}\n`);
-
 const settings = JSON.parse(readFileSync(opts.settings, "utf8"));
+// Like Claude Code: the credential comes from `apiKeyHelper`, run by the CLI process itself (outside any sandbox). Only
+// its sha256 is recorded, plus the NAMES of the CLI's own env vars (the Bash tool below inherits exactly this env).
+let apiKeyHelperSha256 = null;
+if (settings.apiKeyHelper) {
+  const r = spawnSync("/bin/sh", ["-c", settings.apiKeyHelper], { encoding: "utf8" });
+  if (r.status === 0) apiKeyHelperSha256 = createHash("sha256").update(r.stdout.trim()).digest("hex");
+}
+appendFileSync(join(recordDir, "argv.jsonl"), `${JSON.stringify({ argv, cwd: process.cwd(), env: recordedEnv, envKeys: Object.keys(process.env).sort(), apiKeyHelperSha256, runRootListing })}\n`);
+
 const mcpServer = JSON.parse(readFileSync(opts["mcp-config"], "utf8")).mcpServers.sohopay;
 const mcpUrl = mcpServer.url;
 const mcpHeaders = mcpServer.headers ?? {}; // Claude Code sends the mcp-config headers (the bearer) on every request

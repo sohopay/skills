@@ -20,6 +20,8 @@ const B64_RUN_RE = /(?<![A-Za-z0-9_+/=-])[A-Za-z0-9_+/-]+={0,2}(?![A-Za-z0-9_+/=
 const HEX64_RE = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64}(?![0-9A-Fa-f])/g;
 const KEY_LENGTHS = new Set([43, 44, 86, 87, 88]);
 const PEM_RE = /-----BEGIN [A-Z0-9 ]*-----/;
+// Anthropic API keys (`sk-ant-api03-…`, `sk-ant-admin01-…`): flagged in any context, whatever field holds them.
+const ANT_KEY_RE = /sk-ant-[A-Za-z0-9_-]{20,}/;
 const CANARY = "FAKE-SP6-CANARY-";
 const SECRETISH_RE = /secret|private|^d$|key_material/i;
 
@@ -105,6 +107,7 @@ function walk(v, ancestors, parent, bad) {
 export function scanText(text, { json = false } = {}) {
   const bad = [];
   if (PEM_RE.test(text)) bad.push("PEM block");
+  for (const _ of text.matchAll(new RegExp(ANT_KEY_RE.source, "g"))) bad.push("Anthropic API key (sk-ant-…)");
   const doc = json ? tryJson(text) : undefined;
   if (doc !== undefined) walk(doc, [], null, bad);
   else scanFlat(text, [], bad);
@@ -148,6 +151,24 @@ test("scanner: public fields pass only in their public form (N2)", () => {
 
 const committed = () => execFileSync("git", ["ls-files", "evals"], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
 const scanFile = (f) => scanText(readFileSync(join(ROOT, f), "utf8"), { json: f.endsWith(".json") });
+
+// T17 C1: an Anthropic API key (`sk-ant-…`, ~108 chars) is not caught by the length-based rule above. Assembled at
+// runtime so this file carries none.
+const ANT = ["sk", "ant", "api03", "Lp3Wq8Zx1Cv6Bn9Mk2Jh7Gf4Ds0Ae5Ry8Tu3Io6Pl1Kj9Hg4Fd2Sa7Qw0Ez5Xc3Vb8Nm"].join("-");
+
+test("C1: the scanner flags Anthropic API keys (sk-ant-…) anywhere — bare, in JSON, in env-dump text — and leaves short mentions alone", () => {
+  assert.ok(scanText(`ANTHROPIC_API_KEY=${ANT}`).some((f) => /Anthropic API key/.test(f)));
+  assert.ok(scanText(JSON.stringify({ events: [{ stdout: `x ${ANT} y` }] }), { json: true }).some((f) => /Anthropic API key/.test(f)));
+  assert.ok(scanText(JSON.stringify({ jkt: ANT }), { json: true }).some((f) => /Anthropic API key/.test(f)), "a public field name does not excuse it");
+  assert.deepEqual(scanText("keys look like sk-ant-api03-…; never commit one"), []);
+  assert.ok(!scanText(`k=${ANT}`).join(" ").includes(ANT.slice(14, 30)), "findings never echo the key");
+});
+
+test("C1: no committed file ANYWHERE in the repo carries an Anthropic API key", () => {
+  const all = execFileSync("git", ["ls-files"], { cwd: ROOT, encoding: "utf8" }).split("\n").filter(Boolean);
+  const hits = all.filter((f) => { try { return ANT_KEY_RE.test(readFileSync(join(ROOT, f), "utf8")); } catch { return false; } });
+  assert.deepEqual(hits, []);
+});
 
 test("I1/N1: no committed file under evals/ carries real-looking key material", () => {
   const files = committed();

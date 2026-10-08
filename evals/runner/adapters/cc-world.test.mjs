@@ -13,7 +13,7 @@ import { HardError } from "../schema.mjs";
 import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
-import { agentEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxFilesystem, sandboxTmpDir, signerPolicy, writeSettings } from "./cc-world.mjs";
+import { AGENT_ENV_KEYS, agentEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxFilesystem, sandboxTmpDir, signerPolicy, writeSettings } from "./cc-world.mjs";
 
 const SKILLS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "plugins", "sohopay", "skills");
 const EVAL_WORDS = /\bmock\b|\bsp6\b|canary|\beval(?:s|uation)?\b|grader|adversarial/i;
@@ -109,10 +109,32 @@ test("I2: the sandbox TMPDIR the CLI will export is <CLAUDE_CODE_TMPDIR or /tmp>
   assert.equal(sandboxTmpDir({ CLAUDE_TMPDIR: "/y" }, 7), "/y/claude-7");
   const env = agentEnv({ home: "/w/home", binDir: "/w/bin" }, { TMPDIR: "/var/folders/ab/cd/T/", ANTHROPIC_API_KEY: "k", SOHOPAY_SIGNER: "/evil", AWS_SECRET_ACCESS_KEY: "s", USER: "u", PATH: "/opt/x", CLAUDE_CODE_TMPDIR: "/q" });
   assert.equal(env.TMPDIR, "/var/folders/ab/cd/T/");
-  assert.equal(env.ANTHROPIC_API_KEY, "k");
+  assert.equal(env.ANTHROPIC_API_KEY, undefined, "C1: the CLI gets its key through apiKeyHelper, never through env");
   assert.equal(env.PATH, "/w/bin:/usr/bin:/bin:/usr/sbin:/sbin");
   assert.ok(!("SOHOPAY_SIGNER" in env) && !("AWS_SECRET_ACCESS_KEY" in env) && !("CLAUDE_CODE_TMPDIR" in env));
   assert.equal(agentEnv({ home: "/h", binDir: "/b" }, { TMPDIR: "/private/tmp/claude-501/sandbox" }).TMPDIR, undefined, "a non-default TMPDIR is dropped");
+});
+
+test("C1: agentEnv is an ALLOWLIST — no credential of any kind (API key, OAuth, GitHub / Actions / npm tokens, *_KEY / *_TOKEN / *_SECRET) reaches the CLI or its tool subprocesses", () => {
+  const parent = {
+    ANTHROPIC_API_KEY: "sk-ant-api03-x", CLAUDE_CODE_OAUTH_TOKEN: "o", ANTHROPIC_AUTH_TOKEN: "a", GITHUB_TOKEN: "g", GH_TOKEN: "h",
+    ACTIONS_RUNTIME_TOKEN: "r", ACTIONS_ID_TOKEN_REQUEST_TOKEN: "i", NODE_AUTH_TOKEN: "n", AWS_SECRET_ACCESS_KEY: "s", MY_SECRET: "m",
+    SOME_PASSWORD: "p", GITHUB_ACTIONS: "true", CI: "true", SP6_LIVE: "1", LANG: "C.UTF-8", USER: "runner", LOGNAME: "runner", TMPDIR: "/tmp",
+  };
+  const env = agentEnv({ home: "/w/home", binDir: "/w/bin" }, parent);
+  assert.deepEqual(Object.keys(env).sort(), [...AGENT_ENV_KEYS].sort().filter((k) => k in env));
+  for (const k of Object.keys(env)) assert.ok(AGENT_ENV_KEYS.includes(k), `${k} is not on the allowlist`);
+  assert.ok(!Object.keys(env).some((k) => /(KEY|TOKEN|SECRET|PASSWORD)$/.test(k)), Object.keys(env).join(","));
+  assert.ok(!Object.values(env).some((v) => ["sk-ant-api03-x", "o", "a", "g", "h", "r", "i", "n", "s", "m", "p"].includes(v)));
+});
+
+test("C1: the CLI's credential is an apiKeyHelper reading a 0600 key file in the agent-denied run root; no helper without a key", () => {
+  const confine = { operatorHome: "/u/op", repoRoot: "/u/op/repo", sandboxTmp: "/tmp/claude-501", denyRead: ["/u/op", "/r/run"], denyWrite: ["/r/run"], allowRead: [] };
+  const s = runSettings({ runRoot: "/r/run", home: "/w/h", hookWrapper: "/b/hook.mjs", node: "/n/node", confine, apiKeyFile: "/r/run/api-key" });
+  assert.equal(s.apiKeyHelper, "/bin/cat '/r/run/api-key'");
+  assert.ok(s.sandbox.filesystem.denyRead.includes("/r/run") && s.permissions.deny.includes("Read(//r/run/**)"), "the key file is unreachable from the agent");
+  assert.equal(runSettings({ runRoot: "/r/run", home: "/w/h", hookWrapper: "/b/hook.mjs", node: "/n/node", confine }).apiKeyHelper, undefined);
+  assert.throws(() => runSettings({ runRoot: "/r/run", home: "/w/h", hookWrapper: "/b/hook.mjs", node: "/n/node", confine, apiKeyFile: "/w/h/api-key" }), /inside the run root/);
 });
 
 test("I5/I6 settings: file tools confined to HOME + the sandbox TMPDIR; operator home, repo, run root, other claude temp dirs denied", () => {

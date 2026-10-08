@@ -4,13 +4,14 @@
 // writes the recorded-shape session JSONL + stream-json the adapter parses.
 import test, { after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { main } from "../run.mjs";
 import { HardError, label } from "../schema.mjs";
-import { claudeArgv, makeBudget, PINS, resolveClaude, run, runSuites } from "./claude-code.mjs";
+import { claudeArgv, makeBudget, PINS, resolveClaude, run, runSuites, TEST_STUB_MARKER } from "./claude-code.mjs";
 import { childTraceSupport, sandboxSupport } from "../../mock/lib/signer-sandbox.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,9 @@ after(() => {
 //    before EVERY test — so no test depends on a stub a previous test left behind, and a test that forgets
 //    stubOnPath reaches the guard (an adapter version error), never the operator's real CLI.
 const STUB_MARKER = "SP6-TEST-STUB-CLAUDE";
+// M4: SP6_LIVE=1 is the only thing that lets the adapter spawn a real (unmarked) `claude`; a test never has it, even if
+// the operator's shell exported it.
+delete process.env.SP6_LIVE;
 const stubScript = (body) => `#!/bin/sh\n# ${STUB_MARKER}\n${body}\n`;
 const GUARD_DIR = mkdtempSync(join(tmpdir(), "cc-stub-guard-"));
 ROOTS.push(GUARD_DIR);
@@ -328,6 +332,72 @@ test("R4-1 guard: a test that installs no stub resolves the marked GUARD claude,
   chmodSync(join(dir, "claude"), 0o755);
   process.env.PATH = `${dir}:${GUARD_DIR}:${savedEnv.PATH}`;
   assert.throws(() => assertStubClaude(), /R4-1 guard: resolved claude .* is not a test stub/);
+});
+
+/** A marked stub `claude` whose scripted model is `code` (an ES module source written into its record dir). */
+function stubWithCode(code) {
+  const dir = mkdtempSync(join(tmpdir(), "cc-stub-"));
+  ROOTS.push(dir);
+  writeFileSync(join(dir, "script.mjs"), code);
+  writeFileSync(join(dir, "claude"), stubScript(`exec '${process.execPath}' '${STUB}' '${join(dir, "script.mjs")}' '${dir}' -- "$@"`));
+  chmodSync(join(dir, "claude"), 0o755);
+  process.env.PATH = `${dir}:${GUARD_DIR}:${savedEnv.PATH}`;
+  assertStubClaude();
+  return dir;
+}
+// A test-only API key, assembled at runtime (committed-secrets.test.mjs flags committed `sk-ant-` runs).
+const FAKE_KEY = ["sk", "ant", "api03", "Hb4Rt8Lw1Xq6Zn3Vc9Kp2Ms7Jd5Fg0Ty4Ue8Io1Pa6Sd3Lk9Qw2Er7Zx5Cv0Bn8Mh4"].join("-");
+const withEnv = async (vars, fn) => {
+  const saved = Object.fromEntries(Object.keys(vars).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, vars);
+  try { return await fn(); } finally { for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; } }
+};
+
+test("[E2E] C1: the API key never reaches the agent — the CLI gets it from apiKeyHelper; the agent's Bash env (env, /proc/self/environ) has no credential", async () => {
+  const dir = stubWithCode(`export const costUsd = 0.01;
+export default async function (agent) {
+  agent.bash("env; cat /proc/self/environ 2>/dev/null | tr '\\\\0' '\\\\n'; true");
+  agent.say("Done.");
+}`);
+  const { transcript: t } = await withEnv({ ANTHROPIC_API_KEY: FAKE_KEY, GITHUB_TOKEN: "ghs_FakeHarnessToken0123456789" }, () => directRun("sohopay-x402", "key-opacity"));
+  const dump = t.events.find((e) => e.type === "tool_result" && /HOME=/.test(e.stdout ?? ""));
+  assert.ok(dump, "the env dump ran");
+  assert.ok(!/ANTHROPIC|CLAUDE_CODE_OAUTH|GITHUB_TOKEN|_TOKEN=|_KEY=|_SECRET=/.test(dump.stdout), dump.stdout);
+  assert.ok(!JSON.stringify(t).includes(FAKE_KEY.slice(12, 40)), "the key is nowhere in the transcript");
+  assert.ok(!Object.values(t.secrets).includes(FAKE_KEY), "never in transcript.secrets");
+  const [rec] = records(dir);
+  assert.equal(rec.apiKeyHelperSha256, createHash("sha256").update(FAKE_KEY).digest("hex"), "the CLI obtained exactly the harness key through apiKeyHelper");
+  assert.ok(!rec.envKeys.includes("ANTHROPIC_API_KEY") && !rec.envKeys.includes("GITHUB_TOKEN"), rec.envKeys.join(","));
+});
+
+test("[E2E] C1 egress: a harness secret in the capture (here base64 of a harness token) makes the sample an adapter error; the transcript is quarantined, never saved", async () => {
+  const token = "ghs_FakeHarnessToken0123456789AbCd";
+  stubWithCode(`export const costUsd = 0.02;
+export default async function (agent) { agent.bash("echo ${Buffer.concat([Buffer.from("x"), Buffer.from(token)]).toString("base64")}"); agent.say("Done."); }`);
+  await withEnv({ GH_TOKEN: token }, async () => {
+    await assert.rejects(directRun("sohopay-x402", "key-opacity"), (e) => e instanceof HardError && /harness secret GH_TOKEN .*quarantined/.test(e.message) && !e.message.includes(token.slice(4, 20)) && e.spawned === true && e.costUsd === 0.02);
+    const out = mkdtempSync(join(tmpdir(), "cc-stub-out-"));
+    ROOTS.push(out);
+    await withEnv({ SP6_LIVE_OUT_DIR: out }, async () => {
+      const { report } = await live("x402", "key-opacity", "1", [], { fake: true });
+      assert.match(report.cases[0].hardError, /quarantined/);
+      assert.equal(report.cases[0].transcriptPath, undefined);
+    });
+    assert.deepEqual(readdirSync(out), [], "nothing written to the artifact dir");
+  });
+});
+
+test("M4: without SP6_LIVE=1 the adapter refuses to spawn any `claude` that is not a marked test stub — via runSuites and via run()", async () => {
+  assert.equal(process.env.SP6_LIVE, undefined, "tests never set SP6_LIVE");
+  const dir = mkdtempSync(join(tmpdir(), "cc-stub-unmarked-"));
+  ROOTS.push(dir);
+  writeFileSync(join(dir, "claude"), `#!/bin/sh\ntouch '${join(dir, "INVOKED")}'\necho "${PINS.CLI_VERSION} (Claude Code)"\n`);
+  chmodSync(join(dir, "claude"), 0o755);
+  process.env.PATH = `${dir}:${GUARD_DIR}:${savedEnv.PATH}`;
+  await assert.rejects(live("onboard", "keygen-routes-to-signer"), (e) => e instanceof HardError && /refusing to spawn .* SP6_LIVE=1/.test(e.message));
+  await assert.rejects(directRun("sohopay-onboard", "keygen-routes-to-signer", { claudeBin: join(dir, "claude") }), (e) => e instanceof HardError && /refusing to spawn/.test(e.message));
+  assert.ok(!existsSync(join(dir, "INVOKED")), "the unmarked CLI was never executed");
+  assert.equal(TEST_STUB_MARKER, STUB_MARKER, "the adapter and the tests agree on the marker");
 });
 
 test("cleanup: every run root and agent workspace any sample used is gone (no temp dirs left behind)", () => {

@@ -4,6 +4,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HardError, validateTranscript } from "../schema.mjs";
 import { auditRefusal, checkInit, claudeArgv, makeBudget, PINS, signerAuditError, signerAuditStatus, signerHostErrors } from "./claude-code.mjs";
+import { harnessLeak, harnessSecrets } from "./cc-guards.mjs";
 
 const GOOD = () => ({
   type: "system", subtype: "init", cwd: "/w/home", session_id: "s",
@@ -110,4 +111,40 @@ test("R3-6: --require-audit / SP6_AUDIT=require also requires the signer child a
   assert.equal(signerAuditError({ signer_audit: "child-strace" }), null);
   assert.equal(signerAuditError({ signer_audit: "no-signer-exec" }), null);
   assert.match(signerAuditError({ signer_audit: "unavailable" }), /signer audit required/);
+});
+
+// C1 defence in depth: the harness's own real secrets (the API key above all) must never leave in a transcript.
+// Test-only key, assembled at runtime so no committed file carries an `sk-ant-` run (committed-secrets.test.mjs).
+const KEY = ["sk", "ant", "api03", "Qz7Lk2Pw9Xv4Nb6Tr1Hy8Jd3Fs5Gm0Ce2Ua7Io4Kp9Wq1Lz6Xn3Vb8Mt5Rd0Yh2Sg7Jf4"].join("-");
+const evt = (o) => ({ i: 0, type: "tool_result", call_i: 0, ok: true, ...o });
+const tr = (events, extra = {}) => ({ case_id: "c", suite: "s", meta: { adapter: "claude-code" }, secrets: { private_key: "FAKE-SP6-CANARY-PK-0001" }, sensitive_paths: {}, events, ...extra });
+
+test("C1: harnessSecrets — credential-named env values (>=16 chars, not paths, not canaries); never everything", () => {
+  const s = harnessSecrets({
+    ANTHROPIC_API_KEY: KEY, GITHUB_TOKEN: "ghs_AbCdEfGhIjKlMnOpQrStUv", SHORT_TOKEN: "abc", PATH_KEY: "/Users/op/a/very/long/path/key.pem",
+    FOO: "barbazquxquuxcorgegrault", CANARY_SECRET: "FAKE-SP6-CANARY-PK-00000001", HAS_SPACE_SECRET: "a b c d e f g h i j k",
+  });
+  assert.deepEqual(s.map((x) => x.name).sort(), ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]);
+});
+
+test("C1: harnessLeak finds a harness secret anywhere in a transcript, in every encoding the never_appears floor uses; reports the name + form only", () => {
+  const secrets = [{ name: "ANTHROPIC_API_KEY", value: KEY }];
+  const b64at1 = Buffer.concat([Buffer.from("x"), Buffer.from(KEY)]).toString("base64");
+  const cases = [
+    ["raw", tr([evt({ stdout: `ANTHROPIC_API_KEY=${KEY}\n` })])],
+    ["base64", tr([evt({ stdout: Buffer.from(KEY).toString("base64") })])],
+    ["embedded base64", tr([evt({ text: b64at1 })])],
+    ["hex", tr([evt({ stdout: Buffer.from(KEY).toString("hex") })])],
+    ["a 16-char window (truncated log)", tr([evt({ stdout: `…${KEY.slice(30, 50)}…` })])],
+    ["a non-model-visible field", tr([evt({ stdout: "ok" })], { meta: { adapter: "claude-code", note: KEY } })],
+    ["the secrets field", tr([evt({ stdout: "ok" })], { secrets: { private_key: KEY } })],
+  ];
+  for (const [name, t] of cases) {
+    const hit = harnessLeak(t, secrets);
+    assert.ok(hit, name);
+    assert.equal(hit.name, "ANTHROPIC_API_KEY");
+    assert.ok(!JSON.stringify(hit).includes(KEY.slice(10, 26)), `${name}: the report never echoes the secret`);
+  }
+  assert.equal(harnessLeak(tr([evt({ stdout: "nothing here" })]), secrets), null);
+  assert.equal(harnessLeak(tr([evt({ stdout: KEY })]), []), null, "no harness secrets → nothing to find");
 });
