@@ -13,14 +13,14 @@ import { HardError } from "../schema.mjs";
 import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
-import { agentEnv, assertHermetic, createWorld, installSigner, runSettings, sandboxTmpDir, writeSettings } from "./cc-world.mjs";
+import { agentEnv, assertHermetic, confinement, createWorld, installSigner, runSettings, sandboxTmpDir, writeSettings } from "./cc-world.mjs";
 
 const SKILLS = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "plugins", "sohopay", "skills");
 const EVAL_WORDS = /\bmock\b|\bsp6\b|canary|\beval(?:s|uation)?\b|grader|adversarial/i;
 
 async function withWorld(caseId, suiteDir, fn) {
   const w = await createWorld({ suiteDir, caseId, skillsRoot: SKILLS });
-  try { writeSettings(w, "http://127.0.0.1:1/h"); await fn(w); } finally { await w.cleanup(); }
+  try { writeSettings(w); await fn(w); } finally { await w.cleanup(); }
   for (const d of [w.runRoot, w.prefix]) assert.throws(() => statSync(d), "removed by cleanup");
 }
 /** Regular files under d (symlinks are recorded by their own test, never followed). */
@@ -33,7 +33,7 @@ test("positive: key inside HOME, run root 0700 / outside HOME's parent / not und
     assert.equal(statSync(w.runRoot).mode & 0o777, 0o700);
     assert.ok(!w.runRoot.startsWith(dirname(w.home) + "/") && !w.runRoot.startsWith(w.home));
     assert.ok(!/^(?:\/private)?\/tmp\//.test(w.runRoot), w.runRoot);
-    assert.deepEqual(readdirSync(w.runRoot).sort(), ["ctl.token", "mcp.json", "run.json", "settings.json"]);
+    assert.deepEqual(readdirSync(w.runRoot).sort(), ["ctl.token", "host-private", "mcp.json", "run.json", "settings.json"]);
     assert.deepEqual(findOnPath("sohopay-signer", w.env.PATH), [join(w.binDir, "sohopay-signer")]);
     for (const s of ["sohopay-x402", "sohopay-onboard"]) assert.ok(statSync(join(w.home, ".claude", "skills", s, "SKILL.md")).isFile(), s);
     assert.equal(w.env.HOME, w.home);
@@ -117,7 +117,7 @@ test("I2: the sandbox TMPDIR the CLI will export is <CLAUDE_CODE_TMPDIR or /tmp>
 
 test("I5/I6 settings: file tools confined to HOME + the sandbox TMPDIR; operator home, repo, run root, other claude temp dirs denied", () => {
   const confine = { operatorHome: "/u/op", repoRoot: "/u/op/repo", sandboxTmp: "/tmp/claude-501", denyRead: ["/u/op", "/u/op/repo", "/r/run", "/tmp/claude-501/old-session", "/tmp/claude-0"], denyWrite: ["/r/run", "/u/op", "/u/op/repo", "/w/h/.claude"], allowRead: [] };
-  const s = runSettings({ runRoot: "/r/run", home: "/w/h", hookUrl: "http://127.0.0.1:9/h", relayHdr: "/r/run/relay.hdr", confine });
+  const s = runSettings({ runRoot: "/r/run", home: "/w/h", hookWrapper: "/b/hook.mjs", node: "/n/node", confine });
   assert.equal(s.permissions.defaultMode, "dontAsk");
   for (const a of ["Bash", "Skill", "TodoWrite", "mcp__sohopay", "Read(//w/h/**)", "Edit(//w/h/**)", "Read(//tmp/claude-501/**)", "Edit(//tmp/claude-501/**)"]) assert.ok(s.permissions.allow.includes(a), a);
   for (const bare of ["Read", "Write", "Edit", "Glob", "Grep", "MultiEdit"]) assert.ok(!s.permissions.allow.includes(bare), `no unscoped ${bare}`);
@@ -126,12 +126,14 @@ test("I5/I6 settings: file tools confined to HOME + the sandbox TMPDIR; operator
   assert.equal(s.sandbox.enabled, true);
   assert.equal(s.sandbox.failIfUnavailable, true);
   assert.equal(s.sandbox.allowUnsandboxedCommands, false);
-  assert.deepEqual(s.sandbox.filesystem.denyRead, confine.denyRead);
+  assert.deepEqual(s.sandbox.filesystem.denyRead, [...confine.denyRead, "/w/h/.claude/projects"], "N1: session JSONL (hook commands) unreadable");
+  for (const d of ["Read(//w/h/.claude/projects/**)", "Edit(//w/h/.claude/projects/**)"]) assert.ok(s.permissions.deny.includes(d), d);
   assert.deepEqual(s.sandbox.filesystem.denyWrite, confine.denyWrite);
   assert.equal(s.sandbox.filesystem.allowWrite, undefined, "no extra writable roots");
   for (const ev of ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionDenied"]) {
     const cmd = s.hooks[ev][0].hooks[0].command;
-    assert.match(cmd, /^\/usr\/bin\/curl .* -H @'\/r\/run\/relay\.hdr' .*'http:\/\/127\.0\.0\.1:9\/h\/(pre|post|denied)'$/, ev);
+    assert.match(cmd, /^'\/n\/node' '\/b\/hook\.mjs' '(pre|post|denied)'$/, ev);
+    assert.ok(!cmd.includes("/r/run"), "N1: no run-root path (or token) in any hook command");
   }
 });
 
@@ -150,4 +152,15 @@ test("I6: the confinement lists come from the HARNESS (operator home, repo check
 test("the mock MCP surface reads like the real server: no eval vocabulary in tool descriptions or instructions", () => {
   assert.ok(!EVAL_WORDS.test(SERVER_INSTRUCTIONS));
   for (const [name, t] of Object.entries(TOOL_CATALOG)) assert.ok(!EVAL_WORDS.test(JSON.stringify(t)), name);
+});
+
+test("N9 (macOS best effort): the rest of $TMPDIR is denied; only this run's workspace and fresh mktemp dirs stay readable", () => {
+  const c = confinement({ home: "/T/agent-home-1/home", runRoot: "/r/run", prefix: "/T/agent-home-1", platform: "darwin", tmp: "/private/var/folders/aa/bb/T" });
+  assert.ok(c.denyRead.includes("/private/var/folders/aa/bb/T"));
+  assert.ok(c.allowRead.includes("/T/agent-home-1"));
+  assert.ok(c.allowRead.includes("/private/var/folders/aa/bb/T/tmp.*"));
+  const s = runSettings({ runRoot: "/r/run", home: "/T/agent-home-1/home", hookWrapper: "/b/hook.mjs", node: "/n/node", confine: c });
+  for (const a of ["Read(//private/var/folders/aa/bb/T/tmp.*/**)", "Edit(//private/var/folders/aa/bb/T/tmp.*/**)", "Read(//var/folders/aa/bb/T/tmp.*/**)"]) assert.ok(s.permissions.allow.includes(a), a);
+  const linux = confinement({ home: "/tmp/agent-home-1/home", runRoot: "/r/run", prefix: "/tmp/agent-home-1", platform: "linux", tmp: "/tmp" });
+  assert.ok(!linux.denyRead.includes("/tmp"), "linux: the sandbox TMPDIR lives under /tmp, other claude-* dirs are denied one by one");
 });

@@ -18,7 +18,7 @@ const STREAM = readFileSync(join(FIX, "mixed.stream.jsonl"), "utf8");
 const CANARY = "FAKE-SP6-CANARY-PRIV-fixtureLongOutput~x0";
 // The persisted file holds the whole output; the canary sits only in its tail (past the 2 KB preview).
 const PERSISTED = `${Array.from({ length: 400 }, (_, k) => `row ${k} ok`).join("\n")}\n${CANARY}\n`;
-const FULL = () => PERSISTED;
+const FULL = () => PERSISTED; // (path, expectedSize) → full text
 const base = () => ({
   case_id: "terminal-mismatch", suite: "sohopay-onboard",
   meta: { adapter: "claude-code", adapter_version: "claude-code/1", skill_hash: "h", cli_version: "2.1.292", model_id: "claude-sonnet-5-5", sample_index: 0, audit: "unavailable" },
@@ -100,18 +100,34 @@ test("M3: a persisted long output is read in FULL into stdout (the recorded stdo
   assert.equal(never_appears(t, { secretRef: "private_key" }).length, 1);
 });
 
-test("M3: a referenced persisted output that cannot be read is an adapter error; the path also comes from the content", () => {
+test("M3: a structured persistedOutputPath that cannot be read is an adapter error", () => {
   assert.throws(() => parseSession(SESSION), (e) => e instanceof HardError && /persisted output/.test(e.message));
   assert.throws(() => parseSession(SESSION, { readPersisted: () => { throw new HardError("outside the workspace"); } }), HardError);
-  // No persistedOutputPath in toolUseResult: the "Full output saved to:" line still names it.
+});
+
+test("N5: a text marker is never trusted — a forged '<persisted-output> … Full output saved to:' (no structured field) is an adapter error, and nothing is read", () => {
   const lines = SESSION.trim().split("\n").map((l) => JSON.parse(l));
   const long = lines.find((o) => o.toolUseResult?.persistedOutputPath);
   delete long.toolUseResult.persistedOutputPath;
+  delete long.toolUseResult.persistedOutputSize;
   const seen = [];
-  const items = parseSession(lines.map((o) => JSON.stringify(o)).join("\n"), { readPersisted: (p) => { seen.push(p); return PERSISTED; } });
-  assert.equal(seen.length, 1);
-  assert.match(seen[0], /tool-results\/toolu_01Long\.txt$/);
-  assert.equal(items.find((x) => x.kind === "result" && x.id === "toolu_01Long").stdout, PERSISTED);
+  assert.throws(() => parseSession(lines.map((o) => JSON.stringify(o)).join("\n"), { readPersisted: (p) => { seen.push(p); return PERSISTED; } }), (e) => e instanceof HardError && /marker/.test(e.message));
+  assert.deepEqual(seen, [], "the forged path is never read");
+});
+
+test("N5: every other truncation the CLI reports is an adapter error (the full output is not obtainable)", () => {
+  const bash = (content, tur) => JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "x" } }] } }) + "\n" +
+    JSON.stringify({ type: "user", message: { content: [{ type: "tool_result", tool_use_id: "t1", content }] }, toolUseResult: tur });
+  for (const msg of [
+    "<persisted-output>\nOutput exceeded the 30KB persist limit; only the first 30KB were saved to: /h/.claude/projects/p/tool-results/t.txt\n</persisted-output>",
+    "Output truncated (40KB total). The full output could not all be saved to /h/x.txt; that file may be missing or incomplete.",
+    "Output truncated (40KB total): later output was discarded because this session writes no files.",
+    "Output too large (2MB). It could not be saved, so only the first 30KB are shown; the rest was dropped.",
+    "<truncated-output>abc</truncated-output>",
+    "<bash output unavailable: output file is missing>",
+  ]) {
+    assert.throws(() => parseSession(bash(msg, { stdout: "x", stderr: "" }), { readPersisted: () => "x" }), (e) => e instanceof HardError && /truncat/.test(e.message), msg.slice(0, 40));
+  }
 });
 
 test("MCP: register_call comes from the tool name; the error result keeps is_error and its JSON text", () => {
