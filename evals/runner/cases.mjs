@@ -47,6 +47,9 @@ export function validateJoin(cases, assertions) {
         const attr = String(p.attr).split("=")[0];
         if (!LABELS[p.label].includes(attr)) errs.push(`id "${id}": ${p.name} attr "${attr}" not declared on label "${p.label}"`);
       }
+      // count fails closed on a bad op at grade time; catch it (and a bad n) here so `npm run validate` reports it.
+      if (p.name === "count" && p.op !== undefined && p.op !== ">=" && p.op !== "<=") errs.push(`id "${id}": count op "${p.op}" must be ">=" or "<="`);
+      if (p.name === "count" && p.n !== undefined && !(Number.isInteger(p.n) && p.n >= 0)) errs.push(`id "${id}": count n must be a non-negative integer, got ${JSON.stringify(p.n)}`);
       if (p.after !== undefined && !requires.includes(p.after)) errs.push(`id "${id}": ${p.name} anchor "${p.after}" must be in requires_labels`);
       if (p.name === "not_before" && p.b !== undefined && !requires.includes(p.b)) errs.push(`id "${id}": not_before anchor "${p.b}" must be in requires_labels`);
       if (p.name === "absent" && requires.includes(p.label)) errs.push(`id "${id}": absent target "${p.label}" must not be in requires_labels`);

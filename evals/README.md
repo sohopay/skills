@@ -32,3 +32,4 @@ The `sohopay-onboard` and `sohopay-x402` suites (`behavioral-cases.json` + `asse
   - It opens `sp6-live-regression` issues for safety failures.
   - From a full k=5 run whose samples all passed, it commits goldens onto the PR head branch. Each committed golden is audited, secrets-scanned and replays green.
   - A maintainer then re-runs Validate skills.
+- **Branch names:** the live adapter treats every long environment value as a harness secret (`harnessSecrets` in `runner/adapters/cc-guards.mjs`), including `GITHUB_HEAD_REF`. It quarantines any capture that contains a 16-character run of one. A branch named after a case (e.g. `…-no-credit-account-…` for `no-credit-account-stops`) therefore fails that case's own `claude-code-all-cases` test in CI with `harness secret GITHUB_HEAD_REF found in the capture`. Name branches by ticket and topic, and keep them clear of case ids and label names.
