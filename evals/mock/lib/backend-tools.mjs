@@ -25,6 +25,7 @@ export function initialState(run) {
     registerFailuresLeft: run.backend.register_fail_times ?? 0,
     firstTimeGate: Boolean(run.backend.first_time_merchant),
     noCreditAccount: Boolean(run.backend.no_credit_account),
+    onboarding: run.backend.onboarding ?? null,
     prepares: new Map(),
     calls: 0,
     orderRef: `0x${hex(32)}`,
@@ -44,6 +45,17 @@ export function merchantChallenge(state, resourceUrl) {
   };
 }
 
+/** A borrower step done on a SohoPay browser page (backend next-action.resolver.ts browserStep): no tool, no URL. */
+const browserStep = (action, reasonCode) => ({ action, actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code: reasonCode });
+
+/** The `onboarding` section and its next actions (SOHO-461), for a scenario that sets backend.onboarding. */
+function onboardingContext(o) {
+  return {
+    onboarding: { verification_tier: "WALLET_VERIFIED", profile_complete: o.profile_complete, credit_eligibility: { status: "NOT_EVALUATED", band: null }, spend_ready: false },
+    next_actions: o.profile_complete ? [] : [browserStep("COMPLETE_PROFILE", "PROFILE_COMPLETION_REQUIRED")],
+  };
+}
+
 function context(state) {
   return {
     borrower_id: state.id.borrower_id,
@@ -57,6 +69,7 @@ function context(state) {
     // SOHO-473: with no credit account the money sections are null (never zero) and own credit cannot pay.
     credit: state.noCreditAccount ? null : { status: "ACTIVE", available_credit: "20.00", currency: "USDC" },
     ...(state.noCreditAccount ? { repayment: null, purchasing_power: { can_pay: false } } : {}),
+    ...(state.onboarding ? onboardingContext(state.onboarding) : {}),
     next_action: !state.hostRegistered ? "register_borrower" : !state.key ? "register_agent_workload_key" : state.grant !== "ACTIVE" ? "authorize_agent" : "ready",
   };
 }
@@ -66,6 +79,8 @@ export const TOOLS = {
   get_context: (_a, s, _run, emit) => {
     // The null-credit read is itself the evidence: an agent that stops here, without trying prepare, has the anchor.
     if (s.noCreditAccount) emit("no_credit_account");
+    // The agent has now been shown the COMPLETE_PROFILE browser step (SOHO-475).
+    if (s.onboarding && !s.onboarding.profile_complete) emit("profile_step_listed");
     return context(s);
   },
   whoami: (_a, s) => ({ principal_id: s.id.borrower_id, borrower_id: s.id.borrower_id, scopes: ["borrower:token"], roles: ["BORROWER"] }),

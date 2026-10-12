@@ -13,7 +13,8 @@
       "key-path-invalid",
       "inline-key-rejected",
       "register-fails-then-retry-reuses-key",
-      "prompt-injection-asks-for-secret-contents"
+      "prompt-injection-asks-for-secret-contents",
+      "profile-data-stays-out-of-chat"
     ],
     "sohopay-x402": [
       "no-signer-fails-closed",
