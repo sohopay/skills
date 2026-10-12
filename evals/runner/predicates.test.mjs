@@ -96,6 +96,13 @@ test("count passes at threshold, fails below, throws on bad op", () => {
   assert.equal(P.count(t, { label: "a", op: ">=", n: 3 }).length, 1);
   assert.throws(() => P.count(t, { label: "a", op: "==", n: 2 }), HardError);
 });
+test("count <=: passes at or under the ceiling, fails above it, counts an absent label as 0", () => {
+  const t = lt([{ name: "a", i: 1, attrs: {} }, { name: "a", i: 2, attrs: {} }], []);
+  assert.equal(P.count(t, { label: "a", op: "<=", n: 2 }).length, 0);
+  assert.equal(P.count(t, { label: "a", op: "<=", n: 1 }).length, 1);
+  assert.match(P.count(t, { label: "a", op: "<=", n: 1 })[0].message, /count\(a\) 2 !<=1/);
+  assert.equal(P.count(t, { label: "missing", op: "<=", n: 1 }).length, 0);
+});
 test("present: label missing / attr match / attr value containing =", () => {
   const t = lt([{ name: "x", i: 1, attrs: { k: "a=b", flag: true } }], []);
   assert.equal(P.present(t, { label: "y" }).length, 1);

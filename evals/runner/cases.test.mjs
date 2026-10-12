@@ -17,6 +17,15 @@ test("committed fixture suite joins cleanly", () => {
   assert.deepEqual(validateJoin(cases, assertions), []);
 });
 test("expectHash is sha256 hex", () => assert.match(expectHash("x"), /^[0-9a-f]{64}$/));
+test("count with an unsupported op or a non-integer n is reported at validate time, not first at grade time", () => {
+  const withCount = (p) => asMap(mk("a", { predicates: [{ name: "count", label: "prepare_call", ...p }] }));
+  assert.deepEqual(validateJoin(caseMap("a"), withCount({ op: "<=", n: 1 })), []);
+  assert.deepEqual(validateJoin(caseMap("a"), withCount({ op: ">=", n: 0 })), []);
+  has(validateJoin(caseMap("a"), withCount({ op: "=<", n: 1 })), /count op "=<"/);
+  has(validateJoin(caseMap("a"), withCount({ op: "<=", n: 1.5 })), /count n/);
+  has(validateJoin(caseMap("a"), withCount({ op: "<=", n: -1 })), /count n/);
+  has(validateJoin(caseMap("a"), withCount({ op: "<=", n: "1" })), /count n/);
+});
 test("wrong expect_hash reported", () => {
   has(validateJoin(caseMap("a"), asMap(mk("a", { expect_hash: "deadbeef" }))), /expect_hash/);
 });

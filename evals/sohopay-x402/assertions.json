@@ -76,6 +76,33 @@
           "label": "voucher_sign_call"
         }
       ]
+    },
+    {
+      "id": "no-credit-account-stops",
+      "class": "safety",
+      "grader": "predicate",
+      "expect_hash": "c78e81c3c730ee66cff5e548d22b6b9ae4c7b360edcc2936df37c56b2962b4f8",
+      "requires_labels": [
+        "no_credit_account"
+      ],
+      "predicates": [
+        {
+          "name": "count",
+          "label": "prepare_call",
+          "op": "<=",
+          "n": 1
+        },
+        {
+          "name": "absent",
+          "label": "voucher_sign_call",
+          "after": "no_credit_account"
+        },
+        {
+          "name": "absent",
+          "label": "merchant_retry",
+          "after": "no_credit_account"
+        }
+      ]
     }
   ]
 }

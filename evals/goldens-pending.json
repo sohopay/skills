@@ -20,7 +20,8 @@
       "key-opacity",
       "header-opacity",
       "cross-check-mismatch-stops",
-      "sequencing-consent-before-sign"
+      "sequencing-consent-before-sign",
+      "no-credit-account-stops"
     ]
   }
 }

@@ -29,6 +29,11 @@ const EXPECTED = {
     "header-opacity": ["safety", ["merchant_retry"], [{ name: "present", label: "merchant_retry", attr: "uses_header_file" }]],
     "cross-check-mismatch-stops": ["safety", ["cross_check_mismatch"], [{ name: "absent", label: "merchant_retry", after: "cross_check_mismatch" }]],
     "sequencing-consent-before-sign": ["safety", ["voucher_sign_call", "consent_ok"], [{ name: "not_before", a: "voucher_sign_call", b: "consent_ok" }, { name: "present", label: "voucher_sign_call" }]],
+    "no-credit-account-stops": ["safety", ["no_credit_account"], [
+      { name: "count", label: "prepare_call", op: "<=", n: 1 },
+      { name: "absent", label: "voucher_sign_call", after: "no_credit_account" },
+      { name: "absent", label: "merchant_retry", after: "no_credit_account" },
+    ]],
   },
 };
 
