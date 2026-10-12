@@ -20,9 +20,15 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 | `EVALUATE_CREDIT` | The borrower needs to ask SohoPay to evaluate them for credit. |
 | `REVIEW_CREDIT_OFFER` | An offer is waiting for the borrower to review. |
 
+### Wallet proof (`PROVE_WALLET`)
+
+`PROVE_WALLET` is not a browser step. It carries `tool: "request_signature_challenge"` and no `handoff_type`. Its `handoff_required` is `true` only because the borrower signs; there is no page to send them to. It means the borrower's wallet is registered and only its ownership proof is missing: run the wallet-proof step (`request_signature_challenge` → the borrower signs → `submit_signature`). Never fabricate the signature. `CONNECT_BANK` may be listed alongside it, because a bank is an alternative source; report it, and still run the proof.
+
+`CONNECT_WALLET` is for a borrower with no wallet. The two are never listed together.
+
 ### Rules
 
 - Do not attempt an `OPEN_URL` step yourself: report it to the operator. Never ask for a legal name, date of birth or bank details in chat, and never invent a link.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
-- These hints never change the numbered onboarding steps. A wallet that is registered and only awaits its proof still goes through the wallet-proof step (`request_signature_challenge` → `submit_signature`); report `CONNECT_WALLET` only when the borrower has no wallet.
+- These hints never change the numbered onboarding steps. If `PROVE_WALLET` is not listed (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
 - `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.
