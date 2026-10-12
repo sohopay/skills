@@ -91,6 +91,10 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 | `credit_eligibility` | `status` (`NOT_EVALUATED`, `IN_REVIEW`, `ELIGIBLE`, `INELIGIBLE`) and an opaque `band`. Never a score; do not interpret the band. |
 | `spend_ready` | Onboarding gates for spending are passed. Not the same as `purchasing_power.can_pay`: decide whether to pay from `can_pay`, and `prepare_x402_payment` stays authoritative. |
 
+### No credit account yet (`credit: null`)
+
+A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no limit, balance or debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions (usually connecting a wallet or bank). Never present it as a zero limit or a zero balance.
+
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 
 A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a SohoPay browser page.
