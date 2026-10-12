@@ -1,6 +1,6 @@
 ## Reading `onboarding` from `get_context`
 
-Some deployments add an `onboarding` section to `get_context`. When it is absent, ignore this reference.
+Some deployments add an `onboarding` section to `get_context`. When it is absent, ignore this reference, except "No credit account yet" below, which applies on every deployment.
 
 | Field | Meaning |
 |---|---|
@@ -11,7 +11,9 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 
 ### No credit account yet (`credit: null`)
 
-A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no limit, balance or debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions (usually connecting a wallet or bank). Never present it as a zero limit or a zero balance.
+A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no credit limit, credit balance or credit debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions. If none are listed, there is nothing to do yet; say so plainly. Never present it as a zero limit or a zero balance.
+
+This covers the borrower's own credit only. Gifts they have received still count: when the `gifts` section is `supported` and `gifts.available` is above zero (a `GIFT_RECEIVED` action is listed), report that balance. Gift value can be spent without a credit line, so `can_pay` being false does not mean there is nothing to spend.
 
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 
