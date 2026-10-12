@@ -40,8 +40,11 @@ const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
 // every call an architecture (or an older kernel / strace) may lack — open / creat exist only on x86-64, renameat /
 // newfstatat not on every asm-generic port — since an unknown name in `-e trace=` aborts strace.
 // clone / clone3 (and the x64-only fork / vfork) are traced so a CLONE_UNTRACED child is seen (C1); the i386 compat
-// forms are optional and parsed as their 64-bit ops (m4).
-const CHILD_TRACE = ["openat,?openat2,?creat,?open,?newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,?renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,clone,?clone3,?fork,?vfork,?io_uring_setup,?io_uring_enter", ...COMPAT_TRACE].join(",");
+// forms are optional and parsed as their 64-bit ops (m4). Every x64-only legacy call the agent tree traces (cc-audit
+// X64_ONLY; a copy, so the mock never imports the runner — child-trace.test.mjs pins the two lists together) is here,
+// optional: on x86-64 glibc's chmod(), unlink(), rename(), … use them, not the *at forms.
+const X64_LEGACY_TRACE = ["open", "creat", "stat", "lstat", "access", "readlink", "unlink", "rename", "link", "symlink", "chmod", "chown", "lchown", "mkdir", "rmdir", "mknod", "utimes", "fork", "vfork"].map((s) => `?${s}`);
+const CHILD_TRACE = ["openat,?openat2,?newfstatat,statx,faccessat,?faccessat2,readlinkat,unlinkat,?renameat,renameat2,linkat,symlinkat,fchmodat,?fchmodat2,fchownat,mkdirat,mknodat,utimensat,truncate,ftruncate,fchmod,fchown,fsetxattr,fremovexattr,execve,clone,?clone3,?io_uring_setup,?io_uring_enter", ...X64_LEGACY_TRACE, ...COMPAT_TRACE].join(",");
 
 /** argv prefix wrapping the sandboxed child in strace; io_uring_setup fails with ENOSYS there too (R2-9). `bin` is the
  *  absolute strace path childTraceSupport resolved (defaults to the bare name for direct unit tests). */

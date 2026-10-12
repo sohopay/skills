@@ -103,3 +103,51 @@ test("m1/m4: relative path syscalls resolve against AT_FDCWD</path>; compat call
     ["truncate", "/tmp/h/.agents/secret.json"],
   ]);
 });
+
+// Live run 38317934548 (N2 failed on x86-64): glibc's chmod() is the legacy `chmod` syscall there, which the child set
+// did not name, so the signer's header chmod never reached the trace. The child set must see every legacy path call the
+// agent tree does on x64 — optional, so an arch without them (aarch64) still starts strace.
+test("x64: the signer child traces every x64-only legacy path call the agent tree does, each optional", () => {
+  const child = traceSet(childStraceArgv("/w/c.strace"));
+  const agentX64 = traceSet(straceArgv("/r/a.strace", { arch: "x64" }));
+  const agentArm = new Set(traceSet(straceArgv("/r/a.strace", { arch: "arm64" })));
+  const x64Only = agentX64.filter((s) => !agentArm.has(s));
+  assert.ok(x64Only.includes("chmod") && x64Only.includes("unlink"), "the agent x64 set has the legacy calls");
+  for (const s of x64Only) assert.ok(child.includes(`?${s}`), `signer child traces ?${s}`);
+});
+
+test("x64: legacy path calls in the signer child parse as their ops (chmod / unlink / rename / mkdir / …)", () => {
+  const start = `7 1760000100.000000 execve("${NODE}", ["${NODE}", "child.mjs"], 0x1 /* 2 vars */) = 0\n`;
+  const lines = [
+    `7 1760000100.100000 chmod("/tmp/h/hdr.txt", 0600) = 0`,
+    `7 1760000100.110000 chown("/tmp/h/.agents/secret.json", 0, 0) = 0`,
+    `7 1760000100.120000 lchown("/tmp/h/.agents/secret.json", 0, 0) = 0`,
+    `7 1760000100.130000 unlink("/tmp/h/.agents/secret.json") = 0`,
+    `7 1760000100.140000 rename("/tmp/h/.agents/a.json", "/tmp/h/.agents/b.json") = 0`,
+    `7 1760000100.150000 link("/tmp/h/.agents/secret.json", "/tmp/h/copy") = 0`,
+    `7 1760000100.160000 symlink("/tmp/h/.agents/secret.json", "/tmp/h/ln") = 0`,
+    `7 1760000100.170000 mkdir("/tmp/h/.agents/d", 0700) = 0`,
+    `7 1760000100.180000 rmdir("/tmp/h/.agents/d") = 0`,
+    `7 1760000100.190000 mknod("/tmp/h/.agents/p", S_IFIFO|0600) = 0`,
+    `7 1760000100.200000 utimes("/tmp/h/.agents/secret.json", NULL) = 0`,
+    `7 1760000100.210000 readlink("/tmp/h/.agents/ln", "x", 4096) = 1`,
+    `7 1760000100.220000 access("/tmp/h/.agents/secret.json", R_OK) = 0`,
+    `7 1760000100.230000 stat("/tmp/h/.agents/secret.json", {st_mode=S_IFREG|0600, st_size=1}) = 0`,
+  ].join("\n");
+  assert.deepEqual(parseChildTrace(`${start}${lines}\n`, NODE).opens.map((o) => [o.op, o.path]), [
+    ["chmod", "/tmp/h/hdr.txt"],
+    ["chown", "/tmp/h/.agents/secret.json"],
+    ["lchown", "/tmp/h/.agents/secret.json"],
+    ["unlink", "/tmp/h/.agents/secret.json"],
+    ["rename", "/tmp/h/.agents/a.json"], ["rename", "/tmp/h/.agents/b.json"],
+    ["link", "/tmp/h/.agents/secret.json"], ["link", "/tmp/h/copy"],
+    ["symlink", "/tmp/h/.agents/secret.json"], ["symlink", "/tmp/h/ln"],
+    ["mkdir", "/tmp/h/.agents/d"],
+    ["rmdir", "/tmp/h/.agents/d"],
+    ["mknod", "/tmp/h/.agents/p"],
+    ["utimes", "/tmp/h/.agents/secret.json"],
+    ["stat", "/tmp/h/.agents/ln"],
+    ["access", "/tmp/h/.agents/secret.json"],
+    ["stat", "/tmp/h/.agents/secret.json"],
+  ]);
+});
