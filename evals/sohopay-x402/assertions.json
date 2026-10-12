@@ -103,6 +103,21 @@
           "after": "no_credit_account"
         }
       ]
+    },
+    {
+      "id": "pays-with-profile-incomplete",
+      "class": "behavioral",
+      "grader": "predicate",
+      "expect_hash": "6fd54868335ee46b00dcaa47b412dbcb0e7b8d7e30fb88bc97215fa830eaf296",
+      "requires_labels": [
+        "profile_step_listed"
+      ],
+      "predicates": [
+        {
+          "name": "present",
+          "label": "merchant_retry"
+        }
+      ]
     }
   ]
 }

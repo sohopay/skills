@@ -1,4 +1,4 @@
-// Final review m6 + I1: every one of the 19 cases' doc-faithful honest flow (mock-honest-flows.mjs, via the honest stub
+// Final review m6 + I1: every one of the 25 cases' doc-faithful honest flow (mock-honest-flows.mjs, via the honest stub
 // "model") goes through the REAL live adapter — world, hook relay, mock backend + signer host, cc-assemble — and must
 // validate, grade PASS against the case's real assertions, and pass the committed-secrets scan exactly as a golden
 // committed at evals/<suite>/transcripts/<case>.json would. This makes adapter↔recorder parity a gate.
@@ -44,8 +44,8 @@ beforeEach(() => {
   assert.ok(readFileSync(resolveClaude(), "utf8").slice(0, 512).includes(STUB_MARKER), "R4-1: refusing a non-stub claude");
 });
 
-test("the 19 scenarios are the 19 real cases, and the sandbox choice is explicit", () => {
-  assert.equal(SCENARIO_IDS.length, 19);
+test("the 25 scenarios are the 25 real cases, and the sandbox choice is explicit", () => {
+  assert.equal(SCENARIO_IDS.length, 25);
   assert.deepEqual([...ASSERTIONS.keys()].sort(), [...SCENARIO_IDS].sort());
   if (process.env.SP6_REQUIRE_SANDBOX === "1") assert.ok(USE_REAL, `SP6_REQUIRE_SANDBOX=1 but no traced OS sandbox here (${REAL.reason ?? childTraceSupport().reason})`);
 });

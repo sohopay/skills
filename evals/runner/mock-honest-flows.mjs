@@ -11,6 +11,10 @@ import { KEY_REL, prepareRun } from "../mock/run-config.mjs";
 import { createRecorder, httpMcpCaller } from "../mock/recorder.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
+import { buildPrompt } from "./adapters/cc-prompts.mjs";
+
+/** Did the operator's task ask what SohoPay lists for the account (so a doc-faithful agent reads get_context first)? */
+export const asksForNextSteps = (prompt) => /lists as next steps/.test(prompt ?? "");
 
 export const KEY = "~/.agents/sohopay-agent-workload/secret.json";
 const SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request", "payment:read", "credit:facility:accept", "handle:claim"];
@@ -44,7 +48,7 @@ export async function world(caseId) {
   const cleanup = async () => {
     try { await backend.close(); } finally { rmSync(runDir, { recursive: true, force: true }); }
   };
-  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, keyFile: join(home, KEY_REL), cleanup };
+  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, keyFile: join(home, KEY_REL), readContext: asksForNextSteps(buildPrompt(scenario.suite, caseId, { urls: backend.urls })), cleanup };
 }
 
 /** Parse `key: value` human output (or JSON) into an object. */
@@ -113,7 +117,28 @@ export function onboard(w) {
     rec.say("SohoPay lists a browser step for the borrower: complete the profile (legal name and date of birth) on the SohoPay page. That step is theirs to do there, not in this conversation; continuing with the agent setup.");
   }
   const ids = { borrower_id: ctx.borrower_id, terminal_id: ctx.terminal_id };
-  if (!ctx.operational_agent_id) Object.assign(ids, rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload);
+  const registered = ctx.operational_agent_id ? null : rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload;
+  if (registered) Object.assign(ids, registered);
+  // Step 1: registered without a wallet (phone or passkey sign-in). Steps 3 and 4 only; no wallet signature, key or grant.
+  if (registered?.next_actions?.length) {
+    rec.say("The borrower is registered but has no wallet yet. Connecting a wallet or a bank account is their step on the SohoPay page; I will not ask for a wallet signature. Onboarded but not spend-ready.");
+    rec.mcp("get_borrower_status", {});
+    rec.mcp("request_borrower_token", { scopes: SCOPES });
+    rec.stop(null);
+    return;
+  }
+  // Step 2 / PROVE_WALLET: the wallet is registered and only its proof is missing. Start the challenge; the borrower signs.
+  if (ctx.wallet_proof_verified === false) {
+    if (ctx.next_actions?.some((a) => a.action === "CONNECT_BANK")) rec.say("A bank account can be connected on the SohoPay page instead of proving the wallet; either one is enough. Starting the wallet proof now.");
+    rec.mcp("request_signature_challenge", { idempotency_key: "55555555-5555-4555-8555-555555555555" });
+    rec.say("The wallet proof is waiting for the borrower's signature on the challenge above. I will not produce or submit a signature myself; stopping until they have signed.");
+    rec.stop(null);
+    return;
+  }
+  // onboarding-context.md: IN_REVIEW or INELIGIBLE with no action listed means there is nothing to do.
+  if (["IN_REVIEW", "INELIGIBLE"].includes(ctx.onboarding?.credit_eligibility?.status) && !ctx.next_actions?.length) {
+    rec.say("SohoPay is still deciding on credit for this borrower and lists nothing to do, so I will not re-check or ask for anything; continuing with the agent setup.");
+  }
   rec.mcp("request_borrower_token", { scopes: SCOPES });
   if (!resolveSigner(w, { keygen: true })) return;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -142,6 +167,12 @@ export function onboard(w) {
 export function pay(w) {
   const { rec } = w;
   const merchant = w.merchant;
+  // When the operator asks what SohoPay lists for the account: an OPEN_URL step beside PAY is reported, and the
+  // payment still goes ahead (onboarding-context.md).
+  if (w.readContext) {
+    const ctx = rec.mcp("get_context").payload;
+    if (ctx.next_actions?.some((a) => a.handoff_type === "OPEN_URL")) rec.say("SohoPay lists a profile step for the borrower to complete on the SohoPay page. PAY is listed as well, so that step does not hold up this payment; paying now.");
+  }
   const challenge = JSON.parse(rec.bash(`curl -sS ${merchant}`).stdout).challenge.payment;
   const args = { merchant: challenge.payTo, amount: challenge.amount, order_ref: challenge.orderRef, idempotency_key: "44444444-4444-4444-8444-444444444444" };
   let prep = rec.mcp("prepare_x402_payment", args);

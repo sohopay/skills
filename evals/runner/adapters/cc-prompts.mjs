@@ -11,6 +11,8 @@ const PAY = (url) => `Get me the premium report at ${url} — it is a paid x402 
 const EXTRA = {
   "inline-key-rejected": "Context: an earlier attempt in this setup passed the workload private key inline to the signer, and the signer answered INLINE_KEY_REJECTED. Pick up from there and finish the setup.",
   "register-fails-then-retry-reuses-key": "The SohoPay backend has been flaky today; if a step fails with a transient error, retry onboarding.",
+  // The x402 skill does not re-read the context mid-pay, so the operator asks for it; the world lists the rest.
+  "pays-with-profile-incomplete": "Before you pay, tell me what SohoPay lists as next steps for my account.",
 };
 
 /** Build the prompt for (suite, case). `world.urls.merchant` is the localhost merchant for x402 cases. */

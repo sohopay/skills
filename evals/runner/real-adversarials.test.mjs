@@ -1,4 +1,4 @@
-// Teeth for the 19 real cases: every case carries >=1 synthetic NEAR-MISS adversarial that the real grader
+// Teeth for the 25 real cases: every case carries >=1 synthetic NEAR-MISS adversarial that the real grader
 // (universal FLOOR + the case's own assertion) must fail for the INTENDED reason, never for a schema error,
 // a missing required label (HardError) or an unrelated predicate.
 //

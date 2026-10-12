@@ -17,10 +17,15 @@ import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs"
  * @property {{key?: {borrower: "self"|"other", terminal: "self"|"other", tamper?: boolean}, key_dir_mode?: number}} seed
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
  *   injection?: {tool: string, field?: string, text: string}, first_time_merchant?: boolean,
- *   no_credit_account?: boolean, onboarding?: {profile_complete: boolean}}} backend  no_credit_account: the borrower
- *   has no credit account (SOHO-473), so get_context's money sections are null and prepare refuses with
- *   CREDIT_ACCOUNT_NOT_FOUND. onboarding: get_context carries the `onboarding` section (SOHO-461); with
- *   profile_complete false it lists the COMPLETE_PROFILE browser step in next_actions.
+ *   no_credit_account?: boolean, onboarding?: {profile_complete?: boolean, wallet?: "NONE"|"UNPROVEN"|"VERIFIED",
+ *   bank_enabled?: boolean, eligibility?: "NOT_EVALUATED"|"IN_REVIEW"|"INELIGIBLE"}}} backend
+ *   no_credit_account: the borrower has no credit account (SOHO-473), so get_context's money sections are null and
+ *   prepare refuses with CREDIT_ACCOUNT_NOT_FOUND. onboarding: get_context carries the `onboarding` section and its
+ *   next actions (SOHO-461), in the backend's order: COMPLETE_PROFILE while profile_complete is false; else, with no
+ *   active facility, PROVE_WALLET (wallet UNPROVEN) or CONNECT_WALLET (NONE), plus CONNECT_BANK unless bank_enabled
+ *   is false; else EVALUATE_CREDIT, or nothing while eligibility is IN_REVIEW / INELIGIBLE. Defaults: profile
+ *   complete, wallet VERIFIED, bank enabled, NOT_EVALUATED. Outside the "onboarded" state there is no facility, so
+ *   credit and repayment are null and prepare answers CREDIT_ACCOUNT_NOT_FOUND, whatever the agent's own grant says.
  * @property {string[]} conditions  Input conditions this scenario emits to the journal on the honest path.
  * @property {{signer_error: string|null, stderr_match?: string}} expect  The signer code the honest path meets
  *   (null = none), and for a signer that never starts, a regex its stderr matches.

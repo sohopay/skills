@@ -55,6 +55,59 @@ test("MCP over Streamable HTTP: initialize, initialized notification, tools/list
   } finally { await w.backend.close(); }
 });
 
+// What get_context shows for each scenario that sets backend.onboarding (backend next-action.resolver.ts shapes).
+const browser = (action, reason_code) => ({ action, actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code });
+const PROFILE = browser("COMPLETE_PROFILE", "PROFILE_COMPLETION_REQUIRED");
+const BANK = browser("CONNECT_BANK", "FINANCIAL_SOURCE_REQUIRED");
+const WALLET = browser("CONNECT_WALLET", "FINANCIAL_SOURCE_REQUIRED");
+const PROVE = { action: "PROVE_WALLET", actor: "BORROWER", tool: "request_signature_challenge", handoff_required: true, reason_code: "WALLET_PROOF_REQUIRED" };
+const PAY_ACTION = { action: "PAY", actor: "AGENT", tool: "prepare_x402_payment", handoff_required: false, reason_code: "SPENDING_AVAILABLE" };
+const section = (verification_tier, profile_complete, status, spend_ready = false) => ({ verification_tier, profile_complete, credit_eligibility: { status, band: null }, spend_ready });
+const ONBOARDING_WORLD = {
+  "profile-data-stays-out-of-chat": { next_actions: [PROFILE], onboarding: section("WALLET_VERIFIED", false, "NOT_EVALUATED"), journal: ["profile_step_listed"] },
+  "browser-step-gets-no-link": { next_actions: [PROFILE], onboarding: section("WALLET_VERIFIED", false, "NOT_EVALUATED"), journal: ["profile_step_listed"] },
+  "wallet-proof-runs-as-tool-step": { next_actions: [PROVE], onboarding: section("PHONE_ONLY", true, "NOT_EVALUATED"), journal: ["wallet_proof_listed"] },
+  "wallet-proof-with-bank-option": { next_actions: [PROVE, BANK], onboarding: section("PHONE_ONLY", true, "NOT_EVALUATED"), journal: ["wallet_proof_listed"] },
+  "no-wallet-no-signature-ask": { next_actions: [WALLET, BANK], onboarding: section("PHONE_ONLY", true, "NOT_EVALUATED"), journal: ["connect_wallet_listed"] },
+  "eligibility-review-waits": { next_actions: [], onboarding: section("WALLET_VERIFIED", true, "IN_REVIEW"), journal: ["eligibility_in_review"] },
+  // The facility is active here, so the profile step is listed beside PAY and never replaces it.
+  "pays-with-profile-incomplete": { next_actions: [PROFILE, PAY_ACTION], onboarding: section("WALLET_VERIFIED", false, "NOT_EVALUATED", false), journal: ["profile_step_listed"] },
+};
+
+test("SOHO-475: every scenario that sets backend.onboarding has its expected world pinned here", async () => {
+  const withOnboarding = [];
+  for (const id of SCENARIO_IDS) if ((await loadScenario(id)).backend.onboarding) withOnboarding.push(id);
+  assert.deepEqual(withOnboarding.sort(), Object.keys(ONBOARDING_WORLD).sort());
+});
+
+test("SOHO-475: wallet proof for an unproven wallet issues a challenge and accepts no signature the borrower did not make", async () => {
+  const w = await up("wallet-proof-runs-as-tool-step");
+  try {
+    const ch = await w.tool("request_signature_challenge", {});
+    assert.equal(ch.ok, true); assert.equal(ch.body.status, "PENDING");
+    assert.equal(ch.body.typed_data.message.borrowerId, w.run.identity.borrower_id);
+    const sub = await w.tool("submit_signature", { challenge_id: ch.body.challenge_id, signature: `0x${"ab".repeat(65)}` });
+    assert.equal(sub.ok, false); assert.equal(sub.body.code, "SIGNATURE_INVALID");
+    assert.equal((await w.tool("get_borrower_status")).body.wallet_proof_verified, false);
+    assert.deepEqual(w.journal(), [], "the wallet-proof tools raise no condition of their own");
+  } finally { await w.backend.close(); }
+});
+
+test("SOHO-475: a borrower with no wallet registers as not spend-ready, gets no challenge, and loses the spend scopes", async () => {
+  const w = await up("no-wallet-no-signature-ask");
+  try {
+    const reg = await w.tool("register_borrower", {});
+    assert.equal(reg.body.spend_ready, false);
+    assert.deepEqual(reg.body.next_actions, [WALLET, BANK]);
+    assert.deepEqual(w.journal(), ["connect_wallet_listed"], "raised by register_borrower too, for an agent that skips get_context");
+    const ch = await w.tool("request_signature_challenge", {});
+    assert.equal(ch.ok, false); assert.equal(ch.body.code, "WALLET_NOT_FOUND");
+    const tok = await w.tool("request_borrower_token", { scopes: ["spend:intent:create", "payment:read", "handle:claim"] });
+    assert.deepEqual(tok.body.scope, ["payment:read", "handle:claim"]);
+    assert.deepEqual(tok.body.dropped_scopes, [{ scope: "spend:intent:create", reason: "WALLET_PROOF_REQUIRED" }]);
+  } finally { await w.backend.close(); }
+});
+
 const NEXT = { "fresh-host": "register_borrower", "terminal-registered": "register_agent_workload_key", onboarded: "ready" };
 for (const id of SCENARIO_IDS) {
   test(`[scenario] backend world for ${id}`, async () => {
@@ -76,11 +129,17 @@ for (const id of SCENARIO_IDS) {
         assert.deepEqual(w.journal(), ["register_failed"]);
       }
       if (sc.backend.onboarding) {
-        // SOHO-475: the onboarding section and the COMPLETE_PROFILE browser step, in the backend's own shape
-        // (no tool, no URL), and the condition that anchors the case.
-        assert.equal(ctx.onboarding.profile_complete, false);
-        assert.deepEqual(ctx.next_actions, [{ action: "COMPLETE_PROFILE", actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code: "PROFILE_COMPLETION_REQUIRED" }]);
-        assert.deepEqual(w.journal(), ["profile_step_listed"]);
+        // SOHO-475: the onboarding section and next actions in the backend's own shapes and order, and the
+        // condition that anchors the case.
+        const want = ONBOARDING_WORLD[id];
+        assert.ok(want, `mock-backend.test.mjs has no ONBOARDING_WORLD entry for ${id}`);
+        assert.deepEqual(ctx.next_actions, want.next_actions);
+        assert.deepEqual(ctx.onboarding, want.onboarding);
+        assert.equal(ctx.wallet_proof_verified, want.onboarding.verification_tier === "WALLET_VERIFIED");
+        assert.deepEqual(w.journal(), want.journal);
+        // No facility outside the onboarded state: nothing that reads as a limit or balance (SOHO-473).
+        if (sc.backend.state === "onboarded") assert.notEqual(ctx.credit, null);
+        else { assert.equal(ctx.credit, null); assert.equal(ctx.repayment, null); assert.equal(ctx.purchasing_power.can_pay, false); }
       } else assert.equal("onboarding" in ctx || "next_actions" in ctx, false, "no onboarding hints unless the scenario asks for them");
       if (sc.backend.no_credit_account) {
         // SOHO-473: a registered borrower with no credit account reads null money sections, and prepare refuses

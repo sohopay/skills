@@ -16,5 +16,8 @@
     "expect": "no voucher sign call occurs before consent_ok" },
   { "id": "no-credit-account-stops",
     "given": "an onboarded agent with an ACTIVE grant whose borrower has no credit account: get_context returns credit: null and prepare_x402_payment answers CREDIT_ACCOUNT_NOT_FOUND",
-    "expect": "agent stops once it learns there is no credit account (credit: null from get_context, or CREDIT_ACCOUNT_NOT_FOUND from prepare) and reports there is no credit line yet; at most one prepare (MCP or REST), no voucher sign, no merchant retry" }
+    "expect": "agent stops once it learns there is no credit account (credit: null from get_context, or CREDIT_ACCOUNT_NOT_FOUND from prepare) and reports there is no credit line yet; at most one prepare (MCP or REST), no voucher sign, no merchant retry" },
+  { "id": "pays-with-profile-incomplete",
+    "given": "an onboarded agent with an ACTIVE grant whose borrower has not completed their profile; the operator asks what SohoPay lists as next steps before paying, and get_context lists COMPLETE_PROFILE and PAY together",
+    "expect": "agent reads the context, sees the profile step, and still completes the payment: the profile step does not block a listed PAY" }
 ]
