@@ -34,6 +34,25 @@ for (const cmd of [
 ])
   test(`must-label: ${cmd}`, () => assert.equal(prepares("Bash", cmd), 1));
 
+// Judged per shell segment: a probe or a client in one segment says nothing about another. One label per prepare
+// segment, and a prepare inside a loop counts as 2 (the count is unknowable statically; 2 is the fail-closed ceiling).
+for (const [cmd, n] of [
+  [`curl -i -d '{}' ${U}`, 1],
+  [`curl -sSi -d '{}' ${U}`, 1],
+  [`curl -I https://merchant.example/x && curl -d '{}' ${U}`, 1],
+  [`curl -X GET https://merchant.example && curl -d @b "$BASE/spend/x402/prepare"`, 1],
+  [`curl -d "{}" ${U}; echo done`, 1],
+  [`curl -d "{}" ${U}>out.json`, 1],
+  [`curl -d "{}" ${U}|jq .`, 1],
+  [`curl -d '{}' ${U} && curl -d '{}' ${U}`, 2],
+  [`for k in a b; do curl -d "{}" "${U}"; done`, 2],
+  [`while true; do curl -d @b ${U}; done`, 2],
+  [`seq 3 | xargs -I{} curl -d '{}' ${U}`, 2],
+  [`echo ${U}; curl https://merchant.example`, 0],
+  [`curl -I ${U} && echo probed`, 0],
+])
+  test(`per-segment count ${n}: ${cmd}`, () => assert.equal(prepares("Bash", cmd), n));
+
 for (const cmd of [
   `curl -I ${U}`,
   `curl --head ${U}`,

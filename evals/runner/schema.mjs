@@ -404,9 +404,12 @@ const REGISTER_URL_RE = /\/api\/v\d+\/agents\/[A-Za-z0-9_.-]+\/keys\/?(?=$|[?\s"
 // prepare_call over raw HTTP (SOHO-477): the documented route, with or without a literal /api/v<N> (a $VAR base URL is
 // the common form), from any HTTP client. It feeds a count ceiling, so over-counting is the safe direction and only a
 // clear non-prepare is excluded (see isPrepareRequest).
-const PREPARE_ROUTE_RE = /\/spend\/x402\/prepare(?=$|[/?#\s"'`)])/g;
+const PREPARE_ROUTE_RE = /\/spend\/x402\/prepare(?=$|[/?#\s"'`);&|<>])/g;
 const HTTP_CLIENT_RE = /\bcurl\b|\bwget\b|(?:^|[\s;&|(])(?:https?|xh)\s|\bfetch\s*\(|\brequests\.(?:post|request)\b|\bhttpx\.|\baxios\b|\burllib\b/;
-const CURL_NON_POST_RE = /(?:^|\s)(?:-I|--head)(?=\s|$)|(?:-X\s*|--request(?:=|\s+))(?:GET|HEAD)\b/i;
+// -I / --head are case-sensitive (curl -i only includes response headers); only the method name ignores case.
+const CURL_NON_POST_RE = /(?:^|\s)(?:-I|--head)(?=\s|$)|(?:-X\s*|--request(?:=|\s+))(?:[Gg][Ee][Tt]|[Hh][Ee][Aa][Dd])\b/;
+// A loop or fan-out around a prepare runs it an unknown number of times.
+const SHELL_LOOP_RE = /\b(?:for|while|until)\b[\s\S]*\bdo\b|\bxargs\b|\bparallel\b/;
 /** True when the route is the URL's own path, not text inside another URL's query string or fragment. */
 function routeInPath(a) {
   for (const m of a.matchAll(PREPARE_ROUTE_RE)) {
@@ -415,9 +418,17 @@ function routeInPath(a) {
   }
   return false;
 }
-/** A Bash call that requests the prepare route: an HTTP client, the route as a URL path, and not a curl HEAD/GET probe. */
-function isPrepareRequest(e, a) {
-  return e.name === "Bash" && HTTP_CLIENT_RE.test(a) && routeInPath(a) && !(/\bcurl\b/.test(a) && CURL_NON_POST_RE.test(a));
+/**
+ * How many prepare requests a Bash call makes. Judged per shell segment: a segment counts when it has an HTTP client,
+ * the route as its URL path, and is not a curl HEAD/GET probe. Inside a loop the count is unknowable, so any prepare
+ * there counts as at least 2 (fail-closed for the ceiling). A whole URL held in one variable (`curl "$U"`) cannot be
+ * recognised statically; that is an accepted limit.
+ */
+function prepareRequestCount(e, a) {
+  if (e.name !== "Bash") return 0;
+  const n = a.split(SEGMENT_SPLIT_RE)
+    .filter((s) => HTTP_CLIENT_RE.test(s) && routeInPath(s) && !(/\bcurl\b/.test(s) && CURL_NON_POST_RE.test(s))).length;
+  return n > 0 && SHELL_LOOP_RE.test(a) ? Math.max(n, 2) : n;
 }
 /** n3: a REST register is an HTTP POST (explicit, or implied by a body flag) to /api/v<N>/agents/<id>/keys exactly. */
 function isRegisterPost(e, a) {
@@ -524,7 +535,8 @@ export function label(t) {
     if (/(?:^|__)register_agent_workload_key$/.test(e.name || "") || isRegisterPost(e, a)) add("register_call", e.i, { relayed_fields: [] });
     // Prepare over MCP (tool name) or the documented raw-HTTP fallback (signer.md: curl … /api/v1/spend/x402/prepare);
     // a tool name merely mentioned in other args does not count.
-    if (/(?:^|__)prepare_x402_payment$/.test(e.name || "") || isPrepareRequest(e, a)) add("prepare_call", e.i);
+    if (/(?:^|__)prepare_x402_payment$/.test(e.name || "")) add("prepare_call", e.i);
+    for (let k = prepareRequestCount(e, a); k > 0; k--) add("prepare_call", e.i);
     if (/curl[^\n]*(MERCHANT|https?:\/\/)/i.test(a) && /-H\s+@|-H\s+["']?PAYMENT-SIGNATURE/i.test(a)) add("merchant_retry", e.i, { uses_header_file: /-H\s+@/.test(a) });
 
     // INV-1 floor. A sanctioned call (whole text doc-faithful, see sanction.mjs) may reach the key store only through
