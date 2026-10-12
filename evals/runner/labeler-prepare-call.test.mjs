@@ -66,6 +66,21 @@ for (const [cmd, n] of [
   [`sh -c 'for i in 1 2; do curl -d x ${U}; done'`, 2],
   [`bash -c "echo ${U}; curl https://merchant.example"`, 0],
   [`/bin/bash -lc "curl -d x ${U} && curl -d x ${U}"`, 2],
+  // Wrapper commands before the shell (env, sudo, timeout, nohup, nice, ...) do not hide an sh -c payload.
+  [`timeout 30 bash -c "curl -d x ${U}; curl -d x ${U}"`, 2],
+  [`env A=1 sh -c "curl -d x ${U} && curl -d x ${U}"`, 2],
+  [`sudo -E bash -c "curl -d x ${U}; curl -d x ${U}"`, 2],
+  [`sudo -u root bash -c "curl -d x ${U}; curl -d x ${U}"`, 2],
+  [`nohup nice -n 5 bash -c "curl -d x ${U}; curl -d x ${U}"`, 2],
+  // A shell comment is not a call; a # inside quotes or inside a word is not a comment.
+  [`# retry later: curl -d x ${U}\necho ok`, 0],
+  [`echo hi # curl -d x ${U}`, 0],
+  [`curl -d '#memo' ${U}`, 1],
+  [`curl -d x ${U}#frag`, 1],
+  // A heredoc body is data, not a call.
+  [`cat > retry.sh <<EOF\ncurl -d x ${U}\nEOF`, 0],
+  [`cat > retry.sh <<-'EOF'\n\tcurl -d x ${U}\n\tEOF\necho written`, 0],
+  [`cat <<EOF > a.sh\ncurl -d x ${U}\nEOF\ncurl -d x ${U}`, 1],
   // An unbalanced quote (an apostrophe in a heredoc body) must not swallow the commands after it.
   [`curl -d @- ${U} <<'EOF'\n{"note":"it's"}\nEOF\ncurl -d x ${U}`, 2],
 ])

@@ -412,18 +412,24 @@ const CURL_NON_POST_RE = /(?:^|\s)(?:-[a-zA-Z]*I[a-zA-Z]*|--head)(?=\s|$)|(?:-X\
 // Shell loop or fan-out syntax around a prepare runs it an unknown number of times. Tested on quote-stripped text, so
 // "for the report, do it" in a JSON body is not a loop.
 const SHELL_LOOP_RE = /\bfor\s+\w+\s+in\b[\s\S]*?[;\n]\s*do\b|\b(?:while|until)\b[\s\S]*?[;\n]\s*do\b|\bxargs\b|\bparallel\b/;
-// sh / bash / zsh / dash with -c, alone or in a short-flag bundle (-lc, -ec).
-const SH_C_RE = /^(?:\S*\/)?(?:ba|z|da)?sh\s+(?:-[a-zA-Z]+\s+)*?-[a-zA-Z]*c[a-zA-Z]*\s+/;
+// sh / bash / zsh / dash with -c, alone or in a short-flag bundle (-lc, -ec), optionally behind wrapper commands
+// (env A=1, sudo -E / -u root, timeout 30, nohup, nice -n 5, exec, command, time, stdbuf) with their flags and values.
+const SH_WRAPPERS_RE = /(?:(?:env|sudo|timeout|nice|nohup|exec|command|time|stdbuf)\b(?:\s+(?:-\S+(?:\s+[^\s-]\S*)?|\w+=\S*|\d\S*))*\s+)*/;
+const SH_C_RE = new RegExp(`^${SH_WRAPPERS_RE.source}(?:\\S*\\/)?(?:ba|z|da)?sh\\s+(?:-[a-zA-Z]+\\s+)*?-[a-zA-Z]*c[a-zA-Z]*\\s+`);
+// A heredoc start outside quotes: <<WORD, <<-WORD, <<'WORD', <<"WORD" (not a <<< here-string).
+const HEREDOC_RE = /^<<(-?)[ \t]*(['"]?)([A-Za-z_][\w-]*)\2/;
 
 /**
  * Split a command on unquoted shell separators (&& || ; | & newline). Quotes and backslash escapes are honoured, so a
  * separator inside a header or body does not split. `balanced` is false when a quote never closes (e.g. an apostrophe
  * in a heredoc body), in which case the caller must not trust the split. `unquoted` is the text with quoted spans
- * removed.
+ * removed. Shell comments (an unquoted # starting a word) and heredoc bodies are data, not commands, so both are
+ * dropped; the heredoc start (<<WORD) stays on its command's segment.
  */
 function splitUnquoted(text) {
   const segs = [];
   let cur = "", unquoted = "", quote = null;
+  const heredocs = [];
   for (let i = 0; i < text.length; i++) {
     const c = text[i];
     if (quote) {
@@ -434,13 +440,38 @@ function splitUnquoted(text) {
     }
     if (c === "'" || c === '"') { quote = c; cur += c; continue; }
     if (c === "\\" && i + 1 < text.length) { cur += c + text[++i]; unquoted += " "; continue; }
+    if (c === "#" && (i === 0 || /[\s;&|(]/.test(text[i - 1]))) {
+      const eol = text.indexOf("\n", i);
+      i = (eol < 0 ? text.length : eol) - 1;
+      continue;
+    }
+    const hd = text[i + 2] === "<" ? null : HEREDOC_RE.exec(text.slice(i));
+    if (hd) { heredocs.push({ word: hd[3], tabs: hd[1] === "-" }); cur += hd[0]; unquoted += " "; i += hd[0].length - 1; continue; }
     const two = text.slice(i, i + 2);
     if (two === "&&" || two === "||") { segs.push(cur); cur = ""; unquoted += "\n"; i++; continue; }
-    if (";|&\n\r".includes(c)) { segs.push(cur); cur = ""; unquoted += c === "\n" ? "\n" : ";"; continue; }
+    if (";|&\n\r".includes(c)) {
+      segs.push(cur); cur = ""; unquoted += c === "\n" ? "\n" : ";";
+      // After the line that started them, skip each pending heredoc body up to its terminator line.
+      if (c === "\n") i = skipHeredocBodies(text, i + 1, heredocs.splice(0)) - 1;
+      continue;
+    }
     cur += c; unquoted += c;
   }
   segs.push(cur);
   return { segs: segs.map((s) => s.trim()).filter(Boolean), unquoted, balanced: quote === null };
+}
+
+/** Skip heredoc bodies starting at `pos`, in order; returns the index after the last terminator (or end of text). */
+function skipHeredocBodies(text, pos, docs) {
+  for (const { word, tabs } of docs) {
+    while (pos < text.length) {
+      const eol = text.indexOf("\n", pos);
+      const line = text.slice(pos, eol < 0 ? text.length : eol);
+      pos = eol < 0 ? text.length : eol + 1;
+      if ((tabs ? line.replace(/^\t+/, "") : line).trimEnd() === word) break;
+    }
+  }
+  return pos;
 }
 
 /** The payload of `sh -c '…'` / `bash -c "…"` (quotes removed, \" unescaped), or null. */
