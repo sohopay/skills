@@ -174,6 +174,10 @@ export function liveWorkflowErrors(text) {
     if (!bases.length || bases.some((b) => !/^\$\{\{\s*runner\.temp\s*\}\}\/[\w-]+$/.test(b))) no(`job ${runJob.id} must put every SP6_RUN_ROOT_BASE under runner.temp (got ${JSON.stringify(bases)})`);
     if (!/node evals\/runner\/run\.mjs "\$\{args\[@\]\}"/.test(runJob.text) || !/--adapter claude-code --live --suite all --samples/.test(runJob.text)) no(`job ${runJob.id} must run run.mjs --adapter claude-code --live --suite all --samples K (M4: --live is the only spawn switch)`);
     if (!/apt-get install[^\n]*bubblewrap[^\n]*strace|apt-get install[^\n]*strace[^\n]*bubblewrap/.test(runJob.text)) no(`job ${runJob.id} must install bubblewrap and strace`);
+    // Claude Code's Linux sandbox needs socat beside bubblewrap; without it every sample is an adapter error.
+    if (!/apt-get install[^\n]*\bsocat\b/.test(runJob.text)) no(`job ${runJob.id} must install socat (the CLI's Linux sandbox refuses to start without it)`);
+    // Actions runs `run:` under `bash -e`: run.mjs's exit 1 (a report with failures) must be captured, not fatal.
+    if (!/node evals\/runner\/run\.mjs "\$\{args\[@\]\}" > "\$RUNNER_TEMP\/sp6-live\/report\.json" \|\| code=\$\?/.test(runJob.text)) no(`job ${runJob.id} must capture the run.mjs exit code (\`… || code=$?\`): under bash -e an exit 1 report would kill the step unread`);
     const cli = /CLAUDE_CODE_VERSION:\s*"([^"]+)"/.exec(runJob.text)?.[1];
     if (cli !== PINS.CLI_VERSION) no(`CLAUDE_CODE_VERSION ${cli} != PINS.CLI_VERSION ${PINS.CLI_VERSION}`);
     const cap = /SP6_LIVE_BUDGET_USD:\s*"([^"]+)"/.exec(runJob.text)?.[1];
@@ -278,6 +282,7 @@ function runJobRules(runJob, no) {
   const egress = steps.find((s) => s.id === "egress");
   const uploads = steps.filter((s) => /actions\/upload-artifact@/.test(s.text));
   if (!egress || egress.if !== "${{ always() }}" || !/grep -rqF -e "\$ANTHROPIC_API_KEY"/.test(egress.run ?? "") || !/rm -rf "\$\{dirs\[@\]\}"/.test(egress.run ?? "")) no(`job ${runJob.id}: an always() egress scan step (id egress) must grep for the key and quarantine on a hit`);
+  else if (!/grep -rqF [^\n]*"\$\{dirs\[@\]\}" \|\| rc=\$\?/.test(egress.run ?? "")) no(`job ${runJob.id}: the egress scan must capture its grep exit code (\`… || rc=$?\`): under bash -e a clean scan (exit 1) would fail the step`);
   else if (!(ids.indexOf("verdict") < ids.indexOf("egress") && uploads.every((u) => steps.indexOf(u) > steps.indexOf(egress)))) no(`job ${runJob.id}: the egress scan must run after the verdict and before every upload`);
   goldenScanRules(runJob, steps, ids, no);
   for (const u of uploads) {

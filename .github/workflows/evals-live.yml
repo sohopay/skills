@@ -121,11 +121,12 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install the OS sandbox and tracer (bubblewrap, strace, unprivileged userns)
+      - name: Install the OS sandbox and tracer (bubblewrap, socat, strace, unprivileged userns)
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends bubblewrap strace
+          # socat: Claude Code's Linux sandbox refuses to start without it (every sample an adapter error).
+          sudo apt-get install -y --no-install-recommends bubblewrap strace socat
           # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
           if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -173,8 +174,9 @@ jobs:
           # apiKeyHelper reading a 0600 file in the agent-denied run root, never through the agent's env (C1).
           args=(--adapter claude-code --live --suite all --samples "$SAMPLES" --require-audit)
           if [ -n "$CASE" ]; then args+=(--case "$CASE"); fi
-          node evals/runner/run.mjs "${args[@]}" > "$RUNNER_TEMP/sp6-live/report.json"
-          code=$?
+          # Actions runs this under `bash -e`: capture the exit code, or an exit 1 report would kill the step unread.
+          code=0
+          node evals/runner/run.mjs "${args[@]}" > "$RUNNER_TEMP/sp6-live/report.json" || code=$?
           echo "exit_code=$code" >> "$GITHUB_OUTPUT"
           # 0 = all passed, 1 = a report with failures; anything else means there is no report to act on.
           if [ "$code" -gt 1 ]; then echo "::error::run.mjs produced no report (exit $code)"; exit "$code"; fi
@@ -237,8 +239,9 @@ jobs:
           [ "${#dirs[@]}" -gt 0 ] || { echo "nothing to scan"; exit 0; }
           [ -n "$ANTHROPIC_API_KEY" ] || { echo "no key in this job: nothing it could leak"; exit 0; }
           b64="$(printf %s "$ANTHROPIC_API_KEY" | base64 -w0)"
-          grep -rqF -e "$ANTHROPIC_API_KEY" -e "$b64" -e "${b64%%=*}" "${dirs[@]}"
-          rc=$?
+          # bash -e: grep's exit 1 means CLEAN, so capture it instead of letting it fail the step.
+          rc=0
+          grep -rqF -e "$ANTHROPIC_API_KEY" -e "$b64" -e "${b64%%=*}" "${dirs[@]}" || rc=$?
           if [ "$rc" -eq 1 ]; then echo "egress scan clean"; exit 0; fi
           rm -rf "${dirs[@]}"
           echo "::error::egress scan: the real API key (or its base64) was found in the live output (grep rc=$rc); quarantined — nothing is uploaded"

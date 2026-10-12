@@ -265,6 +265,11 @@ const MUTATIONS = [
   // ── m2: force pushes the exact PUSH_LINE comparison alone would NOT catch ──
   ["m2: forced refspec configured, exact push line kept", (y) => y.replace('          git push origin "HEAD:refs/heads/${HEAD_REF}"\n', '          git config remote.origin.push "+HEAD:refs/heads/${HEAD_REF}"\n          git push origin "HEAD:refs/heads/${HEAD_REF}"\n'), /force/],
   ["m2: `git -c … push --force` (not a `git push` line)", (y) => y.replace('git push origin "HEAD:refs/heads/${HEAD_REF}"', 'git -c protocol.version=2 push --force origin "HEAD:refs/heads/${HEAD_REF}"'), /force/],
+  // ── live run 38321202235: every sample an adapter error (no socat), and `bash -e` (Actions' default shell) killed
+  // the live and egress steps on their own expected exit 1 before they could read it ──
+  ["socat not installed", (y) => y.replace("bubblewrap strace socat", "bubblewrap strace"), /socat/],
+  ["run.mjs exit 1 left to bash -e", (y) => y.replace('> "$RUNNER_TEMP/sp6-live/report.json" || code=$?', '> "$RUNNER_TEMP/sp6-live/report.json"'), /run\.mjs exit code/],
+  ["egress grep exit 1 (clean) left to bash -e", (y) => y.replace('"${dirs[@]}" || rc=$?', '"${dirs[@]}"'), /egress .*grep exit code/],
 ];
 for (const [name, mutate, expected] of MUTATIONS) {
   test(`teeth: ${name} is reported`, () => {
