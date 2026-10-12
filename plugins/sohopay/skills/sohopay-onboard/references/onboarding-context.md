@@ -22,6 +22,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 ### Rules
 
-- **STOP** on any `OPEN_URL` action: report it to the operator and wait. Never ask for a legal name, date of birth or bank details in chat, and never invent a link.
+- Do not attempt an `OPEN_URL` step yourself: report it to the operator. Never ask for a legal name, date of birth or bank details in chat, and never invent a link.
+- Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.
 - These hints do not take away other listed actions. If `PAY` or a repayment action is also listed, it is still available.
