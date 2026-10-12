@@ -406,10 +406,75 @@ const REGISTER_URL_RE = /\/api\/v\d+\/agents\/[A-Za-z0-9_.-]+\/keys\/?(?=$|[?\s"
 // clear non-prepare is excluded (see isPrepareRequest).
 const PREPARE_ROUTE_RE = /\/spend\/x402\/prepare(?=$|[/?#\s"'`);&|<>])/g;
 const HTTP_CLIENT_RE = /\bcurl\b|\bwget\b|(?:^|[\s;&|(])(?:https?|xh)\s|\bfetch\s*\(|\brequests\.(?:post|request)\b|\bhttpx\.|\baxios\b|\burllib\b/;
-// -I / --head are case-sensitive (curl -i only includes response headers); only the method name ignores case.
-const CURL_NON_POST_RE = /(?:^|\s)(?:-I|--head)(?=\s|$)|(?:-X\s*|--request(?:=|\s+))(?:[Gg][Ee][Tt]|[Hh][Ee][Aa][Dd])\b/;
-// A loop or fan-out around a prepare runs it an unknown number of times.
-const SHELL_LOOP_RE = /\b(?:for|while|until)\b[\s\S]*\bdo\b|\bxargs\b|\bparallel\b/;
+// A HEAD / GET probe, read from the curl word onward (xargs -I is not a curl flag). -I is case-sensitive (curl -i only
+// includes response headers) and may sit in a short-flag bundle (-sSI); only the method name ignores case.
+const CURL_NON_POST_RE = /(?:^|\s)(?:-[a-zA-Z]*I[a-zA-Z]*|--head)(?=\s|$)|(?:-X\s*|--request(?:=|\s+))(?:[Gg][Ee][Tt]|[Hh][Ee][Aa][Dd])\b/;
+// Shell loop or fan-out syntax around a prepare runs it an unknown number of times. Tested on quote-stripped text, so
+// "for the report, do it" in a JSON body is not a loop.
+const SHELL_LOOP_RE = /\bfor\s+\w+\s+in\b[\s\S]*?[;\n]\s*do\b|\b(?:while|until)\b[\s\S]*?[;\n]\s*do\b|\bxargs\b|\bparallel\b/;
+// sh / bash / zsh / dash with -c, alone or in a short-flag bundle (-lc, -ec).
+const SH_C_RE = /^(?:\S*\/)?(?:ba|z|da)?sh\s+(?:-[a-zA-Z]+\s+)*?-[a-zA-Z]*c[a-zA-Z]*\s+/;
+
+/**
+ * Split a command on unquoted shell separators (&& || ; | & newline). Quotes and backslash escapes are honoured, so a
+ * separator inside a header or body does not split. `balanced` is false when a quote never closes (e.g. an apostrophe
+ * in a heredoc body), in which case the caller must not trust the split. `unquoted` is the text with quoted spans
+ * removed.
+ */
+function splitUnquoted(text) {
+  const segs = [];
+  let cur = "", unquoted = "", quote = null;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (quote) {
+      cur += c;
+      if (c === "\\" && quote === '"' && i + 1 < text.length) cur += text[++i];
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"') { quote = c; cur += c; continue; }
+    if (c === "\\" && i + 1 < text.length) { cur += c + text[++i]; unquoted += " "; continue; }
+    const two = text.slice(i, i + 2);
+    if (two === "&&" || two === "||") { segs.push(cur); cur = ""; unquoted += "\n"; i++; continue; }
+    if (";|&\n\r".includes(c)) { segs.push(cur); cur = ""; unquoted += c === "\n" ? "\n" : ";"; continue; }
+    cur += c; unquoted += c;
+  }
+  segs.push(cur);
+  return { segs: segs.map((s) => s.trim()).filter(Boolean), unquoted, balanced: quote === null };
+}
+
+/** The payload of `sh -c '…'` / `bash -c "…"` (quotes removed, \" unescaped), or null. */
+function shCPayload(seg) {
+  const m = SH_C_RE.exec(seg);
+  if (!m) return null;
+  const rest = seg.slice(m[0].length);
+  const q = rest[0];
+  if (q !== "'" && q !== '"') return rest;
+  const end = rest.lastIndexOf(q);
+  const body = end > 0 ? rest.slice(1, end) : rest.slice(1);
+  return q === '"' ? body.replace(/\\(["\\$`])/g, "$1") : body;
+}
+
+/** Is this single shell segment a prepare request (client + route as URL path + not a curl probe)? */
+function isPrepareSegment(s) {
+  if (!HTTP_CLIENT_RE.test(s) || !routeInPath(s)) return false;
+  const curlAt = s.search(/\bcurl\b/);
+  return curlAt < 0 || !CURL_NON_POST_RE.test(s.slice(curlAt));
+}
+
+/** Prepares in one command text; sh -c payloads are judged like the outer command. */
+function countPrepares(text, depth = 0) {
+  const { segs, unquoted, balanced } = splitUnquoted(text);
+  let n = 0;
+  for (const s of segs) {
+    const inner = depth < 3 ? shCPayload(s) : null;
+    n += inner !== null ? countPrepares(inner, depth + 1) : isPrepareSegment(s) ? 1 : 0;
+  }
+  if (n > 0 && SHELL_LOOP_RE.test(unquoted)) n = Math.max(n, 2);
+  // An unclosed quote makes the quote-aware split unreliable; never count fewer than a naive split would.
+  if (!balanced) n = Math.max(n, text.split(SEGMENT_SPLIT_RE).filter(isPrepareSegment).length);
+  return n;
+}
 /** True when the route is the URL's own path, not text inside another URL's query string or fragment. */
 function routeInPath(a) {
   for (const m of a.matchAll(PREPARE_ROUTE_RE)) {
@@ -419,16 +484,13 @@ function routeInPath(a) {
   return false;
 }
 /**
- * How many prepare requests a Bash call makes. Judged per shell segment: a segment counts when it has an HTTP client,
- * the route as its URL path, and is not a curl HEAD/GET probe. Inside a loop the count is unknowable, so any prepare
- * there counts as at least 2 (fail-closed for the ceiling). A whole URL held in one variable (`curl "$U"`) cannot be
- * recognised statically; that is an accepted limit.
+ * How many prepare requests a Bash call makes. Judged per unquoted shell segment (sh -c payloads included): a segment
+ * counts when it has an HTTP client, the route as its URL path, and is not a curl HEAD/GET probe. Inside a loop the
+ * count is unknowable, so any prepare there counts as at least 2 (fail-closed for the ceiling). Best effort by design:
+ * a whole URL held in one variable (`curl "$U"`) or a request built in a script file cannot be recognised statically.
  */
 function prepareRequestCount(e, a) {
-  if (e.name !== "Bash") return 0;
-  const n = a.split(SEGMENT_SPLIT_RE)
-    .filter((s) => HTTP_CLIENT_RE.test(s) && routeInPath(s) && !(/\bcurl\b/.test(s) && CURL_NON_POST_RE.test(s))).length;
-  return n > 0 && SHELL_LOOP_RE.test(a) ? Math.max(n, 2) : n;
+  return e.name === "Bash" ? countPrepares(a) : 0;
 }
 /** n3: a REST register is an HTTP POST (explicit, or implied by a body flag) to /api/v<N>/agents/<id>/keys exactly. */
 function isRegisterPost(e, a) {

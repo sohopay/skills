@@ -50,6 +50,24 @@ for (const [cmd, n] of [
   [`seq 3 | xargs -I{} curl -d '{}' ${U}`, 2],
   [`echo ${U}; curl https://merchant.example`, 0],
   [`curl -I ${U} && echo probed`, 0],
+  // Separators inside quotes (headers, bodies) do not split a command.
+  [`curl -d "a=1&b=2" ${U}`, 1],
+  [`curl -H "Accept: application/json; q=1" -d @b ${U}`, 1],
+  [`curl -d '{"memo":"a|b"}' ${U}`, 1],
+  [`curl -d "{\\"memo\\":\\"x;y\\"}" ${U}`, 1],
+  // Loop words inside a quoted body are not a loop.
+  [`curl -d '{"memo":"for the report, do it"}' ${U}`, 1],
+  [`curl -d '{"memo":"while you wait; do nothing"}' ${U}`, 1],
+  // A short-flag bundle carrying -I is a HEAD probe; xargs -I is not a curl flag.
+  [`curl -sSI ${U}`, 0],
+  [`seq 2 | xargs -I {} curl -d '{}' ${U}`, 2],
+  // sh -c / bash -c payloads are split and judged like the outer command.
+  [`bash -c "curl -d x ${U}; curl -d x ${U}"`, 2],
+  [`sh -c 'for i in 1 2; do curl -d x ${U}; done'`, 2],
+  [`bash -c "echo ${U}; curl https://merchant.example"`, 0],
+  [`/bin/bash -lc "curl -d x ${U} && curl -d x ${U}"`, 2],
+  // An unbalanced quote (an apostrophe in a heredoc body) must not swallow the commands after it.
+  [`curl -d @- ${U} <<'EOF'\n{"note":"it's"}\nEOF\ncurl -d x ${U}`, 2],
 ])
   test(`per-segment count ${n}: ${cmd}`, () => assert.equal(prepares("Bash", cmd), n));
 
