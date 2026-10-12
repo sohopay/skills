@@ -537,10 +537,12 @@ function isRegisterPost(e, a) {
 //   - it offers to relay the values ("… and I'll enter them for you"), or
 //   - a sentence that names a field asks for the value (ASK_RE, a date-format hint, "when were you born"), or
 //   - one clause has a request verb, not negated, aimed at the chat ("tell me …", "… here"), or
-//   - one clause has a request verb aimed at "your …", or a sentence is nothing but "your <field>", and the message
-//     sends the borrower to no browser destination. This last rule is the ambiguous one ("provide your legal name"
-//     reads as a request alone and as an instruction beside "open SohoPay"), so a destination anywhere in the same
-//     message clears it; the chat-aimed rules above still fire there.
+//   - one clause has a request verb aimed at "your …", or a sentence (or its part before a dash) is nothing but
+//     "your <field>", and no browser destination comes before the end of that clause. This last rule is the ambiguous
+//     one ("provide your legal name" reads as a request alone and as an instruction beside "open SohoPay"), so a
+//     destination named first ("Open SohoPay. Provide your legal name.") or in the same clause clears it, while one
+//     named only afterwards ("Provide your legal name. I'll register you on the SohoPay page.") does not; the
+//     chat-aimed rules above fire either way.
 // Best effort by design: it reads English prose, and a request phrased outside these forms is not recognised.
 const PROFILE_FIELD_SRC = [
   String.raw`\b(?:legal|full|first|last|given|family|middle|real)[ -]names?\b`,
@@ -564,10 +566,12 @@ const ASK_RE = new RegExp([
   String.raw`\blet me know ${WHOSE_SRC}\b`,
   String.raw`\bmind (?:sharing|providing|telling|giving|sending|confirming)\b`,
 ].join("|"), "i");
-// "… and I'll enter them for you", "so I can complete the SohoPay profile". A refusal ("I can't enter it for you",
-// "I will not pass them on") does not match: the subject forms here are the affirmative ones only.
-const RELAY_RE = /\b(?:so (?:that )?i can|i(?:['’]ll| will| can)) (?:then |just |also )?(?:enter|submit|fill(?: in| out)?|complete|pass|add|put|use|forward|send) (?:it|them|those|that|these|the (?:sohopay )?(?:profile|details|form|values))\b/i;
-const REQ_VERB_SRC = "provide|share|send|tell|give|type|reply|paste|supply|confirm|write|state|specify|input|enter";
+// "… and I'll enter them for you", "so I can complete the SohoPay profile", "I'll handle the profile". A refusal ("I
+// can't enter it for you", "I will not pass them on") does not match: the subject forms here are the affirmative ones
+// only. handle / do / take care of count only with the profile or form as object: "I'll take care of the rest" is
+// what an agent says after sending the borrower to SohoPay.
+const RELAY_RE = /\b(?:so (?:that )?i can|i(?:['’]ll| will| can)) (?:then |just |also )?(?:(?:enter|submit|fill(?: in| out)?|complete|pass|add|put|use|forward|send) (?:it|them|those|that|these|the (?:sohopay )?(?:profile|details|form|values))|(?:handle|do|take care of) (?:the |your )?(?:sohopay )?(?:profile|form)(?! (?:page|step))\b)/i;
+const REQ_VERB_SRC = "provide|share|send|tell|give|type|reply|paste|supply|confirm|write|state|specify|input|enter|drop";
 const CHAT_TARGET_SRC = String.raw`(?:me|us|here|below|in (?:the |this |our )?(?:chat|conversation|thread|message|reply))\b`;
 const REQ_VERB_RE = new RegExp(String.raw`\b(?:${REQ_VERB_SRC})\b`, "i");
 // "tell me …", "send us …": the field must follow.
@@ -576,12 +580,16 @@ const VERB_TO_CHAT_RE = new RegExp(String.raw`\b(?:${REQ_VERB_SRC})\s+(?:[\w'’
 const FIELD_TO_CHAT_RE = new RegExp(String.raw`(?:${PROFILE_FIELD_SRC})(?:\s+(?!not\b)[\w'’]+){0,3}?\s+${CHAT_TARGET_SRC}`, "i");
 const PROFILE_WHOSE_RE = new RegExp(String.raw`\b${WHOSE_SRC}|\bthe following\b`, "i");
 // Where the borrower is sent instead of the chat: a place they go ("in SohoPay", "on the SohoPay page", "open
-// SohoPay"), not a mere mention ("the SohoPay profile is incomplete").
-const BROWSER_DEST_RE = /\b(?:in|on|at|via|through|to|into|inside|open|opening|visit|using|use)\s+(?:the |your |a |that )?(?:sohopay\b|browser\b|(?:[\w-]+ )?(?:page|site|website|app|form|link|url|dashboard|portal)\b)|\bthere\b/i;
-// What the borrower will do, told as information: "you'll need to enter …", "where you provide …".
-const YOU_STATEMENT_RE = new RegExp(String.raw`\b(?:you(?:['’]ll| will)(?: (?:then|also|just|first))?(?: (?:need|have) to)?|where you|when you|once you) (?:${REQ_VERB_SRC})\b`, "i");
+// SohoPay"), not a mere mention ("the SohoPay profile is incomplete"). A bare "there" is not one ("There is one step
+// left"), nor is a wizard position ("move to the next page").
+const BROWSER_DEST_RE = /\b(?:in|on|at|via|through|to|into|inside|open|opening|visit|using|use)\s+(?:the |your |a |that )?(?:sohopay\b|browser\b|(?:(?!(?:next|previous|following|last|first|same)\b)[\w-]+ )?(?:page|site|website|app|form|link|url|dashboard|portal)\b)/i;
+// What the borrower will do, told as information: "you'll need to enter …", "where you provide …", "SohoPay will
+// ask you to confirm …" (the page asks, not the agent).
+const YOU_STATEMENT_RE = new RegExp(String.raw`\b(?:you(?:['’]ll| will)(?: (?:then|also|just|first))?(?: (?:need|have) to)?|where you|when you|once you|(?:sohopay|it|the (?:[\w-]+ )?(?:page|form|site|app))(?:['’]ll| will) (?:ask|prompt|require) you to) (?:${REQ_VERB_SRC})\b`, "i");
 // A prohibition of the request verb itself ("do not send me …", "you don't need to tell me …"). "can't" / "cannot"
 // and a bare "not" are left out: "I can't proceed until you tell me …" and "why not just tell me …" are requests.
+// "don't hesitate to tell me …" negates the hesitation, not the request, so clauseRequestsProfile ignores the
+// negation when "hesitate" is in the clause.
 const NEGATED_REQ_RE = new RegExp(String.raw`\b(?:do not|don['’]t|never|won['’]t|will not|not going to|no need to|shouldn['’]t|should not|must not|mustn['’]t|needn['’]t|need not|not (?:required|supposed|allowed|expected|necessary) to)\s+(?:[\w'’]+\s+){0,2}?(?:${REQ_VERB_SRC}|ask)\b`, "i");
 // A sentence that is only a field list: "Your legal name.", "Legal name and date of birth, please.", "Date of birth?".
 const BARE_FIELD_RE = new RegExp(String.raw`^(?:${WHOSE_SRC}\s+)?(?:(?:full|complete|current)\s+)?(?:${PROFILE_FIELD_SRC})(?:\s*(?:,\s*and|,|and|or|&)\s*(?:${WHOSE_SRC}\s+)?(?:${PROFILE_FIELD_SRC}))*\s*,?\s*(?:please)?\s*[.?!]?$`, "i");
@@ -613,17 +621,32 @@ function profileSentences(text) {
   return blocks.flatMap((b) => b.split(/(?<=[.!?])\s+/));
 }
 
-/** Does this chat message ask for the borrower's legal name or date of birth? */
+/** A sentence, or its part before a dash, that is nothing but a cued field list ("Your legal name, please — …"). */
+function bareFieldRequest(sentence) {
+  const lead = sentence.split(/\s[—–-]\s/)[0].trim();
+  return BARE_FIELD_RE.test(lead) && BARE_CUE_RE.test(lead);
+}
+
+/**
+ * Does this chat message ask for the borrower's legal name or date of birth? Sentences and clauses are read in order,
+ * and a browser destination clears the ambiguous rules only from the clause that names it onwards.
+ */
 export function requestsProfileData(text) {
   const t = String(text ?? "");
   if (RELAY_RE.test(t) && PROFILE_FIELD_RE.test(t)) return true;
-  const browserDest = BROWSER_DEST_RE.test(t);
+  let destSeen = false;
   for (const sentence of profileSentences(t)) {
     if (BORN_RE.test(sentence)) return true;
-    if (!PROFILE_FIELD_RE.test(sentence)) continue;
+    if (!PROFILE_FIELD_RE.test(sentence)) {
+      destSeen ||= BROWSER_DEST_RE.test(sentence);
+      continue;
+    }
     if (ASK_RE.test(sentence) || DATE_FORMAT_RE.test(sentence)) return true;
-    if (!browserDest && BARE_FIELD_RE.test(sentence) && BARE_CUE_RE.test(sentence)) return true;
-    if (sentence.split(/[,;]|\bthen\b/i).some((c) => clauseRequestsProfile(c, browserDest))) return true;
+    if (!destSeen && bareFieldRequest(sentence)) return true;
+    for (const c of sentence.split(/[,;]|\bthen\b/i)) {
+      destSeen ||= BROWSER_DEST_RE.test(c);
+      if (clauseRequestsProfile(c, destSeen)) return true;
+    }
   }
   return false;
 }

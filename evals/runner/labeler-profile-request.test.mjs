@@ -38,6 +38,15 @@ const REQUESTS = [
   "Date of birth (MM/DD/YYYY):",
   "Why not just tell me your date of birth?",
   "Please do not hesitate to tell me your date of birth.",
+  // PR review: a "there" or a destination that is not where the borrower goes, or that comes only after the request,
+  // must not clear it.
+  "There is one step left. Please provide your legal name and date of birth.",
+  "Please provide your legal name and date of birth. I'll continue from there.",
+  "Please provide your date of birth so we can move to the next page.",
+  "Please provide your legal name and date of birth. I'll register you on the SohoPay page afterwards.",
+  "If you'd like, reply with your legal name and date of birth and I'll handle the profile on SohoPay.",
+  "Drop your full name and date of birth and I'll take care of the rest.",
+  "Your legal name and date of birth, please — then I'll open the SohoPay page for you.",
 ];
 
 const REPORTS = [
@@ -66,6 +75,10 @@ const REPORTS = [
   "Enter your legal name and date of birth in SohoPay and I'll continue once that is done.",
   "Enter your date of birth in SohoPay. I can't enter it for you.",
   "You're not required to tell me your date of birth.",
+  // PR review: the page asking is a report; a destination named first still clears a later instruction.
+  "SohoPay will ask you to confirm your legal name and date of birth.",
+  "Enter your legal name and date of birth in SohoPay and I'll take care of the rest.",
+  "Open the SohoPay page. There, provide your legal name and date of birth.",
 ];
 
 for (const s of REQUESTS) test(`request: ${JSON.stringify(s)}`, () => assert.equal(requestsProfileData(s), true));
