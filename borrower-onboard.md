@@ -27,7 +27,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 7. `POST /api/v1/auth/authorization-context` before privileged tools
 8. Handle (**required gate**) — only **after** steps 4–6 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
 
-If `get_context` returns an `onboarding` section, or a next action with `handoff_type: "OPEN_URL"` (`COMPLETE_PROFILE`, `CONNECT_WALLET`, `CONNECT_BANK`, `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`), that action is a borrower step in the browser: report it, never ask for a legal name or date of birth in chat, and keep doing any `PAY`, repayment or handle action listed alongside it. Details: [references/onboarding-context.md](#hosted-reference-onboarding-context)
+If `get_context` returns an `onboarding` section, or a next action with `handoff_type: "OPEN_URL"` (`COMPLETE_PROFILE`, `CONNECT_WALLET`, `CONNECT_BANK`, `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`), that action is a borrower step in the browser: report it, never ask for a legal name or date of birth in chat, and keep doing any `PAY`, repayment or handle action listed alongside it. These hints never change the numbered steps: a wallet that is registered and only awaits its proof still goes through step 2, and `CONNECT_WALLET` is reported only when the borrower has no wallet. Details: [references/onboarding-context.md](#hosted-reference-onboarding-context)
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
@@ -89,25 +89,25 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 | `verification_tier` | Which verified sources the borrower has: `PHONE_ONLY`, `WALLET_VERIFIED`, `FINANCIAL_VERIFIED`, `MULTI_SOURCE_VERIFIED`. Coverage, not credit quality. |
 | `profile_complete` | The borrower declared their legal name and date of birth. Absent when the deployment does not track it. Not identity or credit approval. |
 | `credit_eligibility` | `status` (`NOT_EVALUATED`, `IN_REVIEW`, `ELIGIBLE`, `INELIGIBLE`) and an opaque `band`. Never a score; do not interpret the band. |
-| `spend_ready` | Onboarding gates for spending are passed. Not the same as `purchasing_power.can_pay`. |
+| `spend_ready` | Onboarding gates for spending are passed. Not the same as `purchasing_power.can_pay`: decide whether to pay from `can_pay`, and `prepare_x402_payment` stays authoritative. |
 
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 
 A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a SohoPay browser page.
 
-| Action | What to tell the borrower |
+| Action | What to report to the operator |
 |---|---|
-| `COMPLETE_PROFILE` | They need to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
-| `CONNECT_WALLET` / `CONNECT_BANK` | They need to connect a wallet or a bank. Either one is enough. |
-| `EVALUATE_CREDIT` | They need to ask SohoPay to evaluate them for credit. |
-| `REVIEW_CREDIT_OFFER` | An offer is waiting for them to review. |
+| `COMPLETE_PROFILE` | The borrower needs to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
+| `CONNECT_WALLET` / `CONNECT_BANK` | The borrower needs to connect a wallet or a bank. Either one is enough. |
+| `EVALUATE_CREDIT` | The borrower needs to ask SohoPay to evaluate them for credit. |
+| `REVIEW_CREDIT_OFFER` | An offer is waiting for the borrower to review. |
 
 ### Rules
 
 - Do not attempt an `OPEN_URL` step yourself: report it to the operator. Never ask for a legal name, date of birth or bank details in chat, and never invent a link.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
+- These hints never change the numbered onboarding steps. A wallet that is registered and only awaits its proof still goes through the wallet-proof step (`request_signature_challenge` → `submit_signature`); report `CONNECT_WALLET` only when the borrower has no wallet.
 - `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.
-- These hints do not take away other listed actions. If `PAY` or a repayment action is also listed, it is still available.
 
 
 <a id="hosted-reference-scopes"></a>
