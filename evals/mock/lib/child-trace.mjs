@@ -11,6 +11,8 @@
 import { cloneUntraced, ioUringRing, straceRecords } from "./strace-records.mjs";
 
 const WRITE_FLAGS = /O_(WRONLY|RDWR|CREAT|TRUNC|APPEND)/;
+// Path and fd syscalls are recorded whatever they returned: a failed mkdir (EEXIST) or unlink (ENOENT) on a store path
+// is still the signer reaching there. Fail-closed by design — never filter these by return value.
 const PATH_SYS = /^(newfstatat|statx|faccessat2?|readlinkat|unlinkat|renameat2?|linkat|symlinkat|fchmodat2?|fchownat|mkdirat|mknodat|utimensat|truncate|stat|lstat|access|readlink|unlink|rename|link|symlink|chmod|chown|lchown|mkdir|rmdir|mknod|utimes)$/;
 const FD_SYS = /^(fchmod|fchown|ftruncate|fsetxattr|fremovexattr)$/;
 
