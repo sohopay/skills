@@ -201,9 +201,10 @@ test("[E2E] N2: every signer /exec is audited under the REAL OS sandbox — open
     assert.deepEqual(ops, []);
   } else {
     assert.equal(t.meta.signer_audit, "child-strace", "Linux: every signer exec traced");
-    // The signer writes the header 0600 and then chmods it: both are mutations of the argv-named --write-header target.
-    // Loader / node runtime activity outside the store is filtered structurally (recordTrace), never by name here.
-    assert.deepEqual(ops, [["write", "hdr.txt"], ["chmod", "hdr.txt"]], "Linux (strace on the child): the sanctioned --key read is not an event; the header write (and its chmod) is");
+    // The signer opens the header 0600 without O_TRUNC, truncates it through the fd after the hardlink check, writes and
+    // then chmods it: all mutations of the argv-named --write-header target. Loader / node runtime activity outside the
+    // store is filtered structurally (recordTrace), never by name here.
+    assert.deepEqual(ops, [["write", "hdr.txt"], ["truncate", "hdr.txt"], ["chmod", "hdr.txt"]], "Linux (strace on the child): the sanctioned --key read is not an event; the header write (its truncate and chmod) is");
   }
 });
 
