@@ -82,7 +82,7 @@ On any non-2xx, follow the skill's global failure rule (STOP and report the exac
 
 ## Reading `onboarding` from `get_context`
 
-Some deployments add an `onboarding` section to `get_context`. When it is absent, ignore this reference.
+Some deployments add an `onboarding` section to `get_context`. When it is absent, ignore this reference, except "No credit account yet" below, which applies on every deployment.
 
 | Field | Meaning |
 |---|---|
@@ -90,6 +90,12 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 | `profile_complete` | The borrower declared their legal name and date of birth. Absent when the deployment does not track it. Not identity or credit approval. |
 | `credit_eligibility` | `status` (`NOT_EVALUATED`, `IN_REVIEW`, `ELIGIBLE`, `INELIGIBLE`) and an opaque `band`. Never a score; do not interpret the band. |
 | `spend_ready` | Onboarding gates for spending are passed. Not the same as `purchasing_power.can_pay`: decide whether to pay from `can_pay`, and `prepare_x402_payment` stays authoritative. |
+
+### No credit account yet (`credit: null`)
+
+A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no credit limit, credit balance or credit debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions. If none are listed, there is nothing to do yet; say so plainly. Never present it as a zero limit or a zero balance.
+
+This covers the borrower's own credit only. Gifts they have received still count: when the `gifts` section is `supported` and `gifts.available` is above zero (a `GIFT_RECEIVED` action is listed), report that balance. Gift value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
 
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 
