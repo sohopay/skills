@@ -11,7 +11,7 @@
 import { cloneUntraced, ioUringRing, straceRecords } from "./strace-records.mjs";
 
 const WRITE_FLAGS = /O_(WRONLY|RDWR|CREAT|TRUNC|APPEND)/;
-const PATH_SYS = /^(newfstatat|statx|faccessat2?|readlinkat|unlinkat|renameat2?|linkat|symlinkat|fchmodat2?|fchownat|mkdirat|mknodat|utimensat|truncate|stat|lstat|access|unlink|rename|link|symlink|chmod|chown|mkdir|rmdir)$/;
+const PATH_SYS = /^(newfstatat|statx|faccessat2?|readlinkat|unlinkat|renameat2?|linkat|symlinkat|fchmodat2?|fchownat|mkdirat|mknodat|utimensat|truncate|stat|lstat|access|readlink|unlink|rename|link|symlink|chmod|chown|lchown|mkdir|rmdir|mknod|utimes)$/;
 const FD_SYS = /^(fchmod|fchown|ftruncate|fsetxattr|fremovexattr)$/;
 
 function opOf(sys, args) {
