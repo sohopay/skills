@@ -131,8 +131,10 @@ export function not_before(t, { a, b }) {
 }
 export function count(t, { label, op, n }) {
   const c = t.labels.filter((l) => l.name === label).length;
-  if (op !== ">=") throw new HardError(`count: unsupported op ${op}`);
-  return c >= n ? [] : [{ predicate: "count", message: `count(${label}) ${c} !${op}${n}` }];
+  // ">=" pins a floor (e.g. a retry happened); "<=" a ceiling (e.g. at most one prepare, however it was sent).
+  if (op !== ">=" && op !== "<=") throw new HardError(`count: unsupported op ${op}`);
+  const ok = op === ">=" ? c >= n : c <= n;
+  return ok ? [] : [{ predicate: "count", message: `count(${label}) ${c} !${op}${n}` }];
 }
 export function created_false_same_jkt(t) {
   const kg = t.labels.filter((l) => l.name === "keygen_call");

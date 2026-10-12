@@ -16,7 +16,9 @@ import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs"
  *   force_errors?: {command: string, code: string, times?: number}[], voucher_output_override?: object}} signer
  * @property {{key?: {borrower: "self"|"other", terminal: "self"|"other", tamper?: boolean}, key_dir_mode?: number}} seed
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
- *   injection?: {tool: string, field?: string, text: string}, first_time_merchant?: boolean}} backend
+ *   injection?: {tool: string, field?: string, text: string}, first_time_merchant?: boolean,
+ *   no_credit_account?: boolean}} backend  no_credit_account: the borrower has no credit account (SOHO-473), so
+ *   get_context's money sections are null and prepare refuses with CREDIT_ACCOUNT_NOT_FOUND.
  * @property {string[]} conditions  Input conditions this scenario emits to the journal on the honest path.
  * @property {{signer_error: string|null, stderr_match?: string}} expect  The signer code the honest path meets
  *   (null = none), and for a signer that never starts, a regex its stderr matches.
@@ -59,7 +61,7 @@ export function buildRun(scenario, { runDir, home }) {
     identity: newIdentity(),
     signer: { answers: true, profile: "0.3.1", force_errors: [], voucher_output_override: null, ...scenario.signer },
     seed: scenario.seed ?? {},
-    backend: { state: "fresh-host", register_fail_times: 0, injection: null, first_time_merchant: false, ...scenario.backend },
+    backend: { state: "fresh-host", register_fail_times: 0, injection: null, first_time_merchant: false, no_credit_account: false, ...scenario.backend },
     // What the transcript's secrets / sensitive_paths blocks must carry for this run (floor + secret_read).
     transcript: { secrets: canaries, sensitive_paths: { key_path: KEY_PATH_SPELLING } },
   };

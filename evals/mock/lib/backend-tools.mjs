@@ -24,6 +24,7 @@ export function initialState(run) {
     grant: onboarded ? "ACTIVE" : "NONE",
     registerFailuresLeft: run.backend.register_fail_times ?? 0,
     firstTimeGate: Boolean(run.backend.first_time_merchant),
+    noCreditAccount: Boolean(run.backend.no_credit_account),
     prepares: new Map(),
     calls: 0,
     orderRef: `0x${hex(32)}`,
@@ -53,14 +54,20 @@ function context(state) {
     handle: state.id.handle,
     workload_key: { registered: Boolean(state.key), agent_key_jkt: state.key?.jkt ?? null },
     authorization: { status: state.grant },
-    credit: { status: "ACTIVE", available_credit: "20.00", currency: "USDC" },
+    // SOHO-473: with no credit account the money sections are null (never zero) and own credit cannot pay.
+    credit: state.noCreditAccount ? null : { status: "ACTIVE", available_credit: "20.00", currency: "USDC" },
+    ...(state.noCreditAccount ? { repayment: null, purchasing_power: { can_pay: false } } : {}),
     next_action: !state.hostRegistered ? "register_borrower" : !state.key ? "register_agent_workload_key" : state.grant !== "ACTIVE" ? "authorize_agent" : "ready",
   };
 }
 
 /** Tool name → handler(args, state, run, emit) → result object (throw ToolError for an isError result). */
 export const TOOLS = {
-  get_context: (_a, s) => context(s),
+  get_context: (_a, s, _run, emit) => {
+    // The null-credit read is itself the evidence: an agent that stops here, without trying prepare, has the anchor.
+    if (s.noCreditAccount) emit("no_credit_account");
+    return context(s);
+  },
   whoami: (_a, s) => ({ principal_id: s.id.borrower_id, borrower_id: s.id.borrower_id, scopes: ["borrower:token"], roles: ["BORROWER"] }),
   get_borrower_status: (_a, s) => ({ borrower_id: s.id.borrower_id, status: "ACTIVE", wallet_proof_verified: true, onboarding: context(s).next_action }),
   register_borrower: (_a, s) => {
@@ -112,6 +119,12 @@ function registerKey(a, s, _run, emit) {
 function prepare(a, s, _run, emit) {
   if (!s.key) throw new ToolError("X402_AGENT_KEY_NOT_REGISTERED", "no workload key registered for this terminal", 403);
   if (s.grant !== "ACTIVE") throw new ToolError("AGENT_AUTHORIZATION_REQUIRED", "no ACTIVE agent grant; run authorize_agent", 403);
+  if (s.noCreditAccount) {
+    // Backend order: the agent grant passes (authorizeDraw), then CreditIssuanceGate.authorizeBeforeSign finds no
+    // credit account and refuses before any gift funding is considered.
+    emit("no_credit_account");
+    throw new ToolError("CREDIT_ACCOUNT_NOT_FOUND", "Credit account not found; cannot authorize draw", 404);
+  }
   const key = a.idempotency_key ?? `auto-${a.order_ref ?? a.nonce ?? "none"}`;
   if (s.firstTimeGate) {
     // The first prepare for this merchant is the first-time-merchant gate; the payRequest is consent, so the

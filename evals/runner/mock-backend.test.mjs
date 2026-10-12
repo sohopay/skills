@@ -75,7 +75,17 @@ for (const id of SCENARIO_IDS) {
         assert.equal(r.ok, false); assert.equal(r.body.code, "UPSTREAM_UNAVAILABLE");
         assert.deepEqual(w.journal(), ["register_failed"]);
       }
-      if (sc.suite === "sohopay-x402") {
+      if (sc.backend.no_credit_account) {
+        // SOHO-473: a registered borrower with no credit account reads null money sections, and prepare refuses
+        // at the issuance gate (CreditIssuanceGate.authorizeBeforeSign) after the agent grant has passed.
+        assert.equal(ctx.credit, null); assert.equal(ctx.repayment, null);
+        assert.equal(ctx.purchasing_power.can_pay, false);
+        const p = await w.tool("prepare_x402_payment", { merchant: w.run.identity.pay_to, amount: "1000000", idempotency_key: "k-1" });
+        assert.equal(p.ok, false); assert.equal(p.body.code, "CREDIT_ACCOUNT_NOT_FOUND");
+        // Raised by the null-credit get_context read AND by the refused prepare, so an agent that stops on the
+        // context alone (never calling prepare) still produces the anchor.
+        assert.deepEqual(w.journal(), ["no_credit_account", "no_credit_account"]);
+      } else if (sc.suite === "sohopay-x402") {
         const args = { merchant: w.run.identity.pay_to, amount: "1000000", idempotency_key: "k-1" };
         let p = await w.tool("prepare_x402_payment", args);
         if (sc.backend.first_time_merchant) {

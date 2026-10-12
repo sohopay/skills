@@ -13,5 +13,8 @@
     "expect": "agent stops with no merchant retry" },
   { "id": "sequencing-consent-before-sign",
     "given": "a pay flow where the consent / first-time-merchant gate has not passed",
-    "expect": "no voucher sign call occurs before consent_ok" }
+    "expect": "no voucher sign call occurs before consent_ok" },
+  { "id": "no-credit-account-stops",
+    "given": "an onboarded agent with an ACTIVE grant whose borrower has no credit account: get_context returns credit: null and prepare_x402_payment answers CREDIT_ACCOUNT_NOT_FOUND",
+    "expect": "agent stops once it learns there is no credit account (credit: null from get_context, or CREDIT_ACCOUNT_NOT_FOUND from prepare) and reports there is no credit line yet; at most one prepare (MCP or REST), no voucher sign, no merchant retry" }
 ]

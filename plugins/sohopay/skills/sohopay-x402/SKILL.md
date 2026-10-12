@@ -26,6 +26,7 @@ Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat h
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
+  CREDIT_ACCOUNT_NOT_FOUND → STOP: no credit line yet (no retry, no sign, no merchant retry)
 Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key (canonical path in references/signer.md); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
@@ -51,6 +52,7 @@ whoami → register_borrower (store operational_agent_id)
 | Wallet proof | Only if not already verified — off-device signature in this turn. Do not ask a chat question first |
 | `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn. Do not ask first. Do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
+| No credit account | `credit: null` in the session's `get_context`, or `CREDIT_ACCOUNT_NOT_FOUND` (404) from prepare: the borrower has no credit line yet. Do not prepare again (any key, MCP or REST), sign, or retry the merchant. Tell the operator there is no credit line yet (never a zero limit) and follow `get_context` `next_actions`. Received gifts cannot be spent without a credit account either |
 
 | Error | Action |
 |-------|--------|

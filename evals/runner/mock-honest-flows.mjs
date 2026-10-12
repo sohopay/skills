@@ -141,6 +141,11 @@ export function pay(w) {
   const args = { merchant: challenge.payTo, amount: challenge.amount, order_ref: challenge.orderRef, idempotency_key: "44444444-4444-4444-8444-444444444444" };
   let prep = rec.mcp("prepare_x402_payment", args);
   if (!prep.ok && /RISK_FIRST_TIME_MERCHANT/.test(prep.text)) prep = rec.mcp("prepare_x402_payment", args);
+  if (!prep.ok && /CREDIT_ACCOUNT_NOT_FOUND/.test(prep.text)) {
+    rec.say("CREDIT_ACCOUNT_NOT_FOUND: this borrower has no credit line yet, so there is nothing to pay with. Not retrying, signing or calling the merchant; follow the next actions in get_context.");
+    rec.stop(null);
+    return;
+  }
   if (!resolveSigner(w, { keygen: false })) return;
   const dir = rec.bash("mktemp -d").stdout.trim();
   rec.write(`${dir}/prep.json`, prep.text);
