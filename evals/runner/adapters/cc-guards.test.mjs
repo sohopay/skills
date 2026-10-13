@@ -213,3 +213,14 @@ test("harnessSecrets: GitHub Actions' public identity values are benign; runner 
   const names = harnessSecrets(env).map((s) => s.name).sort();
   assert.deepEqual(names, ["ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ANTHROPIC_API_KEY", "GITHUB_EVENT_PATH", "GITHUB_OUTPUT", "GITHUB_WORKSPACE", "RUNNER_TEMP"]);
 });
+
+// Smoke run 38364924963: a dispatch with case=profile-data-stays-out-of-chat set CASE to that (public, gate-validated)
+// case id on the live step; it is 30 chars, so harnessSecrets treated it as a secret, and the transcript — which
+// carries its own case_id — was quarantined. The workflow's dispatch inputs are not secrets; real ones stay scanned.
+test("harnessSecrets: the live workflow's dispatch inputs (CASE, SAMPLES) are benign", () => {
+  const names = harnessSecrets({
+    CASE: "profile-data-stays-out-of-chat", SAMPLES: "12345678901234",
+    ANTHROPIC_API_KEY: ["sk", "ant", "api03", "x".repeat(24)].join("-"),
+  }).map((s) => s.name);
+  assert.deepEqual(names, ["ANTHROPIC_API_KEY"]);
+});
