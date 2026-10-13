@@ -167,7 +167,7 @@ jobs:
           # TMPDIR: the hermetic check requires the platform default.
           SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run
           SP6_LIVE_OUT_DIR: ${{ runner.temp }}/sp6-live/transcripts
-          SP6_LIVE_BUDGET_USD: "10" # provisional cap (spec); recalibrate from the first measured runs
+          SP6_LIVE_BUDGET_USD: "20" # = PINS.BUDGET_USD; measured ~$0.13-0.20/sample, 19 cases x 5 ~ $14-16 (run 38373916541)
           SP6_MOCK_HOST: sp6-mock # the mock world's advertised host (mock/lib/public-host.mjs; mapped in /etc/hosts above)
           CASE: ${{ needs.gate.outputs.case }}
           SAMPLES: ${{ needs.gate.outputs.samples }}

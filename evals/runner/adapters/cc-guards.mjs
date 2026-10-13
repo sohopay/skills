@@ -12,7 +12,9 @@ export const PINS = Object.freeze({
   MODEL_ID: "claude-sonnet-5-5",
   MAX_TURNS: 20,
   DEFAULT_SAMPLES: 5,
-  BUDGET_USD: 10, // provisional (spec): recalibrate from a measured pilot
+  // Recalibrated from the measured pilot (live run 38373916541): about $0.13–0.20 per sample, so 19 cases × 5 samples is
+  // about $14–16; the provisional $10 stopped every run before the x402 cases.
+  BUDGET_USD: 20,
   ADAPTER_VERSION: "claude-code/1",
   RUN_TIMEOUT_MS: 20 * 60 * 1000,
   KILL_GRACE_MS: 5000,
