@@ -127,6 +127,10 @@ jobs:
           sudo apt-get update -qq
           # socat: Claude Code's Linux sandbox refuses to start without it (every sample an adapter error).
           sudo apt-get install -y --no-install-recommends bubblewrap strace socat
+          # The sandboxed agent reaches the mock world as sp6-mock (SP6_MOCK_HOST on the live step) through the sandbox's
+          # egress proxy: inside the sandbox's own netns 127.0.0.1 is its private loopback (live run 38324799614).
+          echo "127.0.0.1 sp6-mock" | sudo tee -a /etc/hosts >/dev/null
+          getent hosts sp6-mock
           # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor; bwrap needs them.
           if sysctl -n kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
@@ -164,6 +168,7 @@ jobs:
           SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run
           SP6_LIVE_OUT_DIR: ${{ runner.temp }}/sp6-live/transcripts
           SP6_LIVE_BUDGET_USD: "10" # provisional cap (spec); recalibrate from the first measured runs
+          SP6_MOCK_HOST: sp6-mock # the mock world's advertised host (mock/lib/public-host.mjs; mapped in /etc/hosts above)
           CASE: ${{ needs.gate.outputs.case }}
           SAMPLES: ${{ needs.gate.outputs.samples }}
         run: |

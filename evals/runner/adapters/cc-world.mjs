@@ -23,6 +23,7 @@ import { buildRun, findOnPath, KEY_REL, seedHome } from "../../mock/run-config.m
 import { brokenInstallEntry } from "../../mock/signer-main.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SIGNER_CALL_TIMEOUT_MS, unsafeSandboxPath } from "../../mock/lib/signer-sandbox.mjs";
+import { publicHost } from "../../mock/lib/public-host.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BACKEND = join(HERE, "..", "..", "mock", "backend.mjs");
@@ -62,7 +63,8 @@ export function parseBackendState(s) {
  * sandbox to "unavailable"). Never a credential, never NODE_OPTIONS. UV_USE_IO_URING is always "0" (R2-9), never the
  * parent's value.
  */
-export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX", "UV_USE_IO_URING"]);
+// SP6_MOCK_HOST: the host the backend advertises to the sandboxed agent (mock/lib/public-host.mjs validates it).
+export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX", "SP6_MOCK_HOST", "UV_USE_IO_URING"]);
 /**
  * R2-9: libuv's documented switch for its file-op io_uring, set on every process the adapter world starts. It is not
  * sufficient on its own (libuv still sets up its epoll_ctl ring), so the strace audit also fails io_uring_setup.
@@ -257,7 +259,7 @@ export function signerPolicy({ home, confine, since }) {
 }
 
 /** Claude Code settings for the run (passed with --settings from the run root; never written into HOME). */
-export function runSettings({ runRoot, home, hookWrapper, node, confine, apiKeyFile }) {
+export function runSettings({ runRoot, home, hookWrapper, node, confine, apiKeyFile, env = process.env }) {
   // C1: the CLI reads its key through apiKeyHelper (run by the CLI process itself, outside the agent's sandbox) from a
   // 0600 file in the run root, which the agent can neither read nor write — never through the env its tools inherit.
   // The helper command is not a hook command, so it is not recorded in the session JSONL (N1).
@@ -279,7 +281,9 @@ export function runSettings({ runRoot, home, hookWrapper, node, confine, apiKeyF
     },
     sandbox: {
       enabled: true, failIfUnavailable: true, autoAllowBashIfSandboxed: true, allowUnsandboxedCommands: false,
-      network: { allowedDomains: ["127.0.0.1", "localhost"] },
+      // The mock's advertised host (SP6_MOCK_HOST, mock/lib/public-host.mjs) is the only egress the agent needs on Linux,
+      // where the sandbox's own netns makes 127.0.0.1 its private loopback.
+      network: { allowedDomains: [...new Set([publicHost(env), "127.0.0.1", "localhost"])] },
       filesystem: fs,
     },
     hooks: { PreToolUse: hook("pre"), PostToolUse: hook("post"), PostToolUseFailure: hook("post"), PermissionDenied: hook("denied") },

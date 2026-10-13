@@ -149,3 +149,17 @@ test("I1: a key-shaped token in prose fails unless its value appears in a public
   assert.deepEqual(jt({ events: [call({ jkt: SEED }), { i: 1, type: "model_text", text: `{"jkt":"${SEED}"}` }] }), []);
   assert.equal(jt({ events: [call({ jkt: SEED }), { i: 1, type: "model_text", text: `0x${SEED}` }] }).length, 0, "an 0x prefix in prose is normalized away");
 });
+
+// Live run 38324490866: a random base64url jkt that happened to START with "0x" (≈1 in 4096 keys) was flagged. The whole-
+// value check stripped "0x" as if it were a hex prefix, so the 43-char token no longer spanned the value and fell to
+// the flat-text check, which found no field name. A public field's 0x-leading base64 value must pass; a secret's must not.
+test("a base64 value that happens to start with 0x is judged as the whole value (public passes, secret is flagged)", () => {
+  const OX = `0x${SEED.slice(2)}`;
+  assert.equal(OX.length, 43);
+  const tj = (o) => scanText(JSON.stringify(o), { json: true });
+  assert.deepEqual(tj({ events: [{ i: 0, type: "tool_result", text: JSON.stringify({ jkt: OX, agent_key_jkt: OX }) }] }), [], "embedded JSON");
+  assert.deepEqual(tj({ events: [call({ jkt: OX })] }), [], "tool args");
+  assert.deepEqual(tj({ events: [{ i: 0, type: "tool_result", stdout: JSON.stringify({ jkt: OX }) }] }), [], "signer stdout");
+  assert.equal(tj({ events: [{ i: 0, type: "tool_result", text: JSON.stringify({ private_key: OX }) }] }).length, 1, "a secret-ish field still flags it");
+  assert.equal(tj({ events: [{ i: 0, type: "tool_result", text: JSON.stringify({ seed: OX }) }] }).length, 1, "a non-public field still flags it");
+});

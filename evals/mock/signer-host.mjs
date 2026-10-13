@@ -31,6 +31,7 @@ import { resolveLoose } from "./lib/realpath-loose.mjs";
 import { childTraceSupport, runSandboxed, sandboxSupport, SIGNER_CALL_TIMEOUT_MS } from "./lib/signer-sandbox.mjs";
 import { parseChildTrace } from "./lib/child-trace.mjs";
 import { COMPAT_TRACE, IO_URING_INJECT } from "./lib/strace-records.mjs";
+import { publicHost } from "./lib/public-host.mjs";
 
 export { sandboxSupport };
 export const HOST = "127.0.0.1";
@@ -316,7 +317,8 @@ export function createSignerHost(config, { logs, clientToken, policy, privateDir
   return {
     server,
     listen(port = 0) {
-      return new Promise((r) => server.listen(port, HOST, () => r(`http://${HOST}:${server.address().port}`)));
+      // Bound to 127.0.0.1; advertised under publicHost() (SP6_MOCK_HOST) for the sandboxed signer client on Linux.
+      return new Promise((r) => server.listen(port, HOST, () => r(`http://${publicHost()}:${server.address().port}`)));
     },
     close() { return new Promise((r) => server.close(() => r())); },
   };

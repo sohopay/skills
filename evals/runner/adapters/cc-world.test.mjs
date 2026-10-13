@@ -36,12 +36,13 @@ function processEnv(pid) {
 
 test("T17 m3: the mock backend is spawned with an ALLOWLISTED env — no API key, no token, nothing credential-shaped", () => {
   const parent = {
-    PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1",
+    PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", SP6_MOCK_HOST: "sp6-mock",
     ANTHROPIC_API_KEY: "sk-ant-x", CLAUDE_CODE_OAUTH_TOKEN: "o", GITHUB_TOKEN: "g", ACTIONS_RUNTIME_TOKEN: "r", NODE_AUTH_TOKEN: "n", AWS_SECRET_ACCESS_KEY: "s", SP6_LIVE: "1", NODE_OPTIONS: "--import=/evil.mjs",
   };
   const env = backendEnv(parent);
   for (const k of Object.keys(env)) assert.ok(BACKEND_ENV_KEYS.includes(k), `${k} not allowlisted`);
-  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", UV_USE_IO_URING: "0" }, "sandbox detection inputs pass; credentials and NODE_OPTIONS do not");
+  // SP6_MOCK_HOST (smoke run 38329347435): the backend must advertise the host the sandboxed agent can reach.
+  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", SP6_MOCK_HOST: "sp6-mock", UV_USE_IO_URING: "0" }, "sandbox detection inputs and the advertised mock host pass; credentials and NODE_OPTIONS do not");
 });
 
 test("R2-9: every process the adapter world starts runs with UV_USE_IO_URING=0 (libuv's file-op io_uring off) — the agent env, the backend, the signer child; never the parent's value", () => {
