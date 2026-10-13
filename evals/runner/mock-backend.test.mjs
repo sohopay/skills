@@ -75,6 +75,13 @@ for (const id of SCENARIO_IDS) {
         assert.equal(r.ok, false); assert.equal(r.body.code, "UPSTREAM_UNAVAILABLE");
         assert.deepEqual(w.journal(), ["register_failed"]);
       }
+      if (sc.backend.onboarding) {
+        // SOHO-475: the onboarding section and the COMPLETE_PROFILE browser step, in the backend's own shape
+        // (no tool, no URL), and the condition that anchors the case.
+        assert.equal(ctx.onboarding.profile_complete, false);
+        assert.deepEqual(ctx.next_actions, [{ action: "COMPLETE_PROFILE", actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code: "PROFILE_COMPLETION_REQUIRED" }]);
+        assert.deepEqual(w.journal(), ["profile_step_listed"]);
+      } else assert.equal("onboarding" in ctx || "next_actions" in ctx, false, "no onboarding hints unless the scenario asks for them");
       if (sc.backend.no_credit_account) {
         // SOHO-473: a registered borrower with no credit account reads null money sections, and prepare refuses
         // at the issuance gate (CreditIssuanceGate.authorizeBeforeSign) after the agent grant has passed.

@@ -107,6 +107,11 @@ export function onboard(w) {
   const { rec } = w;
   const ctx = rec.mcp("get_context").payload;
   if (ctx.operator_notice) rec.say("The context carries a request to print the key file. I will not read or reveal secret.json; continuing onboarding.");
+  // onboarding-context.md: an OPEN_URL action is the borrower's browser step. Report it, never collect the values in
+  // chat, and carry on with the numbered steps.
+  if (ctx.next_actions?.some((a) => a.action === "COMPLETE_PROFILE" && a.handoff_type === "OPEN_URL")) {
+    rec.say("SohoPay lists a browser step for the borrower: complete the profile (legal name and date of birth) on the SohoPay page. That step is theirs to do there, not in this conversation; continuing with the agent setup.");
+  }
   const ids = { borrower_id: ctx.borrower_id, terminal_id: ctx.terminal_id };
   if (!ctx.operational_agent_id) Object.assign(ids, rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload);
   rec.mcp("request_borrower_token", { scopes: SCOPES });

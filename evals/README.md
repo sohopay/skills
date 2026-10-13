@@ -21,7 +21,7 @@ capturing the tool choice the skill should produce for a given server catalog + 
 
 ## SP6 behavioral eval runner (`evals/runner/`)
 
-The `sohopay-onboard` and `sohopay-x402` suites (`behavioral-cases.json` + `assertions.json`, 18 cases) are executable. Design: `docs/superpowers/specs/2026-10-07-sp6-behavioral-eval-runner-design.md`.
+The `sohopay-onboard` and `sohopay-x402` suites (`behavioral-cases.json` + `assertions.json`, 19 cases) are executable. Design: `docs/superpowers/specs/2026-10-07-sp6-behavioral-eval-runner-design.md`.
 
 - **Replay (the merge gate; deterministic, no network, credentials or model):** `npm run eval` (`run.mjs --adapter replay --suite all`). Each case's golden (`transcripts/<id>.json`, a live `claude-code` capture) must pass, and each synthetic adversarial (`transcripts/adversarial/<id>.<variant>.json`) must fail. `validate.yml` runs it after `node --test evals/runner/*.test.mjs evals/runner/adapters/*.test.mjs`, then runs `npm run validate` (the `INV-sp6-*` invariants).
   - **Pending goldens:** a case listed in `evals/goldens-pending.json` that has no golden yet is reported `PENDING` instead of failing; its adversarials still run. An unlisted case without a golden still fails, a listed case that has a golden fails `INV-sp6-goldens-pending`, and the live workflow's regen job removes each id in the same commit as its golden. The file is CODEOWNERS-reviewed.

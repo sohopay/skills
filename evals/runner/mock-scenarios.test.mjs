@@ -1,4 +1,4 @@
-// End-to-end over the mock world: for every one of the 18 cases, a doc-faithful scripted agent runs against the
+// End-to-end over the mock world: for every one of the 19 cases, a doc-faithful scripted agent runs against the
 // case's scenario (real Bash + mock signer on PATH + localhost backend + curl), the transcript is labeled and graded
 // by the real runner, and it must PASS — while the scenario's situation (signer code, input conditions) is really
 // produced. The canaries never reach the transcript; the key file holds the private canary.
