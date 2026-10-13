@@ -8,7 +8,7 @@
 // adapter error (HardError), never a graded sample. Spend comes from the CLI's own per-session cost.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { HardError, label, validateTranscript } from "../schema.mjs";
 import { grade } from "../grader.mjs";
@@ -105,6 +105,17 @@ export function runCompletionError({ result, exit } = {}) {
   if (!result) return "the stream carried no final result message (the run did not complete)";
   if (!CLEAN_RESULT_SUBTYPES.includes(result.subtype)) return `the run did not reach a terminal state (result.subtype=${JSON.stringify(result.subtype ?? null)})`;
   return null;
+}
+
+/**
+ * The CLI binary's paths as an execve may name them (the PATH entry and its resolved target): parseStrace recognises
+ * the CLI's own sandbox ripgrep scan by them (diagnostic run 38331054599). An unresolvable path leaves only the entry.
+ */
+export function cliExePaths(bin) {
+  if (typeof bin !== "string" || !bin) return [];
+  let real = bin;
+  try { real = realpathSync(bin); } catch { /* keep the PATH entry only */ }
+  return [...new Set([bin, real])];
 }
 
 /** The `claude` the harness PATH resolves (never the agent's PATH). */
@@ -241,7 +252,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, name: h.name, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
   // N1: hook processes are excluded ONLY by the pids they reported over the authenticated relay.
   const auditEvents = audit.audit === "available"
-    ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludePids: relay.hookPids, windows })
+    ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludePids: relay.hookPids, windows, cliExe: cliExePaths(opts.claudeBin) })
     : [];
   const { keyFile } = keyCtx;
   const sensitive = (p) => reachesKeyStore(p, keyFile);
