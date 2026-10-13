@@ -63,7 +63,8 @@ export function parseBackendState(s) {
  * sandbox to "unavailable"). Never a credential, never NODE_OPTIONS. UV_USE_IO_URING is always "0" (R2-9), never the
  * parent's value.
  */
-export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX", "UV_USE_IO_URING"]);
+// SP6_MOCK_HOST: the host the backend advertises to the sandboxed agent (mock/lib/public-host.mjs validates it).
+export const BACKEND_ENV_KEYS = Object.freeze(["PATH", "HOME", "LANG", "TMPDIR", "USER", "LOGNAME", "SP6_SIMULATE_NO_SANDBOX", "SP6_MOCK_HOST", "UV_USE_IO_URING"]);
 /**
  * R2-9: libuv's documented switch for its file-op io_uring, set on every process the adapter world starts. It is not
  * sufficient on its own (libuv still sets up its epoll_ctl ring), so the strace audit also fails io_uring_setup.
