@@ -726,6 +726,8 @@ Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two 
 
 Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
 
+Run each command below as **its own** Bash call: the `KEY=` assignment, the command and its heredoc — nothing else. Never chain anything before or after it (no `;`, `&&` or `|`, no `echo`, no `timeout` wrapper, no `capabilities` / `verify-vectors` check in the same call). A key-touching call with anything else in it counts as an access to the key store.
+
 Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EOF`) exactly as shown, filling in the values — never `echo … |` or `printf … |`, and never an unquoted heredoc.
 
 1. **Generate (signer owns it):**
@@ -1405,7 +1407,7 @@ Try these in order; use the first that **answers**:
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities --output json` exits 0, its
 stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
-reports embedded vectors, run `<signer> verify-vectors --output json` once and require exit 0 — a
+reports embedded vectors, run `<signer> verify-vectors --output json` once, as its own Bash call (never chained with a key command), and require exit 0 — a
 **nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
 is `@sohopay/agent-signer`, also require `implementation_version >= 0.3.1` (the pinned version;
 `0.3.0` echoed `header_value` back on stdout under `--write-header`, i.e. a header-leaking
