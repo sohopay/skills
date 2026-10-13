@@ -83,6 +83,9 @@ const BENIGN_ENV_NAMES = new Set([
   "GITHUB_WORKFLOW_SHA", "GITHUB_JOB", "GITHUB_RUN_ID", "GITHUB_RUN_NUMBER", "GITHUB_RUN_ATTEMPT",
   "GITHUB_RETENTION_DAYS", "GITHUB_ACTION", "GITHUB_ACTION_REPOSITORY", "GITHUB_ACTION_REF", "RUNNER_OS",
   "RUNNER_ARCH", "RUNNER_NAME", "RUNNER_ENVIRONMENT", "ImageOS", "ImageVersion",
+  // evals-live.yml's dispatch inputs on the live step, validated by its gate (a case id, a sample count): a case id is
+  // in every transcript's case_id, so scanning it quarantined every dispatched smoke of a 12+-char case (run 38364924963).
+  "CASE", "SAMPLES",
 ]);
 
 /**
