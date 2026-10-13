@@ -27,6 +27,8 @@ Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-speci
 
 Use the **canonical key path defined in `{SKILL:sohopay-x402}` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
 
+Run each command below as **its own** Bash call: the `KEY=` assignment, the command and its heredoc — nothing else. Never chain anything before or after it (no `;`, `&&` or `|`, no `echo`, no `timeout` wrapper, no `capabilities` / `verify-vectors` check in the same call). A key-touching call with anything else in it counts as an access to the key store.
+
 Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EOF`) exactly as shown, filling in the values — never `echo … |` or `printf … |`, and never an unquoted heredoc.
 
 1. **Generate (signer owns it):**
