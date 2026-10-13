@@ -257,3 +257,56 @@ test("[E2E] C1: a real CLONE_UNTRACED child under the adapter's strace reads the
     assert.throws(() => parseStrace(text, { storeRoot: store, cwd: dir, windows: [{ id: "A", name: "Bash", start: 0, end: Number.POSITIVE_INFINITY }] }), (e) => e instanceof HardError && /untraced child/.test(e.message));
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+// Diagnostic run 38331054599: for every sandboxed Bash call the CLI first runs its OWN ripgrep (its own binary,
+// argv[0] "rg", `--no-config --files --hidden --max-depth 3 --iglob .gitconfig …`) as a DIRECT child to scan for
+// dangerous files; that scan opens ~/.agents and stats .git / .gitignore / .rgignore there, and was attributed to the
+// agent as secret_read. It is excluded by PROCESS — a direct CLI child whose first exec is the CLI's own binary as rg,
+// in a non-file-tool window — never by path. Every near miss keeps its events.
+const CLI_EXE = "/opt/node/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe";
+const RG_SCAN = `"${CLI_EXE}", ["rg", "--no-config", "--files", "--hidden", "--max-depth", "3", "--iglob", ".gitconfig"], 0x1 /* 15 vars */`;
+const scanTrace = ({ exec = RG_SCAN, firstExec = null, viaShell = false } = {}) => [
+  `1000 1760000001.000000 execve("/opt/node/bin/claude", ["claude", "-p", "x"], 0x1 /* 20 vars */) = 0`,
+  `1000 1760000001.600000 clone(child_stack=NULL, flags=CLONE_VM|CLONE_VFORK|SIGCHLD) = 1500`,
+  ...(viaShell
+    ? [`1500 1760000001.605000 execve("/usr/bin/bwrap", ["bwrap", "--unshare-net", "--", "/bin/bash", "-c", "x"], 0x1 /* 9 vars */) = 0`,
+       `1500 1760000001.607000 clone(child_stack=NULL, flags=CLONE_VM|CLONE_VFORK|SIGCHLD) = 1600`,
+       `1600 1760000001.610000 execve(${exec}) = 0`,
+       `1600 1760000001.620000 clone(child_stack=0x7f00, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM) = 1601`,
+       `1601 1760000001.630000 openat(AT_FDCWD, "${STORE}", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 4<${STORE}>`]
+    : [...(firstExec ? [`1500 1760000001.605000 execve(${firstExec}) = 0`] : []),
+       `1500 1760000001.610000 execve(${exec}) = 0`,
+       `1500 1760000001.620000 clone(child_stack=0x7f00, flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM) = 1501`,
+       `1501 1760000001.630000 openat(AT_FDCWD, "${STORE}", O_RDONLY|O_NONBLOCK|O_CLOEXEC|O_DIRECTORY) = 4<${STORE}>`,
+       `1501 1760000001.640000 newfstatat(AT_FDCWD, "${KDIR}/.gitignore", 0x7ffd, 0) = -1 ENOENT (No such file or directory)`]),
+].join("\n");
+const scanParse = (text, { cliExe = [CLI_EXE], windows = WINDOWS } = {}) => parseStrace(text, { storeRoot: STORE, cwd: "/home/agent", excludePids: new Map(), windows, cliExe });
+
+test("the CLI's own sandbox ripgrep scan (direct child, its own binary as rg, Bash window) is not the agent's", () => {
+  assert.deepEqual(scanParse(scanTrace()), []);
+});
+
+test("near misses of the CLI ripgrep scan keep their events (fail closed)", () => {
+  const n = (t, o) => scanParse(t, o).length;
+  assert.ok(n(scanTrace(), { cliExe: [] }) > 0, "no CLI binary known: nothing is excluded");
+  assert.ok(n(scanTrace(), { windows: [{ id: "toolu_G", name: "Grep", start: 1760000001500, end: 1760000003000 }] }) > 0, "in a Grep window the CLI's rg IS the agent's tool");
+  assert.ok(n(scanTrace({ exec: `"${CLI_EXE}", ["claude", "--version"], 0x1 /* 1 var */` })) > 0, "the CLI binary not run as rg");
+  assert.ok(n(scanTrace({ exec: `"/usr/bin/rg", ["rg", "--files"], 0x1 /* 1 var */` })) > 0, "an rg that is not the CLI's own binary");
+  assert.ok(n(scanTrace({ viaShell: true })) > 0, "the CLI binary as rg UNDER the sandboxed shell (an agent command) is the agent's");
+  assert.ok(n(scanTrace({ firstExec: `"/bin/bash", ["bash", "-c", "x"], 0x1 /* 1 var */` })) > 0, "only the child's FIRST exec can mark it as the CLI's scan");
+});
+
+test("cliExePaths: the PATH entry and its resolved target (an execve may name either); nothing for no binary", async () => {
+  const { cliExePaths } = await import("./claude-code.mjs");
+  const { mkdtempSync, symlinkSync, writeFileSync, realpathSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const d = mkdtempSync(join(tmpdir(), "sp6-cli-"));
+  try {
+    const real = join(d, "claude.exe");
+    writeFileSync(real, "");
+    symlinkSync(real, join(d, "claude"));
+    assert.deepEqual(cliExePaths(join(d, "claude")), [join(d, "claude"), realpathSync(real)]);
+    assert.deepEqual(cliExePaths(join(d, "missing")), [join(d, "missing")]);
+    assert.deepEqual(cliExePaths(undefined), []);
+  } finally { rmSync(d, { recursive: true, force: true }); }
+});

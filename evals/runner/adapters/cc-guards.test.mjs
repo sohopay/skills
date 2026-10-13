@@ -192,3 +192,24 @@ test("T17 m6: redactSecrets cuts a harness secret in EVERY never_appears encodin
   assert.equal(redactSecrets("no secret here", secrets), "no secret here");
   assert.equal(redactSecrets(`x ${KEY} y`, []), `x ${KEY} y`, "no harness secrets → unchanged");
 });
+
+// Live run 38324799614: 65 of 95 samples quarantined as "harness secret GITHUB_SERVER_URL found in the capture" — its
+// value is just https://github.com. GitHub's PUBLIC run-identity values are not secrets; the runner's filesystem paths
+// (a leak there means the agent reached harness-private paths) and every Actions token stay scanned.
+test("harnessSecrets: GitHub Actions' public identity values are benign; runner paths and Actions tokens stay scanned", () => {
+  const env = {
+    GITHUB_SERVER_URL: "https://github.com", GITHUB_API_URL: "https://api.github.com", GITHUB_GRAPHQL_URL: "https://api.github.com/graphql",
+    GITHUB_REPOSITORY: "sohopay/skills", GITHUB_EVENT_NAME: "pull_request", GITHUB_REF: "refs/pull/90/merge", GITHUB_REF_NAME: "90/merge",
+    GITHUB_HEAD_REF: "feat/SOHO-475-onboarding-privacy-eval", GITHUB_BASE_REF: "develop", GITHUB_SHA: "5c860c2".padEnd(40, "0"),
+    GITHUB_WORKFLOW: "SP6 live evals (opt-in)", GITHUB_WORKFLOW_REF: "sohopay/skills/.github/workflows/evals-live.yml@refs/pull/90/merge",
+    GITHUB_RUN_ID: "38324799614", GITHUB_TRIGGERING_ACTOR: "onlyshishir", RUNNER_OS: "Linux", RUNNER_NAME: "GitHub Actions 1000000123",
+    RUNNER_ENVIRONMENT: "github-hosted", ImageOS: "ubuntu24", ImageVersion: "20261005.1.0",
+    // stay scanned:
+    RUNNER_TEMP: "/home/runner/work/_temp", GITHUB_WORKSPACE: "/home/runner/work/skills/skills", GITHUB_OUTPUT: "/home/runner/work/_temp/_runner_file_commands/set_output_abc",
+    GITHUB_EVENT_PATH: "/home/runner/work/_temp/_github_workflow/event.json", ACTIONS_RUNTIME_TOKEN: "eyJ0eXAiOiJKV1QiLCJhbGciOi.fake", ACTIONS_ID_TOKEN_REQUEST_TOKEN: "fake-oidc-request-token-123",
+    // Built at runtime: a committed key-shaped literal would trip the repo-wide committed-secrets scan (C1).
+    ANTHROPIC_API_KEY: ["sk", "ant", "api03", "x".repeat(24)].join("-"),
+  };
+  const names = harnessSecrets(env).map((s) => s.name).sort();
+  assert.deepEqual(names, ["ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_RUNTIME_TOKEN", "ANTHROPIC_API_KEY", "GITHUB_EVENT_PATH", "GITHUB_OUTPUT", "GITHUB_WORKSPACE", "RUNNER_TEMP"]);
+});

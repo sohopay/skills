@@ -8,7 +8,7 @@
 // adapter error (HardError), never a graded sample. Spend comes from the CLI's own per-session cost.
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, createWriteStream, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { HardError, label, validateTranscript } from "../schema.mjs";
 import { grade } from "../grader.mjs";
@@ -106,6 +106,45 @@ export function runCompletionError({ result, exit } = {}) {
   if (!CLEAN_RESULT_SUBTYPES.includes(result.subtype)) return `the run did not reach a terminal state (result.subtype=${JSON.stringify(result.subtype ?? null)})`;
   return null;
 }
+
+/**
+ * The CLI binary's paths as an execve may name them (the PATH entry and its resolved target): parseStrace recognises
+ * the CLI's own sandbox ripgrep scan by them (diagnostic run 38331054599). An unresolvable path leaves only the entry.
+ */
+export function cliExePaths(bin) {
+  if (typeof bin !== "string" || !bin) return [];
+  let real = bin;
+  try { real = realpathSync(bin); } catch { /* keep the PATH entry only */ }
+  return [...new Set([bin, real])];
+}
+
+const DETAIL_MAX = 300;
+const clip = (s) => (s.length > DETAIL_MAX ? `${s.slice(0, DETAIL_MAX)}…` : s);
+
+/**
+ * Why a run failed, for its adapter error: the CLI's stderr; when that is empty (live run 38322219705: every sample
+ * exited 1 with nothing on stderr), what the CLI itself printed on stdout — its non-JSON lines and an is_error final
+ * `result`. Assistant messages and a non-error result are the agent's own text and are never quoted. Bounded; the
+ * caller still redacts harness secrets (C1).
+ */
+export function cliFailureDetail({ stderr = "", stream = "" } = {}) {
+  const err = stderr.trim();
+  if (err) return clip(err);
+  const said = [];
+  for (const raw of stream.split("\n")) {
+    const l = raw.trim();
+    if (!l) continue;
+    let msg;
+    try { msg = JSON.parse(l); } catch { said.push(`stdout: ${l}`); continue; }
+    if (msg?.type === "result" && msg.is_error === true) {
+      const text = typeof msg.result === "string" ? msg.result : JSON.stringify(msg.errors ?? null);
+      said.push(`result ${msg.subtype ?? "?"}: ${text}`);
+    }
+  }
+  return said.length ? clip(said.slice(-2).join(" | ")) : "no stderr; no CLI error on stdout";
+}
+
+const readOr = (p) => (existsSync(p) ? readFileSync(p, "utf8") : "");
 
 /** The `claude` the harness PATH resolves (never the agent's PATH). */
 export function resolveClaude(pathValue = process.env.PATH ?? "") {
@@ -225,9 +264,10 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   // fail-open #1: refuse to grade a crashed / timed-out / signal-killed run, or one whose stream carried no terminal
   // result — such a capture is incomplete and must quarantine, not be scored as a normal sample.
   const incomplete = runCompletionError({ result, exit });
-  if (incomplete) throw new HardError(`claude-code adapter: ${incomplete} (exit ${exit.code ?? exit.signal ?? exit.error}; ${readFileSync(w.paths.stderr, "utf8").trim().slice(0, 300)})`);
+  const detail = () => cliFailureDetail({ stderr: readOr(w.paths.stderr), stream: readOr(w.paths.stream) });
+  if (incomplete) throw new HardError(`claude-code adapter: ${incomplete} (exit ${exit.code ?? exit.signal ?? exit.error}; ${detail()})`);
   const sessionFile = findSessionFile(w.home, sessionId);
-  if (!sessionFile) throw new HardError(`claude-code adapter: no session JSONL for ${sessionId} (exit ${exit.code ?? exit.signal ?? exit.error}; ${readFileSync(w.paths.stderr, "utf8").trim().slice(0, 300)})`);
+  if (!sessionFile) throw new HardError(`claude-code adapter: no session JSONL for ${sessionId} (exit ${exit.code ?? exit.signal ?? exit.error}; ${detail()})`);
   checkInit(init);
   const items = parseSession(readFileSync(sessionFile, "utf8"), { readPersisted: persistedReader(w.home) });
   checkHooksApplied(items, relay);
@@ -241,7 +281,7 @@ async function capture(w, { exit, relay, keyCtx, sessionId, audit, opts, ref, on
   const windows = [...relay.hooks].filter(([, h]) => h.pre).map(([id, h]) => ({ id, name: h.name, start: h.pre.at, end: h.post?.at ?? Number.POSITIVE_INFINITY }));
   // N1: hook processes are excluded ONLY by the pids they reported over the authenticated relay.
   const auditEvents = audit.audit === "available"
-    ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludePids: relay.hookPids, windows })
+    ? parseStrace(existsSync(w.paths.audit) ? readFileSync(w.paths.audit, "utf8") : "", { storeRoot: keyCtx.storeRoot, cwd: w.home, excludePids: relay.hookPids, windows, cliExe: cliExePaths(opts.claudeBin) })
     : [];
   const { keyFile } = keyCtx;
   const sensitive = (p) => reachesKeyStore(p, keyFile);

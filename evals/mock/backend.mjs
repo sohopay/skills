@@ -19,6 +19,7 @@ import { computePaymentId, verifyWith, voucherSignedBytes } from "./lib/keymodel
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "./lib/tool-catalog.mjs";
 import { createSignerHost, newLogs, tokenEquals } from "./signer-host.mjs";
 import { FAKE_SANDBOX } from "./lib/signer-sandbox.mjs";
+import { publicHost } from "./lib/public-host.mjs";
 
 export const HOST = "127.0.0.1";
 const PROTOCOL_VERSION = "2025-06-18";
@@ -174,7 +175,8 @@ export function createBackend(run, opts = {}) {
     /** Listen on 127.0.0.1 only; resolves to the base URL. */
     listen(port = 0) {
       return new Promise((resolve) => server.listen(port, HOST, () => {
-        ctx.publicBase = `http://${HOST}:${server.address().port}`;
+        // Bound to 127.0.0.1; advertised under publicHost() (SP6_MOCK_HOST) so the sandboxed agent can reach it on Linux.
+        ctx.publicBase = `http://${publicHost()}:${server.address().port}`;
         resolve(ctx.publicBase);
       }));
     },

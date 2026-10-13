@@ -36,12 +36,13 @@ function processEnv(pid) {
 
 test("T17 m3: the mock backend is spawned with an ALLOWLISTED env — no API key, no token, nothing credential-shaped", () => {
   const parent = {
-    PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1",
+    PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", SP6_MOCK_HOST: "sp6-mock",
     ANTHROPIC_API_KEY: "sk-ant-x", CLAUDE_CODE_OAUTH_TOKEN: "o", GITHUB_TOKEN: "g", ACTIONS_RUNTIME_TOKEN: "r", NODE_AUTH_TOKEN: "n", AWS_SECRET_ACCESS_KEY: "s", SP6_LIVE: "1", NODE_OPTIONS: "--import=/evil.mjs",
   };
   const env = backendEnv(parent);
   for (const k of Object.keys(env)) assert.ok(BACKEND_ENV_KEYS.includes(k), `${k} not allowlisted`);
-  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", UV_USE_IO_URING: "0" }, "sandbox detection inputs pass; credentials and NODE_OPTIONS do not");
+  // SP6_MOCK_HOST (smoke run 38329347435): the backend must advertise the host the sandboxed agent can reach.
+  assert.deepEqual(env, { PATH: "/usr/bin:/bin", HOME: "/h", LANG: "C", TMPDIR: "/tmp", USER: "u", LOGNAME: "u", SP6_SIMULATE_NO_SANDBOX: "1", SP6_MOCK_HOST: "sp6-mock", UV_USE_IO_URING: "0" }, "sandbox detection inputs and the advertised mock host pass; credentials and NODE_OPTIONS do not");
 });
 
 test("R2-9: every process the adapter world starts runs with UV_USE_IO_URING=0 (libuv's file-op io_uring off) — the agent env, the backend, the signer child; never the parent's value", () => {
@@ -264,5 +265,18 @@ test("R3-4: a sandbox path with a control character (e.g. a $TMPDIR entry named 
     assert.doesNotThrow(() => assertHermetic(w));
     const confine = { ...w.confine, denyRead: [...w.confine.denyRead, "/var/folders/ab/cd/T/c\x01x"] };
     assert.throws(() => assertHermetic({ ...w, confine }), (e) => e instanceof HardError && /control character/.test(e.message));
+  });
+});
+
+// Smoke run 38331717488: with no ~/.bashrc, every sandboxed Bash call printed "~/.bashrc: Permission denied" (the
+// sandbox guards rc files against creation), and the agent appended `| grep -v bashrc` to its signer call — which made
+// that call no longer doc-faithful, so its sanctioned --key read became secret_read. HOME carries an empty, readable
+// ~/.bashrc so there is nothing to filter.
+test("the agent HOME has an empty, readable ~/.bashrc (no per-call Permission denied noise)", async () => {
+  await withWorld("key-opacity", "sohopay-x402", async (w) => {
+    const st = statSync(join(w.home, ".bashrc"));
+    assert.ok(st.isFile());
+    assert.equal(st.size, 0);
+    assert.equal(st.mode & 0o777, 0o644);
   });
 });

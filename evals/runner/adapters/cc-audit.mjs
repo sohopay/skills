@@ -164,7 +164,7 @@ function pathsOf(rec, parts, cwd, op, follow) {
  *   windows: tool-call windows (Pre → Post hook times). excludePids: hook pid → when the relay received its report;
  *   a pid is excluded only as a DIRECT child of the CLI cloned within that hook's span (R2-8).
  */
-export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), windows = [] }) {
+export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), windows = [], cliExe = [] }) {
   const HOOK_SPAN_MS = 60_000;
   const isHookClone = (child, at) => excludePids.has(child) && at <= excludePids.get(child) + 1000 && excludePids.get(child) - at <= HOOK_SPAN_MS;
   const recs = straceRecords(text);
@@ -191,11 +191,23 @@ export function parseStrace(text, { storeRoot, cwd, excludePids = new Map(), win
         const w = windowAt(at);
         fresh.kind = w ? "tool" : "excluded";
         fresh.callId = w ? w.id : null;
+        // A direct CLI child in a non-file-tool window: its first exec decides whether it is the CLI's own sandbox scan.
+        if (w && !IN_PROCESS_TOOLS.has(w.name)) fresh.scanCandidate = true;
       }
       procs.set(child, fresh);
       for (const b of buffered.get(child) ?? []) handle(b, fresh);
       buffered.delete(child);
       return;
+    }
+    if (/^execve/.test(sys) && ret === "0" && info.scanCandidate) {
+      // Diagnostic run 38331054599: before each sandboxed Bash call the CLI runs its OWN binary as `rg` (argv[0]) to
+      // scan for dangerous files (.gitconfig, .bashrc, …), opening ~/.agents. Only a direct CLI child's FIRST exec can
+      // qualify; agent commands run under the sandbox wrapper, never as direct CLI children, so they cannot.
+      info.scanCandidate = false;
+      const [exe, argv] = splitArgs(args);
+      const path = STR_ARG_RE.exec(exe ?? "")?.[1];
+      const argv0 = /^\[\s*"((?:[^"\\]|\\.)*)"/.exec(argv ?? "")?.[1];
+      if (path !== undefined && cliExe.includes(unesc(path)) && argv0 === "rg") info.kind = "excluded";
     }
     if (info.kind === "excluded") return;
     if (/^io_uring_(setup|enter)$/.test(sys)) {
