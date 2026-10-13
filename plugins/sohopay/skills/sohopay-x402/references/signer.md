@@ -41,7 +41,7 @@ First obtain the prepare response; then one signer invocation (the envelope-mode
 recipe in `{SKILL:sohopay-x402}`); its response is already in context. Shell variables do
 not survive between tool calls, so use the **literal** directory that `mktemp` prints:
 
-1. One Bash call: `mktemp -d`. Note the directory it prints — `<dir>` below. Paste that literal path wherever `<dir>` appears; never assign it to a shell variable (`d=/tmp/…; … $d/prep.json`) — only the literal path is recognised as this call's scratch directory.
+1. One Bash call: `mktemp -d`. Note the directory it prints — `<dir>` below.
 2. Write the prepare response to `<dir>/prep.json` with the host's **file-write tool**,
    **byte-for-byte as received — no re-serialization**. Never put the JSON in a shell command.
 3. One Bash call:
