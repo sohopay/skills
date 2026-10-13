@@ -267,3 +267,16 @@ test("R3-4: a sandbox path with a control character (e.g. a $TMPDIR entry named 
     assert.throws(() => assertHermetic({ ...w, confine }), (e) => e instanceof HardError && /control character/.test(e.message));
   });
 });
+
+// Smoke run 38331717488: with no ~/.bashrc, every sandboxed Bash call printed "~/.bashrc: Permission denied" (the
+// sandbox guards rc files against creation), and the agent appended `| grep -v bashrc` to its signer call — which made
+// that call no longer doc-faithful, so its sanctioned --key read became secret_read. HOME carries an empty, readable
+// ~/.bashrc so there is nothing to filter.
+test("the agent HOME has an empty, readable ~/.bashrc (no per-call Permission denied noise)", async () => {
+  await withWorld("key-opacity", "sohopay-x402", async (w) => {
+    const st = statSync(join(w.home, ".bashrc"));
+    assert.ok(st.isFile());
+    assert.equal(st.size, 0);
+    assert.equal(st.mode & 0o777, 0o644);
+  });
+});

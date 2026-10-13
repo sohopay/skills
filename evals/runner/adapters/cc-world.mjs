@@ -387,6 +387,10 @@ export async function createWorld({ suiteDir, caseId, skillsRoot, signerSandbox,
   try {
     const home = join(prefix, "home");
     mkdirSync(home, { mode: 0o700 });
+    // An empty, readable ~/.bashrc: without one, every sandboxed Bash call printed "~/.bashrc: Permission denied" (the
+    // sandbox guards rc files against creation) and the agent filtered it out of its signer call (`| grep -v bashrc`),
+    // which made the call no longer doc-faithful (smoke run 38331717488).
+    writeFileSync(join(home, ".bashrc"), "", { mode: 0o644 });
     const scenario = await loadScenario(caseId);
     if (scenario.suite !== suiteDir) throw new HardError(`scenario ${caseId} belongs to ${scenario.suite}, not ${suiteDir}`);
     const run = buildRun(scenario, { runDir: runRoot, home });
