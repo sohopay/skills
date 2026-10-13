@@ -19,7 +19,7 @@ Try these in order; use the first that **answers**:
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities --output json` exits 0, its
 stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
-reports embedded vectors, run `<signer> verify-vectors --output json` once and require exit 0 — a
+reports embedded vectors, run `<signer> verify-vectors --output json` once, as its own Bash call (never chained with a key command), and require exit 0 — a
 **nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
 is `@sohopay/agent-signer`, also require `implementation_version >= 0.3.1` (the pinned version;
 `0.3.0` echoed `header_value` back on stdout under `--write-header`, i.e. a header-leaking
