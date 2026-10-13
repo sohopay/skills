@@ -58,3 +58,30 @@ test("signer client: a non-loopback endpoint goes through http_proxy (absolute U
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Smoke run 38329770318: through the sandbox proxy the client got a non-JSON reply and printed only "internal error".
+// A reply that is not the signer host's JSON must say what came back (status, content-type, a bounded body sample).
+test("signer client: a non-JSON reply (e.g. a proxy refusal) reports its status and a bounded body sample", async () => {
+  const proxy = createServer((req, res) => { res.writeHead(403, { "content-type": "text/html" }); res.end(`<html>Forbidden by proxy ${"x".repeat(5_000)}</html>`); });
+  await new Promise((r) => proxy.listen(0, "127.0.0.1", r));
+  const dir = mkdtempSync(join(tmpdir(), "sp6-client-"));
+  try {
+    const src = readFileSync(join(HERE, "adapters", "cc-signer-client.mjs"), "utf8");
+    const client = join(dir, "client.mjs");
+    writeFileSync(client, src.replace("__SIGNER_ENDPOINT__", "http://sp6-mock:4567").replace("__SIGNER_CLIENT__", "tok"));
+    const r = await new Promise((done) => {
+      const c = spawn(process.execPath, [client, "capabilities"], { env: { HOME: dir, http_proxy: `http://127.0.0.1:${proxy.address().port}` } });
+      let stderr = "";
+      c.stderr.on("data", (b) => { stderr += b; });
+      c.on("close", (status) => done({ status, stderr }));
+    });
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /HTTP 403/);
+    assert.match(r.stderr, /text\/html/);
+    assert.match(r.stderr, /Forbidden by proxy/);
+    assert.ok(r.stderr.length < 400, `bounded: ${r.stderr.length}`);
+  } finally {
+    proxy.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

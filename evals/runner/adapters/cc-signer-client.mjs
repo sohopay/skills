@@ -30,7 +30,12 @@ const req = request({ ...target, method: "POST", headers: { host: url.host, "con
   res.on("data", (c) => chunks.push(c));
   res.on("end", () => {
     let r;
-    try { r = JSON.parse(Buffer.concat(chunks).toString("utf8")); } catch { r = { stdout: "", stderr: "sohopay-signer: internal error\n", exitCode: 1 }; }
+    const text = Buffer.concat(chunks).toString("utf8");
+    try { r = JSON.parse(text); } catch {
+      // Not the signer host's JSON (e.g. the sandbox proxy refused the request): say what came back, bounded.
+      const sample = text.replace(/\s+/g, " ").trim().slice(0, 200);
+      r = { stdout: "", stderr: `sohopay-signer: unexpected reply HTTP ${res.statusCode} (${res.headers["content-type"] ?? "no content-type"}): ${sample}\n`, exitCode: 1 };
+    }
     if (r.stdout) process.stdout.write(r.stdout);
     if (r.stderr) process.stderr.write(r.stderr);
     process.exitCode = Number.isInteger(r.exitCode) ? r.exitCode : 1;
