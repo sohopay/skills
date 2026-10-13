@@ -85,3 +85,35 @@ test("signer client: a non-JSON reply (e.g. a proxy refusal) reports its status 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// Smoke run 38330189837: the sandbox proxy answered 407 — its http_proxy URL carries credentials (curl sends them as
+// Proxy-Authorization; Node does not). The client must send them, and never print them.
+test("signer client: proxy credentials in http_proxy are sent as Proxy-Authorization (Basic), never printed", async () => {
+  const seen = [];
+  const proxy = createServer((req, res) => {
+    seen.push(req.headers["proxy-authorization"] ?? null);
+    if (req.headers["proxy-authorization"] !== `Basic ${Buffer.from("sbx-user:p@ss word").toString("base64")}`) { res.writeHead(407); res.end(); return; }
+    res.end(JSON.stringify({ stdout: "ok\n", stderr: "", exitCode: 0 }));
+  });
+  await new Promise((r) => proxy.listen(0, "127.0.0.1", r));
+  const dir = mkdtempSync(join(tmpdir(), "sp6-client-"));
+  try {
+    const src = readFileSync(join(HERE, "adapters", "cc-signer-client.mjs"), "utf8");
+    const client = join(dir, "client.mjs");
+    writeFileSync(client, src.replace("__SIGNER_ENDPOINT__", "http://sp6-mock:4567").replace("__SIGNER_CLIENT__", "tok"));
+    const r = await new Promise((done) => {
+      const c = spawn(process.execPath, [client, "capabilities"], { env: { HOME: dir, HTTP_PROXY: `http://sbx-user:${encodeURIComponent("p@ss word")}@127.0.0.1:${proxy.address().port}` } });
+      let stdout = ""; let stderr = "";
+      c.stdout.on("data", (b) => { stdout += b; });
+      c.stderr.on("data", (b) => { stderr += b; });
+      c.on("close", (status) => done({ status, stdout, stderr }));
+    });
+    assert.equal(r.status, 0, r.stderr);
+    assert.equal(r.stdout, "ok\n");
+    assert.equal(seen.length, 1);
+    assert.ok(!/p@ss|sbx-user/.test(r.stdout + r.stderr), "credentials never printed");
+  } finally {
+    proxy.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

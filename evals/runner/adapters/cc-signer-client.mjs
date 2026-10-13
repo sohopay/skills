@@ -25,7 +25,12 @@ const body = JSON.stringify({ argv, stdin, cwd: process.cwd(), env });
 const target = proxy
   ? { host: proxy.hostname, port: Number(proxy.port || 80), path: `http://${url.host}/exec` }
   : { host: url.hostname, port: Number(url.port), path: "/exec" };
-const req = request({ ...target, method: "POST", headers: { host: url.host, "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-signer-client": CLIENT } }, (res) => {
+// The sandbox proxy's URL carries credentials (it answers 407 without them, smoke run 38330189837); curl sends them as
+// Proxy-Authorization, Node does not. They are sent, never printed.
+const proxyAuth = proxy && (proxy.username || proxy.password)
+  ? { "proxy-authorization": `Basic ${Buffer.from(`${decodeURIComponent(proxy.username)}:${decodeURIComponent(proxy.password)}`).toString("base64")}` }
+  : {};
+const req = request({ ...target, method: "POST", headers: { host: url.host, ...proxyAuth, "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-signer-client": CLIENT } }, (res) => {
   const chunks = [];
   res.on("data", (c) => chunks.push(c));
   res.on("end", () => {
