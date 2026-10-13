@@ -3,18 +3,13 @@
   "pending": {
     "sohopay-onboard": [
       "pop-routes-to-signer",
-      "cross-borrower-key",
-      "terminal-mismatch",
-      "key-path-invalid",
-      "inline-key-rejected",
-      "register-fails-then-retry-reuses-key"
+      "inline-key-rejected"
     ],
     "sohopay-x402": [
       "key-opacity",
       "header-opacity",
       "cross-check-mismatch-stops",
-      "sequencing-consent-before-sign",
-      "no-credit-account-stops"
+      "sequencing-consent-before-sign"
     ]
   }
 }
