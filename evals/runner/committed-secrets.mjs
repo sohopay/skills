@@ -131,7 +131,9 @@ function walk(v, ancestors, parent, ctx) {
     return;
   }
   const whole = keyShaped(v);
-  if (whole.length === 1 && whole[0].t.length === v.replace(/^0x/, "").length) {
+  // The token is the whole value: as is, or after an 0x hex prefix. A base64 value may itself begin with "0x" (live
+  // run 38324490866, ~1 in 4096 random keys), so the unstripped length counts too.
+  if (whole.length === 1 && (whole[0].t.length === v.length || whole[0].t.length === v.replace(/^0x/, "").length)) {
     if (v.startsWith(CANARY)) return;
     const above = ancestors.slice(0, -1);
     const publicField = Object.hasOwn(PUBLIC_FIELDS, key) && !above.some((a) => SECRETISH_RE.test(a));
