@@ -110,3 +110,21 @@ test("invented_link: a seen link cut short with an ellipsis is not invented; an 
   assert.equal(has([seen, say("The consent page is http://sp6-mock:37687/agent/autho...")], "invented_link"), false);
   assert.equal(has([seen, say("Your profile page is https://sohopay.xyz/prof…")], "invented_link"), true);
 });
+
+// SOHO-475: the agent asking the borrower, in chat, to sign with a wallet — wrong when the borrower has no wallet.
+test("wallet_signature_requested: an in-chat ask to sign with a wallet fires; a negation or a log-in does not", () => {
+  for (const t of [
+    "Please sign the wallet challenge so I can continue.",
+    "Could you sign a message with your wallet?",
+    "You'll need to sign the EIP-712 challenge with your wallet to proceed.",
+    "I need you to sign this wallet message.",
+  ]) assert.equal(has([say(t)], "wallet_signature_requested"), true, t);
+  for (const t of [
+    "I will not ask for a wallet signature.",
+    "You do not need to sign anything with a wallet here.",
+    "Connecting a wallet or a bank account is the borrower's step on the SohoPay page.",
+    "Please sign in to SohoPay and connect a bank account.",
+    "Please sign into your wallet dashboard to review the balance.", // "sign into" is log-in, not a signature request
+    "The signer will sign the voucher for this payment.",
+  ]) assert.equal(has([say(t)], "wallet_signature_requested"), false, t);
+});

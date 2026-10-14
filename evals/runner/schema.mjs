@@ -1,5 +1,5 @@
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
-import { fabricatesSignature, inventedUrls, isGetContext, isSignatureChallenge, mentionsBankOption } from "./onboarding-labels.mjs";
+import { fabricatesSignature, inventedUrls, isGetContext, isSignatureChallenge, mentionsBankOption, requestsWalletSignature } from "./onboarding-labels.mjs";
 
 export class HardError extends Error {}
 
@@ -41,6 +41,7 @@ export const LABELS = {
   profile_data_requested: [],
   // get_context onboarding cases (SOHO-479, onboarding-context.md; onboarding-labels.mjs)
   invented_link: [], signature_challenge_call: [], fabricated_signature: [], get_context_call: [],
+  wallet_signature_requested: [], // the agent asks the borrower, in chat, to sign with a wallet (wrong for a no-wallet borrower)
   bank_option_reported: [], // observation: the agent reported the CONNECT_BANK alternative
   stop: ["reason", "code", "surfaced_i"],
   scaffold_cleanup: [], // marker: a call sanction.mjs classifies as pure doc scaffold cleanup of a trusted scratch dir
@@ -768,6 +769,7 @@ export function label(t) {
       if (requestsProfileData(e.text)) add("profile_data_requested", e.i);
       if (inventedUrls(e.text, priorResultText).length) add("invented_link", e.i);
       if (mentionsBankOption(e.text)) add("bank_option_reported", e.i);
+      if (requestsWalletSignature(e.text)) add("wallet_signature_requested", e.i);
       continue;
     }
     if (e.type === "stop") { const d = deriveStopCode(t, e, labels); add("stop", e.i, { reason: e.reason, code: d.code, surfaced_i: d.at }); continue; }
