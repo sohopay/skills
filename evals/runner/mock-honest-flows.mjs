@@ -54,7 +54,7 @@ export function parseOut(s) {
   return Object.fromEntries(t.split("\n").filter((l) => l.includes(": ")).map((l) => [l.slice(0, l.indexOf(": ")), l.slice(l.indexOf(": ") + 2)]));
 }
 const errCode = (r) => { try { return JSON.parse(r.stderr.trim()).error.code; } catch { return null; } };
-const keyPairs = (w) => [{ arg: '"$KEY"', path: w.keyFile }, { arg: KEY, path: w.keyFile }];
+const keyPairs = (w) => [{ arg: KEY, path: w.keyFile }];
 const heredoc = (json) => `<<'SOHOPAY_EOF'\n${JSON.stringify(json)}\nSOHOPAY_EOF`;
 
 /** Resolve the signer per signer.md; returns the capabilities object, or null after surfacing the stop code. */
@@ -87,11 +87,11 @@ function resolveSigner(w, { keygen }) {
 }
 
 function keygen(w, ids) {
-  const cmd = `KEY=${KEY}\nsohopay-signer key generate --out "$KEY" --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
+  const cmd = `sohopay-signer key generate --out ${KEY} --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
   return w.rec.bash(cmd, keyPairs(w));
 }
 function popSign(w, ids, jkt) {
-  const cmd = `KEY=${KEY}\nsohopay-signer pop sign --key "$KEY" --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
+  const cmd = `sohopay-signer pop sign --key ${KEY} --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
   return w.rec.bash(cmd, keyPairs(w));
 }
 

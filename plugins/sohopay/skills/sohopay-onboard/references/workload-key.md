@@ -25,17 +25,18 @@ Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-speci
 
 ### Generate + register (once per terminal)
 
-Use the **canonical key path defined in `{SKILL:sohopay-x402}` `references/signer.md`** (its `--key` bullet) for both `--out` and `--key` (do not restate the literal here — it has one home). Open signer.md with the host's **file-read tool**; never search for the path with `grep` or any shell command — a command that names the key file counts as accessing it. Never `ls`, `stat` or `echo` the key file, its directory or `~/.agents`: the signer checks the key; the agent never inspects it. `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
+Use the **canonical key path defined in `{SKILL:sohopay-x402}` `references/signer.md`** (its `--key` bullet) for both `--out` and `--key` (do not restate the literal here — it has one home). Open signer.md with the host's **file-read tool**; never search for the path with `grep` or any shell command — a command that names the key file counts as accessing it. Never `ls`, `stat` or `echo` the key file, its directory or `~/.agents`: the signer checks the key; the agent never inspects it. signer.md's `--key` bullet shows both commands below **fully literal** — copy them from there, filling in only the JSON values.
 
-Run each command below as **its own** Bash call: the `KEY=` line, the command and its heredoc — nothing else. Put `KEY=` on its **own line** above the command, exactly as shown; never as a prefix on the command line (`KEY=… <signer> … "$KEY"` expands `"$KEY"` before the assignment, so the signer gets an empty path), and never single-quote the path (`'~/…'` leaves `~` unexpanded). Never chain anything before or after it (no `;`, `&&` or `|`, no `echo`, no `timeout` wrapper, no `capabilities` / `verify-vectors` check in the same call). A key-touching call with anything else in it counts as an access to the key store.
+**Paste the path itself** after `--out` / `--key`, unquoted, exactly as signer.md shows it. Never put it in a variable (no `KEY=…` line, no `KEY=… <signer> …` prefix — the shell expands `"$KEY"` before a prefix assignment, so the signer gets an empty path), and never single-quote it (`'~/…'` leaves `~` unexpanded). Write `<signer>` exactly as the candidate that answered (`sohopay-signer` or `"$SOHOPAY_SIGNER"`) — never an absolute path to the binary and never `${SOHOPAY_SIGNER:-…}`.
+
+Run each command below as **its own** Bash call: the command and its heredoc — nothing else. Never chain anything before or after it (no `;`, `&&` or `|`, no `echo`, no `timeout` wrapper, no `capabilities` / `verify-vectors` check in the same call). A key-touching call with anything else in it counts as an access to the key store.
 
 Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EOF`) exactly as shown, filling in the values — never `echo … |` or `printf … |`, and never an unquoted heredoc.
 
 1. **Generate (signer owns it):**
 
    ```text
-   KEY=<canonical key path>
-   <signer> key generate --out "$KEY" --input - --output json <<'SOHOPAY_EOF'
+   <signer> key generate --out <canonical key path> --input - --output json <<'SOHOPAY_EOF'
    { "borrower_id": "…", "terminal_id": "…" }
    SOHOPAY_EOF
    ```
@@ -45,8 +46,7 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
 2. **Proof-of-possession (signer owns it):**
 
    ```text
-   KEY=<canonical key path>
-   <signer> pop sign --key "$KEY" --input - --output json <<'SOHOPAY_EOF'
+   <signer> pop sign --key <canonical key path> --input - --output json <<'SOHOPAY_EOF'
    { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
    SOHOPAY_EOF
    ```
@@ -73,7 +73,7 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
 
 ### If the signer refuses (stop; never "fix" the key store)
 
-Surface the signer's error **code** and stop. Never delete, move, rename, or edit `secret.json`; never edit the signer config or set `SOHOPAY_SIGNER_KEY_ROOTS`.
+Surface the signer's error **code** and stop. The same holds for the resolver stops above (`SIGNER_KEYGEN_REQUIRES_LOCAL`, `SIGNER_KEYGEN_UNSUPPORTED`, `SIGNER_UNRESOLVED`): **name the code verbatim** in the final message to the operator — the exact token, never only a paraphrase. Never delete, move, rename, or edit `secret.json`; never edit the signer config or set `SOHOPAY_SIGNER_KEY_ROOTS`.
 
 | Code | Action |
 |------|--------|
@@ -83,6 +83,6 @@ Surface the signer's error **code** and stop. Never delete, move, rename, or edi
 | `KEY_PATH_INVALID` | Stop and surface — never edit the signer config (`~/.config/sohopay-signer/config.json`) and never set `SOHOPAY_SIGNER_KEY_ROOTS` to widen roots |
 | `KEY_PERSIST_FAILED` | Surface the I/O failure; do not retry blindly |
 | `MALFORMED_INPUT` | Fix the call shape (e.g. a wrongly client-supplied `nonce`/`iat`) and retry correctly |
-| `INLINE_KEY_REJECTED` | Switch to `--key "$KEY"`; **never** retry with an inline key |
+| `INLINE_KEY_REJECTED` | Not a stop: re-run the **same** command once, as its own Bash call, with `--key <canonical key path>` (as signer.md shows it); **never** retry with an inline key |
 
 Registering the key does **not** authorize spending. Immediately follow `{SKILL:sohopay-authorize-agent}` — do not wait for a payRequest or a `prepare_x402_payment` 403. Pay-time `AGENT_AUTHORIZATION_REQUIRED` is recovery only. Voucher signing after `VOUCHER_ISSUED`: `{SKILL:sohopay-x402}`.

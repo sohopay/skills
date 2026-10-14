@@ -375,22 +375,32 @@ test("must-pass: keygen_call reads created/jkt from the following tool_result", 
 
 // ---- post-breaker item 3: stdin is a single-quoted heredoc (workload-key.md); echo / printf pipes stay unsanctioned ----
 const WORKLOAD_MD = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-onboard/references/workload-key.md", import.meta.url), "utf8");
-// Each block opens with its own `KEY=<canonical key path>` line (live run 38373916541: a `KEY=… <signer> … "$KEY"`
-// prefix hands the signer an empty path), so the block is the whole documented call.
-const docBlock = (sub) => {
-  const m = new RegExp("```text\\n\\s*(KEY=<canonical key path>\\n\\s*<signer> " + sub + " [^\\n]*<<'SOHOPAY_EOF'\\n[\\s\\S]*?\\n\\s*SOHOPAY_EOF)\\n\\s*```").exec(WORKLOAD_MD);
-  assert.ok(m, `workload-key.md has no KEY= line + single-quoted-heredoc block for ${sub}`);
-  assert.match(m[1], / --input - --output json <<'SOHOPAY_EOF'/, `workload-key.md ${sub} passes the documented --output json`);
-  return m[1].split("\n").map((l) => l.replace(/^ {3}/, "")).join("\n");
+// Each block is the whole documented call: the signer line with the key path pasted literally, then the heredoc (no
+// KEY= variable: live runs 38510109321..38531147647 kept writing it as a `KEY=… <signer> … "$KEY"` prefix, which hands
+// the signer an empty path). workload-key.md holds the template; signer.md (the key path's one home) the literal form.
+const docBlock = (md, signer, keyRef, sub) => {
+  const m = new RegExp("```(?:text)?\\n\\s*(" + escRe(signer) + " " + sub + " --(?:out|key) " + escRe(keyRef) + " [^\\n]*<<'SOHOPAY_EOF'\\n[\\s\\S]*?\\n\\s*SOHOPAY_EOF)\\n\\s*```").exec(md);
+  assert.ok(m, `no single-quoted-heredoc block for ${signer} ${sub} ${keyRef}`);
+  assert.match(m[1], / --input - --output json <<'SOHOPAY_EOF'/, `${sub} passes the documented --output json`);
+  assert.doesNotMatch(m[1], /KEY=|\$KEY/, `${sub} block uses no KEY variable`);
+  return m[1].split("\n").map((l) => l.replace(/^ +/, "")).join("\n");
 };
-for (const [sub, lab] of [["key generate", "keygen_call"], ["pop sign", "popsign_call"]])
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+for (const [sub, lab] of [["key generate", "keygen_call"], ["pop sign", "popsign_call"]]) {
   for (const tier of LOCAL_TIERS)
-    test(`must-pass: workload-key.md ${sub} heredoc block verbatim, ${tier}, KEY= in the same call, rp`, () => {
-      const cmd = docBlock(sub).replace("<canonical key path>", K).replace("<signer>", tier);
+    test(`must-pass: workload-key.md ${sub} heredoc block verbatim, ${tier}, literal key path, rp`, () => {
+      const cmd = docBlock(WORKLOAD_MD, "<signer>", "<canonical key path>", sub).replace("<canonical key path>", K).replace("<signer>", tier);
       const lt = run(cmd, { rp: RP });
       assert.deepEqual(floor(lt), [], cmd);
       assert.ok(names(lt).includes(lab));
     });
+  test(`must-pass: signer.md literal ${sub} block verbatim, rp`, () => {
+    const cmd = docBlock(SIGNER_MD, "sohopay-signer", K, sub);
+    const lt = run(cmd, { rp: RP });
+    assert.deepEqual(floor(lt), [], cmd);
+    assert.ok(names(lt).includes(lab));
+  });
+}
 for (const cmd of [
   `echo '{"fields":{"borrowerId":"b","terminalId":"t","jkt":"j"}}' | sohopay-signer pop sign --key ${K} --input -`,
   `printf '%s' '{"borrower_id":"b","terminal_id":"t"}' | sohopay-signer key generate --out ${K} --input -`,

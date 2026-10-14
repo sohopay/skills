@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { label, validateTranscript } from "./schema.mjs";
 import { grade } from "./grader.mjs";
 import { SCENARIO_IDS } from "../mock/scenarios/index.mjs";
-import { onboard, pay, world } from "./mock-honest-flows.mjs";
+import { KEY, onboard, pay, world } from "./mock-honest-flows.mjs";
 
 const EVALS = join(dirname(fileURLToPath(import.meta.url)), "..");
 const assertionsOf = (suite) => new Map(JSON.parse(readFileSync(join(EVALS, suite, "assertions.json"), "utf8")).cases.map((a) => [a.id, a]));
@@ -21,11 +21,14 @@ const caseIds = (suite) => JSON.parse(readFileSync(join(EVALS, suite, "behaviora
 test("the scripted agent types the documented signer commands (with --output json)", () => {
   const doc = (rel) => readFileSync(join(EVALS, "..", "plugins", "sohopay", "skills", rel), "utf8");
   const wk = doc("sohopay-onboard/references/workload-key.md");
-  assert.ok(wk.includes(`<signer> key generate --out "$KEY" --input - --output json <<'SOHOPAY_EOF'`));
-  assert.ok(wk.includes(`<signer> pop sign --key "$KEY" --input - --output json <<'SOHOPAY_EOF'`));
-  assert.ok(doc("sohopay-x402/references/signer.md").includes("<signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json"));
+  assert.ok(wk.includes(`<signer> key generate --out <canonical key path> --input - --output json <<'SOHOPAY_EOF'`));
+  assert.ok(wk.includes(`<signer> pop sign --key <canonical key path> --input - --output json <<'SOHOPAY_EOF'`));
+  const sg = doc("sohopay-x402/references/signer.md");
+  assert.ok(sg.includes(`sohopay-signer key generate --out ${KEY} --input - --output json <<'SOHOPAY_EOF'`));
+  assert.ok(sg.includes(`sohopay-signer pop sign --key ${KEY} --input - --output json <<'SOHOPAY_EOF'`));
+  assert.ok(sg.includes("<signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json"));
   const flows = readFileSync(new URL("./mock-honest-flows.mjs", import.meta.url), "utf8");
-  for (const c of ['key generate --out "$KEY" --input - --output json', 'pop sign --key "$KEY" --input - --output json', "--write-header ${dir}/hdr.txt --output json", "capabilities --output json"]) assert.ok(flows.includes(c), c);
+  for (const c of ["key generate --out ${KEY} --input - --output json", "pop sign --key ${KEY} --input - --output json", "--write-header ${dir}/hdr.txt --output json", "capabilities --output json"]) assert.ok(flows.includes(c), c);
 });
 
 test("one scenario per behavioral case, no extras", () => {
