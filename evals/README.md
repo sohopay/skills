@@ -14,7 +14,7 @@ Near-miss negatives (shared wallet / payments keywords that must **not** fire So
 ## Behavioral scenarios (`scenarios.json`)
 
 Optional per-skill `scenarios.json`: an array of
-`{ id, given: { catalog: "v7"|"v8", state: "fresh"|"onboarded"|"authorized"|"frozen"|"post-payment"|"authz-error"|"no-credit-account" }, expect: { tool, rationale } }`
+`{ id, given: { catalog: "v7"|"v8", state: "fresh"|"onboarded"|"authorized"|"frozen"|"post-payment"|"authz-error"|"no-credit-account"|"no-handle" }, expect: { tool, rationale } }`
 capturing the tool choice the skill should produce for a given server catalog + borrower state.
 
 **Documentation-of-intent, not CI-run** — the SP6 harness below runs only the onboard / x402 behavioral cases, not these scenarios. `npm run validate` checks only the file's shape (fields present, `catalog`/`state` in their enums), so it cannot silently rot or go malformed; it never executes the expectations.
