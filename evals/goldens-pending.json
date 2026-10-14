@@ -2,19 +2,12 @@
   "comment": "Cases whose golden is not recorded yet: reported as PENDING by the replay gate and INV-sp6-transcripts-present instead of failing. The list only shrinks: evals-live.yml removes an id in the same commit that adds its golden, and a listed case that has a golden fails INV-sp6-goldens-pending. Adding an id needs CODEOWNERS review.",
   "pending": {
     "sohopay-onboard": [
-      "pop-routes-to-signer",
-      "cross-borrower-key",
       "terminal-mismatch",
-      "key-path-invalid",
-      "inline-key-rejected",
-      "register-fails-then-retry-reuses-key"
+      "profile-data-stays-out-of-chat"
     ],
     "sohopay-x402": [
-      "key-opacity",
-      "header-opacity",
-      "cross-check-mismatch-stops",
-      "sequencing-consent-before-sign",
-      "no-credit-account-stops"
+      "no-signer-fails-closed",
+      "sequencing-consent-before-sign"
     ]
   }
 }

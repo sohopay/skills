@@ -724,15 +724,16 @@ Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two 
 
 ### Generate + register (once per terminal)
 
-Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`** for both `--out` and `--key` (do not restate the literal here — it has one home). `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
+Use the **canonical key path defined in `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`** (its `--key` bullet) for both `--out` and `--key` (do not restate the literal here — it has one home). Open signer.md with the host's **file-read tool**; never search for the path with `grep` or any shell command — a command that names the key file counts as accessing it. Never `ls`, `stat` or `echo` the key file, its directory or `~/.agents`: the signer checks the key; the agent never inspects it. `$KEY` below is that path: shell variables do not survive between tool calls, so set `KEY=` to it on the first line of the **same** Bash call as each command below (or pass the path itself as the value).
 
-Run each command below as **its own** Bash call: the `KEY=` assignment, the command and its heredoc — nothing else. Never chain anything before or after it (no `;`, `&&` or `|`, no `echo`, no `timeout` wrapper, no `capabilities` / `verify-vectors` check in the same call). A key-touching call with anything else in it counts as an access to the key store.
+Run each command below as **its own** Bash call: the `KEY=` line, the command and its heredoc — nothing else. Put `KEY=` on its **own line** above the command, exactly as shown; never as a prefix on the command line (`KEY=… <signer> … "$KEY"` expands `"$KEY"` before the assignment, so the signer gets an empty path), and never single-quote the path (`'~/…'` leaves `~` unexpanded). Never chain anything before or after it (no `;`, `&&` or `|`, no `echo`, no `timeout` wrapper, no `capabilities` / `verify-vectors` check in the same call). A key-touching call with anything else in it counts as an access to the key store.
 
 Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EOF`) exactly as shown, filling in the values — never `echo … |` or `printf … |`, and never an unquoted heredoc.
 
 1. **Generate (signer owns it):**
 
    ```text
+   KEY=<canonical key path>
    <signer> key generate --out "$KEY" --input - --output json <<'SOHOPAY_EOF'
    { "borrower_id": "…", "terminal_id": "…" }
    SOHOPAY_EOF
@@ -743,6 +744,7 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
 2. **Proof-of-possession (signer owns it):**
 
    ```text
+   KEY=<canonical key path>
    <signer> pop sign --key "$KEY" --input - --output json <<'SOHOPAY_EOF'
    { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
    SOHOPAY_EOF
@@ -751,6 +753,8 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
    stdin is exactly `{ "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }` (the `jkt` from step 1). The signer mints its own `nonce` + `iat` — **never** supply them (a client-supplied `nonce`/`iat` is rejected `MALFORMED_INPUT`). Capture `{ pop_signature, nonce, iat }`.
 
 3. **Register:** call `register_agent_workload_key` → `POST /api/v1/agents/{terminal_id}/keys` with the captured public material + `pop_signature` + `nonce` + `iat`.
+
+   **If registration fails** with a transient error (e.g. `UPSTREAM_UNAVAILABLE`), first re-run step 1 (its own call, same `borrower_id` + `terminal_id`) to confirm the key: it must return `created: false` and the **same** `jkt` — if it returns `created: true` or a different `jkt`, stop and surface it. Then retry `register_agent_workload_key` with the **identical** request (same `idempotency_key`, same PoP) — a changed body under the same key is an idempotency conflict.
 
 | Field | Detail |
 |-------|--------|
@@ -1429,13 +1433,19 @@ First obtain the prepare response; then one signer invocation (the envelope-mode
 recipe in `{SKILLS_BASE}/x402-credit-pay.md`); its response is already in context. Shell variables do
 not survive between tool calls, so use the **literal** directory that `mktemp` prints:
 
-1. One Bash call: `mktemp -d`. Note the directory it prints — `<dir>` below.
+1. One Bash call: `mktemp -d` — **only** that, nothing before or after it (no signer lookup, no `echo`, no `;` / `&&` / `|`). Only a call that is exactly `mktemp -d` makes its directory a trusted scratch dir. Note the directory it prints — `<dir>` below. Paste that literal path wherever `<dir>` appears; never assign it to a shell variable (`d=/tmp/…; … $d/prep.json`) — only the literal path is recognised as this call's scratch directory.
 2. Write the prepare response to `<dir>/prep.json` with the host's **file-write tool**,
    **byte-for-byte as received — no re-serialization**. Never put the JSON in a shell command.
 3. One Bash call:
 
    ```
    <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json
+   ```
+
+   Paste both paths literally. For example, if `mktemp -d` printed `/tmp/tmp.Ab12Cd`:
+
+   ```
+   sohopay-signer voucher sign --envelope --key ~/.agents/sohopay-agent-workload/secret.json --input /tmp/tmp.Ab12Cd/prep.json --write-header /tmp/tmp.Ab12Cd/hdr.txt --output json
    ```
 4. Retry the merchant with the header file: `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}`
    (see **Consume the output and retry** below).
@@ -1458,7 +1468,7 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
   `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILLS_BASE}/borrower-onboard.md`)
   writes the key here via `key generate --out`, and the voucher path reads it via
   `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
-  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input.
+  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input. Nor may it list, `stat` or `echo` the key file, its directory or `~/.agents` (`ls`, `ls -l`, `ls -ld`, `echo <path>`): the signer checks the key; the agent never inspects it. Any command naming the key file other than the documented signer call counts as accessing it.
 - `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
 
 ### Consume the output and retry

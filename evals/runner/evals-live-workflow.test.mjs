@@ -61,7 +61,7 @@ test("run job: sandbox required, audit required, runner-private run root, pinned
   assert.match(live, /SP6_RUN_ROOT_BASE: \$\{\{ runner\.temp \}\}\/sp6-run\n/);
   assert.match(live, new RegExp(`CLAUDE_CODE_VERSION: "${PINS.CLI_VERSION.replace(/\./g, "\\.")}"`));
   assert.match(live, /npm install -g [^\n]*"@anthropic-ai\/claude-code@\$\{CLAUDE_CODE_VERSION\}"/);
-  assert.match(live, /SP6_LIVE_BUDGET_USD: "10"/);
+  assert.match(live, /SP6_LIVE_BUDGET_USD: "20"/);
   assert.match(live, /--adapter claude-code --live --suite all --samples "\$SAMPLES"/, "M4: the live spawn guard is opened only by an explicit --live");
   assert.equal(PINS.MODEL_ID, "claude-sonnet-5-5");
   assert.equal(PINS.MAX_TURNS, 20);
@@ -210,7 +210,7 @@ const MUTATIONS = [
   ["audit not required", (y) => y.replace("SP6_AUDIT: require", "SP6_AUDIT: off").replace(" --require-audit)", ")"), /require the file audit/],
   ["run root in /tmp", (y) => y.replace("SP6_RUN_ROOT_BASE: ${{ runner.temp }}/sp6-run\n", "SP6_RUN_ROOT_BASE: /tmp/sp6-run\n"), /never matches|SP6_RUN_ROOT_BASE/],
   ["CLI version drift", (y) => y.replace(`CLAUDE_CODE_VERSION: "${PINS.CLI_VERSION}"`, 'CLAUDE_CODE_VERSION: "9.9.9"'), /CLAUDE_CODE_VERSION/],
-  ["budget drift", (y) => y.replace('SP6_LIVE_BUDGET_USD: "10"', 'SP6_LIVE_BUDGET_USD: "100"'), /SP6_LIVE_BUDGET_USD/],
+  ["budget drift", (y) => y.replace('SP6_LIVE_BUDGET_USD: "20"', 'SP6_LIVE_BUDGET_USD: "100"'), /SP6_LIVE_BUDGET_USD/],
   ["push to develop", (y) => y.replace('git push origin "HEAD:refs/heads/${HEAD_REF}"', "git push origin HEAD:develop"), /develop\/main|unexpected push/],
   ["long retention", (y) => y.replace("retention-days: 7", "retention-days: 90"), /retention/],
   // ── I2 (review): mutations the first checker accepted ──

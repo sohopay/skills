@@ -41,13 +41,19 @@ First obtain the prepare response; then one signer invocation (the envelope-mode
 recipe in `{SKILL:sohopay-x402}`); its response is already in context. Shell variables do
 not survive between tool calls, so use the **literal** directory that `mktemp` prints:
 
-1. One Bash call: `mktemp -d`. Note the directory it prints — `<dir>` below.
+1. One Bash call: `mktemp -d` — **only** that, nothing before or after it (no signer lookup, no `echo`, no `;` / `&&` / `|`). Only a call that is exactly `mktemp -d` makes its directory a trusted scratch dir. Note the directory it prints — `<dir>` below. Paste that literal path wherever `<dir>` appears; never assign it to a shell variable (`d=/tmp/…; … $d/prep.json`) — only the literal path is recognised as this call's scratch directory.
 2. Write the prepare response to `<dir>/prep.json` with the host's **file-write tool**,
    **byte-for-byte as received — no re-serialization**. Never put the JSON in a shell command.
 3. One Bash call:
 
    ```
    <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json
+   ```
+
+   Paste both paths literally. For example, if `mktemp -d` printed `/tmp/tmp.Ab12Cd`:
+
+   ```
+   sohopay-signer voucher sign --envelope --key ~/.agents/sohopay-agent-workload/secret.json --input /tmp/tmp.Ab12Cd/prep.json --write-header /tmp/tmp.Ab12Cd/hdr.txt --output json
    ```
 4. Retry the merchant with the header file: `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}`
    (see **Consume the output and retry** below).
@@ -70,7 +76,7 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
   `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILL:sohopay-onboard}`)
   writes the key here via `key generate --out`, and the voucher path reads it via
   `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
-  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input.
+  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input. Nor may it list, `stat` or `echo` the key file, its directory or `~/.agents` (`ls`, `ls -l`, `ls -ld`, `echo <path>`): the signer checks the key; the agent never inspects it. Any command naming the key file other than the documented signer call counts as accessing it.
 - `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
 
 ### Consume the output and retry
