@@ -55,7 +55,7 @@ Supply stdin with a **single-quoted heredoc** (`<<'SOHOPAY_EOF'` … `SOHOPAY_EO
 
 3. **Register:** call `register_agent_workload_key` → `POST /api/v1/agents/{terminal_id}/keys` with the captured public material + `pop_signature` + `nonce` + `iat`.
 
-   **If registration fails** with a transient error (e.g. `UPSTREAM_UNAVAILABLE`), first re-run step 1 (its own call, same `borrower_id` + `terminal_id`) to confirm the key: it must return `created: false` and the **same** `jkt` — if it returns `created: true` or a different `jkt`, stop and surface it. Then retry `register_agent_workload_key` with the **identical** request (same `idempotency_key`, same PoP) — a changed body under the same key is an idempotency conflict.
+   **If registration fails** with a transient error (e.g. `UPSTREAM_UNAVAILABLE`), first re-run step 1 (its own call, same `borrower_id` + `terminal_id`) to confirm the key: it must return `created: false` and the **same** `jkt` — if it returns `created: true` or a different `jkt`, stop and surface it. This confirm call is **mandatory on every retry**, even when step 1 returned `created: true` moments ago in this same turn: the key file may have changed since, and only the signer can say it did not. Never retry registration without it. Then retry `register_agent_workload_key` with the **identical** request (same `idempotency_key`, same PoP) — a changed body under the same key is an idempotency conflict.
 
 | Field | Detail |
 |-------|--------|

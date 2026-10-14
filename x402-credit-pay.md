@@ -15,7 +15,7 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
-**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context should already be established via `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`) — do not fetch it mid-pay if this file is already loaded.
+**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context comes from `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`). If this chat has no `get_context` result yet, call it in Wave 1 (below), never as an extra wave; do not fetch the bootstrap skill mid-pay if this file is already loaded.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -24,7 +24,8 @@ A **payRequest** (“pay” / merchant 402 URL) is consent for a stale-token ref
 Session cache: `borrower_id`, `operational_agent_id`, `token_requested_at` + `expires_in`, and the payment `idempotency_key` already used for this `orderRef`. Same `orderRef` → same payment key.
 
 ```text
-Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | reuse cached borrower_id + operational_agent_id
+Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | get_context ONLY if this chat has no get_context result yet (else reuse cached borrower_id + operational_agent_id)
+  get_context next_actions with handoff_type OPEN_URL (COMPLETE_PROFILE, CONNECT_BANK, …) → report them as the borrower's browser steps in the final message; they do NOT block the payment — keep paying. But get_context credit: null → STOP (No credit account gate below); do not prepare
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
