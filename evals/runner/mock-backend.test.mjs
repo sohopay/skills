@@ -143,13 +143,13 @@ test("SOHO-479: an unproven wallet gets the real challenge, which no borrower si
     assert.equal(sub.ok, false); assert.equal(sub.body.code, "SIGNATURE_INVALID");
     const tok = await w.tool("request_borrower_token", { scopes: ["spend:intent:create", "payment:read"] });
     assert.deepEqual(tok.body.dropped_scopes, [{ scope: "spend:intent:create", reason: "WALLET_PROOF_REQUIRED" }]);
-    // SOHO-476 drift: get_context lists PROVE_WALLET for this unproven wallet, but register_borrower (which only knows
-    // whether the wallet is VERIFIED) lists CONNECT_WALLET, not PROVE_WALLET. So register's next_actions must not be
-    // trusted to say "no wallet"; the get_context read is authoritative for the real step.
+    // Post-SOHO-476 (backend #1390): register_borrower and get_context now AGREE — register lists the same PROVE_WALLET
+    // source step as get_context for an unproven wallet, so its next_actions can be trusted to route step 1 vs step 2.
     const reg = await w.tool("register_borrower");
     assert.equal(reg.body.spend_ready, false);
-    assert.deepEqual(reg.body.next_actions.map((a) => a.action), ["CONNECT_WALLET", "CONNECT_BANK"], "register lists CONNECT_WALLET for an unproven wallet, never PROVE_WALLET");
-    assert.equal(reg.body.next_actions.some((a) => a.action === "PROVE_WALLET"), false);
+    const ctxActions = (await w.tool("get_context")).body.next_actions.map((a) => a.action);
+    assert.deepEqual(reg.body.next_actions.map((a) => a.action), ctxActions, "register lists the same source steps as get_context");
+    assert.deepEqual(reg.body.next_actions.map((a) => a.action), ["PROVE_WALLET"], "an unproven wallet lists PROVE_WALLET, not CONNECT_WALLET");
     const grant = await w.tool("authorize_agent", { operational_agent_id: w.run.identity.operational_agent_id });
     assert.equal(grant.ok, false); assert.equal(grant.body.code, "WALLET_PROOF_REQUIRED");
   } finally { await w.backend.close(); }

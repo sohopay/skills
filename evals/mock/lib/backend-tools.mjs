@@ -91,19 +91,6 @@ function emitListed(o, emit) {
   if (o.actions.includes("PROVE_WALLET")) emit("prove_wallet_listed");
   if (!o.actions.length && ["IN_REVIEW", "INELIGIBLE"].includes(o.credit_eligibility)) emit("eligibility_waiting_listed");
 }
-/**
- * register_borrower builds its OWN next_actions (backend borrower.service.ts `registerNextActions`), which knows only
- * whether the wallet is VERIFIED. So an UNPROVEN wallet is listed as CONNECT_WALLET, never PROVE_WALLET — the SOHO-476
- * change reached the get_context resolver, not register. register therefore cannot tell "no wallet" from "unproven
- * wallet" (both come back CONNECT_WALLET, CONNECT_BANK); the get_context read is authoritative for the real step.
- */
-function registerActions(o) {
-  return [
-    ...(o.profile_complete ? [] : ["COMPLETE_PROFILE"]),
-    ...(o.wallet === "VERIFIED" ? [] : ["CONNECT_WALLET", "CONNECT_BANK"]),
-  ];
-}
-
 /** Whether the borrower's wallet ownership is proven (always, unless a scenario's onboarding says otherwise). */
 const walletVerified = (s) => !s.onboarding || s.onboarding.wallet === "VERIFIED";
 /**
@@ -151,13 +138,12 @@ export const TOOLS = {
     s.hostRegistered = true;
     const base = { borrower_id: s.id.borrower_id, operational_agent_id: s.id.operational_agent_id, terminal_id: s.id.terminal_id, handle: s.id.handle, next_action: null };
     const o = s.onboarding;
-    // A borrower with no proven wallet (SOHO-446 / SOHO-476): registered, not spend-ready, with register's own source
-    // steps. register lists CONNECT_WALLET for an UNPROVEN wallet too — it never emits PROVE_WALLET — so its
-    // next_actions do not distinguish "no wallet" from "unproven wallet"; only the get_context read does.
+    // Post-SOHO-476 (backend #1390): register_borrower lists the SAME source steps as get_context — PROVE_WALLET for a
+    // registered-but-unproven wallet, CONNECT_WALLET for none. The two resolvers now agree, so register's next_actions
+    // can be trusted to tell them apart. A VERIFIED wallet (or no onboarding) has no source step to list.
     if (!o || o.wallet === "VERIFIED") return base;
-    const actions = registerActions(o);
-    emitListed({ ...o, actions }, emit);
-    return { ...base, spend_ready: false, next_actions: actions.map(actionDto) };
+    emitListed(o, emit);
+    return { ...base, spend_ready: false, next_actions: o.actions.map(actionDto) };
   },
   request_signature_challenge: (_a, s) => {
     if (walletVerified(s)) return { status: "ALREADY_VERIFIED", wallet_proof_verified: true };

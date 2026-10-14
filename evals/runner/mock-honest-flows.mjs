@@ -139,12 +139,10 @@ export function onboard(w) {
   let registered = null;
   if (!ctx.operational_agent_id) registered = rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload;
   if (registered) Object.assign(ids, registered);
-  // SKILL.md step 1 vs 2: register_borrower lists CONNECT_WALLET for an unproven wallet too (SOHO-476), so its
-  // next_actions alone cannot say whether the borrower has no wallet or only an unproven one. get_context is
-  // authoritative: PROVE_WALLET means the wallet is registered and only its proof is missing → do step 2, never
-  // treat it as "signed in without a wallet" and stop.
-  const proveWalletListed = (ctx.next_actions ?? []).some((a) => a.action === "PROVE_WALLET");
-  if (registered?.next_actions?.length && !proveWalletListed) {
+  // SKILL.md step 1 vs 2: register_borrower now lists the same source steps as get_context (backend #1390, SOHO-476).
+  // CONNECT_WALLET means no wallet → step 1 (stop, not spend-ready); PROVE_WALLET means a registered-but-unproven
+  // wallet → fall through to the step-2 proof, never treat it as "signed in without a wallet".
+  if (registered?.next_actions?.some((a) => a.action === "CONNECT_WALLET")) {
     // SKILL.md step 1: signed in without a wallet. Steps 3 and 4 only, no wallet signature, onboarded but not spend-ready.
     rec.mcp("get_borrower_status", {});
     rec.mcp("request_borrower_token", { scopes: SCOPES });
