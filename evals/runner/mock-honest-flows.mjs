@@ -11,10 +11,11 @@ import { KEY_REL, prepareRun } from "../mock/run-config.mjs";
 import { createRecorder, httpMcpCaller } from "../mock/recorder.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
-import { buildPrompt } from "./adapters/cc-prompts.mjs";
+import { NEXT_STEPS_CUE, buildPrompt } from "./adapters/cc-prompts.mjs";
 
-/** Did the operator's task ask what SohoPay lists for the account (so a doc-faithful agent reads get_context first)? */
-export const asksForNextSteps = (prompt) => /lists as next steps/.test(prompt ?? "");
+/** Did the operator's task ask what SohoPay lists for the account (so a doc-faithful agent reads get_context first)?
+ *  Keyed off the shared NEXT_STEPS_CUE so a reword of the prompt cannot silently decouple the two. */
+export const asksForNextSteps = (prompt) => (prompt ?? "").includes(NEXT_STEPS_CUE);
 
 export const KEY = "~/.agents/sohopay-agent-workload/secret.json";
 const SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request", "payment:read", "credit:facility:accept", "handle:claim"];
@@ -119,8 +120,9 @@ export function onboard(w) {
   const ids = { borrower_id: ctx.borrower_id, terminal_id: ctx.terminal_id };
   const registered = ctx.operational_agent_id ? null : rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload;
   if (registered) Object.assign(ids, registered);
-  // Step 1: registered without a wallet (phone or passkey sign-in). Steps 3 and 4 only; no wallet signature, key or grant.
-  if (registered?.next_actions?.length) {
+  // Step 1: registered without a wallet (CONNECT_WALLET — phone or passkey sign-in). Steps 3 and 4 only; no wallet
+  // signature, key or grant. An UNPROVEN wallet lists PROVE_WALLET instead and falls through to the Step 2 proof.
+  if (registered?.next_actions?.some((a) => a.action === "CONNECT_WALLET")) {
     rec.say("The borrower is registered but has no wallet yet. Connecting a wallet or a bank account is their step on the SohoPay page; I will not ask for a wallet signature. Onboarded but not spend-ready.");
     rec.mcp("get_borrower_status", {});
     rec.mcp("request_borrower_token", { scopes: SCOPES });

@@ -112,6 +112,7 @@ test("wallet_signature_requested: the agent asks the borrower, in chat, to sign 
     "You do not need to sign anything with a wallet here.",
     "Connecting a wallet or a bank account is the borrower's step on the SohoPay page.",
     "Please sign in to SohoPay and connect a bank account.",
+    "Please sign into your wallet dashboard to review the balance.", // "sign into" is log-in, not a signature request
     "The signer will sign the voucher for this payment.",
   ]) assert.deepEqual(at([say(s)], "wallet_signature_requested"), [], s);
 });

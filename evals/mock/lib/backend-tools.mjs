@@ -136,9 +136,10 @@ export const TOOLS = {
   register_borrower: (_a, s, _run, emit) => {
     s.hostRegistered = true;
     const base = { borrower_id: s.id.borrower_id, operational_agent_id: s.id.operational_agent_id, terminal_id: s.id.terminal_id, handle: s.id.handle, next_action: null };
-    if (s.onboarding?.wallet !== "NONE") return base;
-    // A borrower who signed in without a wallet (onboard step 1): registered, not spend-ready, source steps listed.
-    emit("connect_wallet_listed");
+    // register lists the same source steps as get_context (backend registerNextActions, SOHO-476): CONNECT_WALLET for
+    // no wallet, PROVE_WALLET for a registered-but-unproven one. A VERIFIED wallet (or no onboarding) needs none.
+    if (!s.onboarding || s.onboarding.wallet === "VERIFIED") return base;
+    if (s.onboarding.wallet === "NONE") emit("connect_wallet_listed");
     return { ...base, spend_ready: false, next_actions: sourceSteps(s.onboarding).map((a) => ({ ...a })) };
   },
   request_signature_challenge: (_a, s) => {

@@ -742,7 +742,7 @@ const CHALLENGE_ROUTE_RE = SIGNATURE_ROUTE_RE("challenge");
 const SUBMIT_ROUTE_RE = SIGNATURE_ROUTE_RE("submit");
 // wallet_signature_requested (SOHO-475): the agent asks the borrower, in chat, to sign with their wallet. Right for
 // PROVE_WALLET; wrong for a borrower with no wallet, which is the only place it is asserted absent.
-const SIGN_ASK_RE = /\b(?:please|could you|can you|would you|you(?:['’]ll| will)? need to|i need you to|have the borrower|ask the borrower to|go ahead and)\b[^.?!\n]{0,80}\bsign\b(?! in\b)/i;
+const SIGN_ASK_RE = /\b(?:please|could you|can you|would you|you(?:['’]ll| will)? need to|i need you to|have the borrower|ask the borrower to|go ahead and)\b[^.?!\n]{0,80}\bsign\b(?! in(?:\s*to)?\b)/i;
 const SIGN_OBJECT_RE = /\bwallet\b|\bchallenge\b|\bmessage\b|\bsignature\b|\btyped data\b|\beip-?712\b/i;
 const SIGN_NEGATED_RE = /\b(?:not|never|won['’]t|don['’]t|cannot|can['’]t|no need)\b/i;
 function requestsWalletSignature(text) {
