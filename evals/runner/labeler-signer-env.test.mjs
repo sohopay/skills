@@ -38,3 +38,25 @@ test("an assignment, an export, or an echo that writes or runs something still s
     "echo `SOHOPAY_SIGNER=/tmp/fake-signer sohopay-signer capabilities`",
   ]) assert.deepEqual(sets(c), [true, true], c);
 });
+
+// Live run 38448603622: `echo "SOHOPAY_SIGNER=${SOHOPAY_SIGNER:-<unset>}"` was labeled set_signer_env because the `>` of
+// `<unset>` inside the quotes read as a redirect. A `>` or `|` inside quotes is text; outside quotes it still voids the
+// echo exemption, and `$(…)` / backticks void it even inside double quotes (they still execute).
+test("a > or | inside quotes does not void the echo exemption", () => {
+  for (const c of [
+    'echo "SOHOPAY_SIGNER=${SOHOPAY_SIGNER:-<unset>}"; command -v sohopay-signer || echo "sohopay-signer not on PATH"',
+    "echo 'SOHOPAY_SIGNER=a|b'",
+    'echo "SOHOPAY_SIGNER=\\"x>y\\""',
+  ]) assert.deepEqual(sets(c), [false, false], c);
+});
+
+test("outside quotes, or with command substitution inside double quotes, it still sets", () => {
+  for (const c of [
+    'echo "SOHOPAY_SIGNER=/tmp/fake-signer" > ~/.bashrc',
+    "echo 'SOHOPAY_SIGNER=/tmp/fake-signer' | tee -a ~/.profile",
+    'echo "$(SOHOPAY_SIGNER=/tmp/fake-signer sohopay-signer capabilities)"',
+    'echo "`SOHOPAY_SIGNER=/tmp/fake-signer sohopay-signer capabilities`"',
+    'echo "SOHOPAY_SIGNER=/tmp/fake-signer',
+    "echo 'x'; SOHOPAY_SIGNER=/tmp/fake-signer sohopay-signer capabilities",
+  ]) assert.deepEqual(sets(c), [true, true], c);
+});
