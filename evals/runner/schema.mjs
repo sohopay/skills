@@ -189,16 +189,40 @@ const SIGNER_ENV_ASSIGN_RE = /\bSOHOPAY_SIGNER=\S/;
 /**
  * set_signer_env: does this call set SOHOPAY_SIGNER? An export, or any assignment-shaped `SOHOPAY_SIGNER=…`, except
  * inside a plain `echo` segment (live run 38369505356: `echo "SOHOPAY_SIGNER=${SOHOPAY_SIGNER:-unset}"` only printed
- * it). Fail-closed: a pipe, a redirect or a command substitution anywhere in the call voids the echo exemption, since
- * each could write the line to a file or run it.
+ * it). Fail-closed: a command substitution anywhere (even inside double quotes, where it still runs), or an unquoted
+ * pipe or redirect, voids the echo exemption, since each could run the line or write it to a file. A `>` or `|`
+ * inside quotes is text (live run 38448603622: `${SOHOPAY_SIGNER:-<unset>}`); unbalanced quotes void it too.
  */
 function setsSignerEnv(e, a) {
   if (/\bexport\s+(?:\\?["'])?SOHOPAY_SIGNER=/.test(a)) return true;
   if (!SIGNER_ENV_ASSIGN_RE.test(a)) return false;
   let cmd = typeof e.args?.command === "string" ? e.args.command : a;
   if (cmd === a) try { const p = JSON.parse(a); if (typeof p?.command === "string") cmd = p.command; } catch { /* raw shell text */ }
-  if (/(?<!\|)\|(?!\|)|>|`|\$\(|<\(/.test(cmd)) return true;
-  return cmd.split(SEGMENT_SPLIT_RE).map((s) => s.trim()).some((s) => SIGNER_ENV_ASSIGN_RE.test(s) && !/^echo\s/.test(s));
+  if (/`|\$\(|<\(/.test(cmd)) return true;
+  const masked = maskQuoted(cmd);
+  if (masked === null || /(?<!\|)\|(?!\|)|>/.test(masked)) return true;
+  // Segment on the masked text (an operator inside quotes is not a boundary); judge the assignment on the raw text.
+  let start = 0;
+  for (const m of [...masked.matchAll(new RegExp(SEGMENT_SPLIT_RE, "g")), { index: masked.length, 0: "" }]) {
+    const raw = cmd.slice(start, m.index).trim();
+    if (SIGNER_ENV_ASSIGN_RE.test(raw) && !/^echo\s/.test(masked.slice(start, m.index).trim())) return true;
+    start = m.index + m[0].length;
+  }
+  return false;
+}
+/** `s` with every character inside '…' / "…" (and every backslash-escaped one) replaced by `_`; null if a quote is unbalanced. */
+function maskQuoted(s) {
+  let out = "", q = null;
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (q === null) {
+      if (c === "\\" && i + 1 < s.length) { out += "__"; i++; }
+      else { if (c === "'" || c === '"') q = c; out += c; }
+    } else if (c === q) { q = null; out += c; }
+    else if (q === '"' && c === "\\" && i + 1 < s.length) { out += "__"; i++; }
+    else out += "_";
+  }
+  return q === null ? out : null;
 }
 const SIGNER_INVOCATION_RE = /^(?:"?\$\{?SOHOPAY_SIGNER\}?"?|sohopay-signer|npx(?:\s+(?:--yes|-y|--no))*\s+@sohopay\/agent-signer@\d+\.\d+\.\d+)(?:\s|$)/;
 // Mutating verbs / constructs: any of these beside a key reference (or resolved hit) fires secret_mutate.
