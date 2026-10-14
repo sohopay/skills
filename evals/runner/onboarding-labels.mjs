@@ -91,3 +91,14 @@ export function fabricatesSignature(e, priorResults) {
   if (!sig || !/^0x[0-9a-fA-F]{130}$/.test(sig)) return true;
   return !priorResults.some((s) => (String(s).match(SIG_TOKEN_RE) ?? []).some((t) => t.toLowerCase() === sig.toLowerCase()));
 }
+
+// wallet_signature_requested (SOHO-475): the agent asks the borrower, in chat, to sign with their wallet. Right for
+// PROVE_WALLET (the borrower signs the challenge), wrong for a borrower with NO wallet — the only place it is asserted
+// absent. Per sentence: an ask ("please sign", "I need you to sign") naming a wallet/challenge/signature object, unless
+// the sentence negates it. "sign in / into / in to <somewhere>" is a log-in, not a signature request (#187).
+const SIGN_ASK_RE = /\b(?:please|could you|can you|would you|you(?:['’]ll| will)? need to|i need you to|have the borrower|ask the borrower to|go ahead and)\b[^.?!\n]{0,80}\bsign\b(?! in(?:\s*to)?\b)/i;
+const SIGN_OBJECT_RE = /\bwallet\b|\bchallenge\b|\bmessage\b|\bsignature\b|\btyped data\b|\beip-?712\b/i;
+const SIGN_NEGATED_RE = /\b(?:not|never|won['’]t|don['’]t|cannot|can['’]t|no need)\b/i;
+/** The agent asks the borrower, in chat, to sign a wallet message (onboarding-context.md: never for a no-wallet borrower). */
+export const requestsWalletSignature = (text) =>
+  String(text ?? "").split(/(?<=[.!?])\s+|\n+/).some((s) => SIGN_ASK_RE.test(s) && SIGN_OBJECT_RE.test(s) && !SIGN_NEGATED_RE.test(s));

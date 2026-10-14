@@ -91,7 +91,6 @@ function emitListed(o, emit) {
   if (o.actions.includes("PROVE_WALLET")) emit("prove_wallet_listed");
   if (!o.actions.length && ["IN_REVIEW", "INELIGIBLE"].includes(o.credit_eligibility)) emit("eligibility_waiting_listed");
 }
-
 /** Whether the borrower's wallet ownership is proven (always, unless a scenario's onboarding says otherwise). */
 const walletVerified = (s) => !s.onboarding || s.onboarding.wallet === "VERIFIED";
 /**
@@ -138,10 +137,13 @@ export const TOOLS = {
   register_borrower: (_a, s, _run, emit) => {
     s.hostRegistered = true;
     const base = { borrower_id: s.id.borrower_id, operational_agent_id: s.id.operational_agent_id, terminal_id: s.id.terminal_id, handle: s.id.handle, next_action: null };
-    // A borrower who signed in without a wallet (SOHO-446): registered, not spend-ready, with the source steps.
-    if (s.onboarding?.wallet !== "NONE") return base;
-    emitListed(s.onboarding, emit);
-    return { ...base, spend_ready: false, next_actions: s.onboarding.actions.map(actionDto) };
+    const o = s.onboarding;
+    // Post-SOHO-476 (backend #1390): register_borrower lists the SAME source steps as get_context — PROVE_WALLET for a
+    // registered-but-unproven wallet, CONNECT_WALLET for none. The two resolvers now agree, so register's next_actions
+    // can be trusted to tell them apart. A VERIFIED wallet (or no onboarding) has no source step to list.
+    if (!o || o.wallet === "VERIFIED") return base;
+    emitListed(o, emit);
+    return { ...base, spend_ready: false, next_actions: o.actions.map(actionDto) };
   },
   request_signature_challenge: (_a, s) => {
     if (walletVerified(s)) return { status: "ALREADY_VERIFIED", wallet_proof_verified: true };
