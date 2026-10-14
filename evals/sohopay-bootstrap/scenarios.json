@@ -10,5 +10,7 @@
   { "id": "v8-no-credit-account", "given": { "catalog": "v8", "state": "no-credit-account" },
     "expect": { "tool": "get_context", "rationale": "credit + repayment are null: report no credit line yet (never a zero limit or balance), still report gifts.available above zero, follow next_actions or say there is nothing to do" } },
   { "id": "v8-authz-error", "given": { "catalog": "v8", "state": "authz-error" },
-    "expect": { "tool": "get_context", "rationale": "re-establish context, then authorization-context for the specific grant limit" } }
+    "expect": { "tool": "get_context", "rationale": "re-establish context, then authorization-context for the specific grant limit" } },
+  { "id": "v8-no-handle", "given": { "catalog": "v8", "state": "no-handle" },
+    "expect": { "tool": "borrower-onboard+handle", "rationale": "HANDLE_CLAIM_REQUIRED routes to onboard step 8 / sohopay-handle claim path; scan next_actions when PAY is listed first" } }
 ]

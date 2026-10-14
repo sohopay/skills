@@ -4,7 +4,7 @@
   "meta": {
     "adapter": "claude-code",
     "adapter_version": "claude-code/1",
-    "skill_hash": "b3405f39d695bc9ec5b93470da606f18560dfda69a68dde8e37e00a0f37d321c",
+    "skill_hash": "b36187e9419107bc5afdc5910f9fc31b181a9fae809b1c3737733a7a58c5d035",
     "cli_version": "2.1.292",
     "model_id": "claude-sonnet-5-5",
     "sample_index": 0,

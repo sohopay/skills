@@ -266,7 +266,7 @@ for (const dirName of dirs) {
   const scenariosPath = join(ROOT, 'evals', dirName, 'scenarios.json');
   if (existsSync(scenariosPath)) {
     const CATALOGS = new Set(['v7', 'v8']);
-    const STATES = new Set(['fresh', 'onboarded', 'authorized', 'frozen', 'post-payment', 'authz-error', 'no-credit-account']);
+    const STATES = new Set(['fresh', 'onboarded', 'authorized', 'frozen', 'post-payment', 'authz-error', 'no-credit-account', 'no-handle']);
     try {
       const scenarios = JSON.parse(readFileSync(scenariosPath, 'utf8'));
       if (!Array.isArray(scenarios) || scenarios.length < 1) {
