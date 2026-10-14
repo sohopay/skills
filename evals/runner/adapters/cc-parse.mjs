@@ -150,3 +150,29 @@ export function deniedIds(result) {
   for (const d of result?.permission_denials ?? []) if (typeof d?.tool_use_id === "string") out.add(d.tool_use_id);
   return out;
 }
+
+const TOOL_HOOK_EVENTS = new Set(["PreToolUse", "PostToolUse", "PostToolUseFailure"]);
+/**
+ * Diagnostics only (never graded): the session's own record of each call's tool hooks — the CLI writes one attachment
+ * per hook run (`hook_success`, `hook_non_blocking_error`, …, keyed by toolUseID, with exitCode / durationMs / stderr)
+ * — and the assistant message each tool_use came in, so a capture gap can say whether the hook ran, how it ended,
+ * and which calls were issued in parallel with it. Lines that do not parse are skipped (parseSession already refuses
+ * a malformed session).
+ */
+export function sessionHookDiagnostics(text) {
+  const hooksOf = new Map();
+  const messageOf = new Map();
+  for (const l of String(text).split("\n")) {
+    if (l.trim() === "") continue;
+    let o;
+    try { o = JSON.parse(l); } catch { continue; }
+    const a = o?.attachment;
+    if (o?.type === "attachment" && a && TOOL_HOOK_EVENTS.has(a.hookEvent) && typeof a.toolUseID === "string") {
+      const rec = { event: a.hookEvent, type: String(a.type ?? ""), exitCode: a.exitCode ?? null, durationMs: a.durationMs ?? null, stderr: typeof a.stderr === "string" ? a.stderr : "" };
+      hooksOf.set(a.toolUseID, [...(hooksOf.get(a.toolUseID) ?? []), rec]);
+    }
+    const content = o?.type === "assistant" ? o.message?.content : null;
+    if (Array.isArray(content)) for (const b of content) if (b?.type === "tool_use" && typeof b.id === "string") messageOf.set(b.id, o.message?.id ?? null);
+  }
+  return { hooksOf, messageOf };
+}

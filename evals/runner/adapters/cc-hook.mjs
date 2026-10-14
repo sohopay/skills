@@ -5,6 +5,7 @@
 // It reads the hook payload on stdin, finds this session's relay at <run base>/relays/<session_id>.json (0600, in an
 // agent-denied directory), POSTs the payload plus its own pid / parent pid (so the strace audit can exclude exactly
 // the hook's process subtree), and exits non-zero unless the relay accepted it — a lost hook is a capture gap.
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { request } from "node:http";
 import { dirname, join } from "node:path";
@@ -22,13 +23,24 @@ if (!reg || !/^http:\/\/127\.0\.0\.1:\d+\/h$/.test(reg.url ?? "") || typeof reg.
   process.stderr.write("hook relay not configured for this session\n");
   process.exit(1);
 }
-const body = JSON.stringify({ ...payload, hook_pid: process.pid, hook_ppid: process.ppid });
+// A delivery whose connection fails (reset, refused, timed out) is retried with the same hook_nonce, so the relay can
+// dedupe one that did arrive. A response other than 200 is a refusal and is never retried. Three attempts of at most
+// 15 s each stay inside the hook's 60 s timeout.
+const body = JSON.stringify({ ...payload, hook_pid: process.pid, hook_ppid: process.ppid, hook_nonce: randomBytes(16).toString("hex") });
 const url = new URL(`${reg.url}/${event}`);
-const req = request({ host: "127.0.0.1", port: Number(url.port), path: url.pathname, method: "POST", timeout: 30_000,
-  headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-relay-token": reg.token } }, (res) => {
-  res.resume();
-  res.on("end", () => { process.exitCode = res.statusCode === 200 ? 0 : 1; if (res.statusCode !== 200) process.stderr.write(`hook relay refused (${res.statusCode})\n`); });
-});
-req.on("timeout", () => req.destroy(new Error("timeout")));
-req.on("error", (e) => { process.stderr.write(`hook relay unreachable: ${e.message}\n`); process.exitCode = 1; });
-req.end(body);
+const ATTEMPTS = 3;
+const deliver = (attempt) => {
+  const req = request({ host: "127.0.0.1", port: Number(url.port), path: url.pathname, method: "POST", timeout: 15_000,
+    headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body), "x-relay-token": reg.token } }, (res) => {
+    res.resume();
+    res.on("end", () => { process.exitCode = res.statusCode === 200 ? 0 : 1; if (res.statusCode !== 200) process.stderr.write(`hook relay refused (${res.statusCode})\n`); });
+  });
+  req.on("timeout", () => req.destroy(new Error("timeout")));
+  req.on("error", (e) => {
+    if (attempt < ATTEMPTS) { setTimeout(() => deliver(attempt + 1), 250 * attempt); return; }
+    process.stderr.write(`hook relay unreachable: ${e.message} (after ${ATTEMPTS} attempts)\n`);
+    process.exitCode = 1;
+  });
+  req.end(body);
+};
+deliver(1);

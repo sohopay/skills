@@ -29,6 +29,7 @@ export async function startHookRelay(w, keyCtx, { registryFile, resolve = defaul
   const hooks = new Map();
   const hookPids = new Map(); // pid → when its report arrived (R2-8 bounds the exclusion to that hook's span)
   const errors = [];
+  const delivered = new Set(); // `${event}:${hook_nonce}` — a wrapper retry of a delivery already handled
   let last = keyCtx.baseline;
   const observe = () => { const snap = snapshotTree(keyCtx.storeRoot); const d = diffSnapshots(last, snap); last = snap; return d; };
   const handle = (event, raw) => {
@@ -37,6 +38,10 @@ export async function startHookRelay(w, keyCtx, { registryFile, resolve = defaul
     try { p = JSON.parse(raw); } catch { errors.push(`malformed payload for ${event}`); return; }
     if (!p || typeof p.tool_use_id !== "string" || p.tool_use_id === "") { errors.push(`${event} payload without tool_use_id (${p?.tool_name ?? "?"})`); return; }
     for (const k of ["hook_pid", "hook_ppid"]) if (Number.isInteger(p[k]) && p[k] > 1 && !hookPids.has(p[k])) hookPids.set(p[k], at);
+    // A wrapper retries a delivery whose response it lost, with the same nonce: it was already observed, and
+    // re-observing would replace its key-store diffs with an empty diff.
+    const nonce = typeof p.hook_nonce === "string" && p.hook_nonce ? `${event}:${p.hook_nonce}` : null;
+    if (nonce && delivered.has(nonce)) return;
     const id = p.tool_use_id;
     const rec = hooks.get(id) ?? {};
     if (typeof p.tool_name === "string") rec.name = p.tool_name;
@@ -44,9 +49,12 @@ export async function startHookRelay(w, keyCtx, { registryFile, resolve = defaul
     else {
       const cwd = typeof p.cwd === "string" && p.cwd ? p.cwd : w.home;
       try {
-        rec[event] = { at, pairs: resolve(String(p.tool_name ?? ""), p.tool_input ?? {}, cwd, w.home), diffs: observe(), cwd };
+        const seen = { at, pairs: resolve(String(p.tool_name ?? ""), p.tool_input ?? {}, cwd, w.home), diffs: observe(), cwd };
+        // A second distinct delivery for the same call keeps the first record and adds what it observed.
+        rec[event] = rec[event] ? { ...rec[event], diffs: [...rec[event].diffs, ...seen.diffs] } : seen;
       } catch (e) { errors.push(`${event} capture failed for ${id}: ${e.message}`); return; }
     }
+    if (nonce) delivered.add(nonce);
     hooks.set(id, rec);
   };
   const server = createServer((req, res) => {
@@ -83,20 +91,40 @@ export function checkHooksApplied(items, relay) {
  * key-store pre/post diffs; if that call's tool_use never reached the session JSONL (dropped / truncated / tampered),
  * cc-assemble would silently skip the orphan hook (`if (!calls.has(id)) continue;`) and lose those observed diffs. So
  * every relayed hook id MUST correspond to a parsed call — an orphan is a capture gap, never a silent drop.
+ *
+ * `diag` (cc-parse sessionHookDiagnostics) only adds evidence to a gap's message: the call's tool and parallel
+ * siblings, whether the relay got its other record, and the CLI's own hook attachments for it.
  */
-export function captureErrors(items, relay) {
+export function captureErrors(items, relay, diag = null) {
   const out = relay.errors.map((e) => `hook relay error: ${e}`);
   const calls = new Map(items.filter((x) => x.kind === "call").map((c) => [c.id, c]));
   const results = new Map(items.filter((x) => x.kind === "result").map((r) => [r.id, r]));
+  const gap = (c, missing) => `capture gap: ${c.id} has no ${missing} record${diag ? ` (${gapEvidence(c, calls, relay, diag)})` : ""}`;
   for (const c of calls.values()) {
     const h = relay.hooks.get(c.id) ?? {};
     const r = results.get(c.id);
     if (h.denied || r?.denialKind) continue;
-    if (!h.pre) out.push(`capture gap: ${c.id} has no PreToolUse record`);
-    else if (r && !h.post) out.push(`capture gap: ${c.id} has no PostToolUse record`);
+    if (!h.pre) out.push(gap(c, "PreToolUse"));
+    else if (r && !h.post) out.push(gap(c, "PostToolUse"));
   }
   for (const id of relay.hooks.keys()) {
     if (!calls.has(id)) out.push(`capture gap: hook record for ${id} has no matching tool_use in the session (a dropped call; its observed key-store diffs would be lost)`);
   }
   return out;
+}
+
+/** One gap's evidence, from the session's own records: never call inputs or outputs, only ids, names and hook status. */
+function gapEvidence(c, calls, relay, diag) {
+  const ids = [...calls.keys()];
+  const msg = diag.messageOf.get(c.id);
+  const siblings = msg ? ids.filter((id) => id !== c.id && diag.messageOf.get(id) === msg) : [];
+  const h = relay.hooks.get(c.id) ?? {};
+  const cli = (diag.hooksOf.get(c.id) ?? []).map((r) =>
+    `${r.event} ${r.type} exit ${r.exitCode ?? "?"} ${r.durationMs ?? "?"}ms${r.stderr.trim() ? `: ${r.stderr.trim().replace(/\s+/g, " ").slice(0, 120)}` : ""}`);
+  return [
+    `${c.name || "?"}, call ${ids.indexOf(c.id) + 1} of ${ids.length}`,
+    siblings.length ? `parallel with ${siblings.join(", ")}` : "not parallel",
+    `relayed post: ${h.post ? "yes" : "no"}`,
+    `CLI hook records: ${cli.length ? cli.join(" | ") : "none"}`,
+  ].join("; ");
 }
