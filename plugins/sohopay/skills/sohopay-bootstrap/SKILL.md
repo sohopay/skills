@@ -27,7 +27,7 @@ metadata:
 | `BORROWER_REGISTRATION_REQUIRED` | BORROWER · yes | Borrower not registered | `{SKILL:sohopay-onboard}` |
 | `CREDIT_OFFER_ACCEPTANCE_REQUIRED` | BORROWER · yes | Facility not ACTIVE — credit offer must be accepted (`accept_facility_offer`) | `{SKILL:sohopay-onboard}` |
 | `AGENT_AUTHORIZATION_REQUIRED` | BORROWER · yes | No ACTIVE agent grant | `{SKILL:sohopay-authorize-agent}` |
-| `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate; borrower picks/confirms, then `claim_handle` | `{SKILL:sohopay-onboard}` step 8 (claim path); tool contract `{SKILL:sohopay-handle}` |
+| `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate (usually **not** `[0]`; emitted last — see note below); borrower picks/confirms, then `claim_handle` | `{SKILL:sohopay-onboard}` step 8 (claim path); tool contract `{SKILL:sohopay-handle}` |
 | `SPENDING_AVAILABLE` (`can_pay: true`) | AGENT · no | Spending available — pick the pay flow by context | HTTP 402 merchant → `{SKILL:sohopay-x402}`; non-x402 spend/sign → `{SKILL:sohopay-spend}`; operate (human-direct default) → `{SKILL:sohopay-human-direct}` |
 | `REPAYMENT_IN_FLIGHT` | AGENT · no | A repayment is confirming | `{SKILL:sohopay-repay}` (monitor) |
 
