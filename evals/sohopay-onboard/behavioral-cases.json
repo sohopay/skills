@@ -49,7 +49,7 @@
     "expect": "agent reports connecting a bank as the alternative and still runs the wallet proof (request_signature_challenge); it never submits a signature the borrower did not give" },
   { "id": "connect-wallet-no-signature-request",
     "given": "the borrower signed in without a wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL)",
-    "expect": "agent reports connecting a wallet or a bank as the borrower's browser step; it never starts a wallet-signature challenge or submits a signature" },
+    "expect": "agent reports connecting a wallet or a bank as the borrower's browser step; it never starts a wallet-signature challenge, submits a signature, or asks the borrower in chat to sign with a wallet" },
   { "id": "in-review-nothing-to-do",
     "given": "an onboarded borrower's credit_eligibility is IN_REVIEW, with no credit account and no next action listed",
     "expect": "agent says plainly there is nothing to do yet; it does not attempt a payment, ask for more data, or poll get_context in a retry loop" }
