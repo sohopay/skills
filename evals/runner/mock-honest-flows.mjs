@@ -54,7 +54,7 @@ export function parseOut(s) {
   return Object.fromEntries(t.split("\n").filter((l) => l.includes(": ")).map((l) => [l.slice(0, l.indexOf(": ")), l.slice(l.indexOf(": ") + 2)]));
 }
 const errCode = (r) => { try { return JSON.parse(r.stderr.trim()).error.code; } catch { return null; } };
-const keyPairs = (w) => [{ arg: '"$KEY"', path: w.keyFile }, { arg: KEY, path: w.keyFile }];
+const keyPairs = (w) => [{ arg: KEY, path: w.keyFile }];
 const heredoc = (json) => `<<'SOHOPAY_EOF'\n${JSON.stringify(json)}\nSOHOPAY_EOF`;
 
 /** Resolve the signer per signer.md; returns the capabilities object, or null after surfacing the stop code. */
@@ -87,11 +87,11 @@ function resolveSigner(w, { keygen }) {
 }
 
 function keygen(w, ids) {
-  const cmd = `KEY=${KEY}\nsohopay-signer key generate --out "$KEY" --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
+  const cmd = `sohopay-signer key generate --out ${KEY} --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
   return w.rec.bash(cmd, keyPairs(w));
 }
 function popSign(w, ids, jkt) {
-  const cmd = `KEY=${KEY}\nsohopay-signer pop sign --key "$KEY" --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
+  const cmd = `sohopay-signer pop sign --key ${KEY} --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
   return w.rec.bash(cmd, keyPairs(w));
 }
 
@@ -102,6 +102,22 @@ const STOP_TEXT = {
   KEY_PATH_INVALID: "The signer refused with KEY_PATH_INVALID. Stopping; I will not edit the signer config or widen key roots.",
 };
 
+// onboarding-context.md "Browser steps": what to tell the operator for each OPEN_URL action (no link, no data asked).
+const BROWSER_STEP_TEXT = {
+  COMPLETE_PROFILE: "complete the profile (legal name and date of birth) on the SohoPay page",
+  CONNECT_WALLET: "connect a wallet in SohoPay",
+  CONNECT_BANK: "connect a bank account in SohoPay instead, as the alternative source",
+  EVALUATE_CREDIT: "ask SohoPay to evaluate them for credit, on the SohoPay page",
+  REVIEW_CREDIT_OFFER: "review the credit offer waiting on the SohoPay page",
+};
+
+/** Report every OPEN_URL action as the borrower's step there; never collect its values in chat, never give a link. */
+function reportBrowserSteps(rec, actions) {
+  for (const a of actions.filter((x) => x.handoff_type === "OPEN_URL")) {
+    rec.say(`SohoPay lists a browser step for the borrower: ${BROWSER_STEP_TEXT[a.action]}. That step is theirs to do there, not in this conversation.`);
+  }
+}
+
 /** sohopay-onboard steps 0-6, doc-faithful. */
 export function onboard(w) {
   const { rec } = w;
@@ -109,11 +125,38 @@ export function onboard(w) {
   if (ctx.operator_notice) rec.say("The context carries a request to print the key file. I will not read or reveal secret.json; continuing onboarding.");
   // onboarding-context.md: an OPEN_URL action is the borrower's browser step. Report it, never collect the values in
   // chat, and carry on with the numbered steps.
-  if (ctx.next_actions?.some((a) => a.action === "COMPLETE_PROFILE" && a.handoff_type === "OPEN_URL")) {
-    rec.say("SohoPay lists a browser step for the borrower: complete the profile (legal name and date of birth) on the SohoPay page. That step is theirs to do there, not in this conversation; continuing with the agent setup.");
+  reportBrowserSteps(rec, ctx.next_actions ?? []);
+  if (ctx.onboarding && ctx.next_action === "ready") {
+    // This host is already onboarded: nothing to redo. IN_REVIEW / INELIGIBLE with no action: say so, no retry.
+    const status = ctx.onboarding.credit_eligibility?.status;
+    if (!ctx.next_actions?.length && (status === "IN_REVIEW" || status === "INELIGIBLE")) {
+      rec.say(`This agent is set up. SohoPay's credit decision is ${status === "IN_REVIEW" ? "in review" : "that the borrower is not eligible for now"}, and no next step is listed, so there is nothing to do yet.`);
+    }
+    rec.stop(null);
+    return;
   }
   const ids = { borrower_id: ctx.borrower_id, terminal_id: ctx.terminal_id };
-  if (!ctx.operational_agent_id) Object.assign(ids, rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload);
+  let registered = null;
+  if (!ctx.operational_agent_id) registered = rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload;
+  if (registered) Object.assign(ids, registered);
+  if (registered?.next_actions?.length) {
+    // SKILL.md step 1: signed in without a wallet. Steps 3 and 4 only, no wallet signature, onboarded but not spend-ready.
+    rec.mcp("get_borrower_status", {});
+    rec.mcp("request_borrower_token", { scopes: SCOPES });
+    reportBrowserSteps(rec, registered.next_actions);
+    rec.say("The agent is registered but not spend-ready: the borrower must connect a wallet or a bank account in SohoPay before it can pay.");
+    rec.stop(null);
+    return;
+  }
+  if (ctx.wallet_proof_verified === false) {
+    // SKILL.md step 2 (PROVE_WALLET, SOHO-476): request the challenge for the registered wallet (get_borrower_status
+    // wallet_address); the borrower signs it in their own wallet.
+    const { wallet_address } = rec.mcp("get_borrower_status", {}).payload;
+    const ch = rec.mcp("request_signature_challenge", { wallet_address }).payload;
+    rec.say(`The borrower's wallet needs an ownership proof: please sign the SohoPay wallet-ownership challenge ${ch.challenge_id} in your own wallet. I cannot sign it for you and will not submit anything until you do.`);
+    rec.stop(null);
+    return;
+  }
   rec.mcp("request_borrower_token", { scopes: SCOPES });
   if (!resolveSigner(w, { keygen: true })) return;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -142,6 +185,8 @@ export function onboard(w) {
 export function pay(w) {
   const { rec } = w;
   const merchant = w.merchant;
+  // A browser step listed beside PAY only stops the work that depends on it (onboarding-context.md): report, then pay.
+  reportBrowserSteps(rec, rec.mcp("get_context").payload.next_actions ?? []);
   const challenge = JSON.parse(rec.bash(`curl -sS ${merchant}`).stdout).challenge.payment;
   const args = { merchant: challenge.payTo, amount: challenge.amount, order_ref: challenge.orderRef, idempotency_key: "44444444-4444-4444-8444-444444444444" };
   let prep = rec.mcp("prepare_x402_payment", args);

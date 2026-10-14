@@ -11,6 +11,7 @@ import { createBackend, merchantUrl } from "../mock/backend.mjs";
 import { buildRun } from "../mock/run-config.mjs";
 import { computePaymentId, popMessage, publicFromPrivate, signWith, voucherSignedBytes } from "../mock/lib/keymodel.mjs";
 import { loadScenario, SCENARIO_IDS } from "../mock/scenarios/index.mjs";
+import { onboardingOf } from "../mock/lib/backend-tools.mjs";
 
 const MOCK = join(dirname(fileURLToPath(import.meta.url)), "..", "mock");
 
@@ -75,23 +76,36 @@ for (const id of SCENARIO_IDS) {
         assert.equal(r.ok, false); assert.equal(r.body.code, "UPSTREAM_UNAVAILABLE");
         assert.deepEqual(w.journal(), ["register_failed"]);
       }
-      if (sc.backend.onboarding) {
-        // SOHO-475: the onboarding section and the COMPLETE_PROFILE browser step, in the backend's own shape
-        // (no tool, no URL), and the condition that anchors the case.
-        assert.equal(ctx.onboarding.profile_complete, false);
-        assert.deepEqual(ctx.next_actions, [{ action: "COMPLETE_PROFILE", actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code: "PROFILE_COMPLETION_REQUIRED" }]);
-        assert.deepEqual(w.journal(), ["profile_step_listed"]);
+      const o = onboardingOf(w.run);
+      if (o) {
+        // SOHO-475 / SOHO-479: the onboarding section and its next actions in the backend's own shape: a browser
+        // step carries handoff_type OPEN_URL and no tool, PROVE_WALLET names its tool and carries no handoff_type,
+        // and no action carries a URL. The first get_context read raises every condition that anchors the case.
+        assert.equal(ctx.onboarding.profile_complete, o.profile_complete);
+        assert.equal(ctx.onboarding.credit_eligibility.status, o.credit_eligibility);
+        assert.equal(ctx.wallet_proof_verified, o.wallet === "VERIFIED");
+        assert.deepEqual(ctx.next_actions.map((a) => a.action), o.actions);
+        for (const a of ctx.next_actions) {
+          assert.ok(!/https?:/.test(JSON.stringify(a)), `${a.action} carries no URL`);
+          if (a.action === "PROVE_WALLET") assert.deepEqual(a, { action: "PROVE_WALLET", actor: "BORROWER", tool: "request_signature_challenge", handoff_required: true, reason_code: "WALLET_PROOF_REQUIRED" });
+          else if (a.action === "PAY") assert.equal(a.tool, "prepare_x402_payment");
+          else { assert.equal(a.handoff_type, "OPEN_URL"); assert.equal("tool" in a, false); }
+        }
+        for (const c of sc.conditions.filter((x) => x !== "consent_ok")) assert.ok(w.journal().includes(c), `get_context raised ${c}`);
       } else assert.equal("onboarding" in ctx || "next_actions" in ctx, false, "no onboarding hints unless the scenario asks for them");
       if (sc.backend.no_credit_account) {
         // SOHO-473: a registered borrower with no credit account reads null money sections, and prepare refuses
         // at the issuance gate (CreditIssuanceGate.authorizeBeforeSign) after the agent grant has passed.
         assert.equal(ctx.credit, null); assert.equal(ctx.repayment, null);
         assert.equal(ctx.purchasing_power.can_pay, false);
-        const p = await w.tool("prepare_x402_payment", { merchant: w.run.identity.pay_to, amount: "1000000", idempotency_key: "k-1" });
-        assert.equal(p.ok, false); assert.equal(p.body.code, "CREDIT_ACCOUNT_NOT_FOUND");
-        // Raised by the null-credit get_context read AND by the refused prepare, so an agent that stops on the
-        // context alone (never calling prepare) still produces the anchor.
-        assert.deepEqual(w.journal(), ["no_credit_account", "no_credit_account"]);
+        const noCredit = () => w.journal().filter((c) => c === "no_credit_account").length;
+        // Raised by the null-credit get_context read, so an agent that stops on the context alone still has the anchor.
+        assert.equal(noCredit(), 1);
+        if (ctx.workload_key.registered && ctx.authorization.status === "ACTIVE") {
+          const p = await w.tool("prepare_x402_payment", { merchant: w.run.identity.pay_to, amount: "1000000", idempotency_key: "k-1" });
+          assert.equal(p.ok, false); assert.equal(p.body.code, "CREDIT_ACCOUNT_NOT_FOUND");
+          assert.equal(noCredit(), 2, "and again by the refused prepare");
+        }
       } else if (sc.suite === "sohopay-x402") {
         const args = { merchant: w.run.identity.pay_to, amount: "1000000", idempotency_key: "k-1" };
         let p = await w.tool("prepare_x402_payment", args);
@@ -112,6 +126,38 @@ for (const id of SCENARIO_IDS) {
     } finally { await w.backend.close(); }
   });
 }
+
+test("SOHO-479: an unproven wallet gets the real challenge, which no borrower signs; a borrower with no wallet gets none", async () => {
+  const w = await up("prove-wallet-runs-wallet-proof");
+  try {
+    // The challenge takes the registered wallet's address, so get_borrower_status reports it (backend borrower.service.ts).
+    const st = await w.tool("get_borrower_status");
+    assert.equal(st.body.wallet_proof_verified, false);
+    assert.match(st.body.wallet_address, /^0x[0-9a-f]{40}$/);
+    assert.equal((await w.tool("get_borrower_status")).body.wallet_address, st.body.wallet_address, "the same wallet every call");
+    const ch = await w.tool("request_signature_challenge", { wallet_address: st.body.wallet_address });
+    assert.equal(ch.ok, true);
+    assert.deepEqual(Object.keys(ch.body).sort(), ["challenge_id", "expires_at", "nonce", "typed_data"]);
+    assert.match(ch.body.nonce, /^0x[0-9a-f]{64}$/);
+    const sub = await w.tool("submit_signature", { borrower_id: w.run.identity.borrower_id, nonce: ch.body.nonce, signature: `0x${"ab".repeat(65)}` });
+    assert.equal(sub.ok, false); assert.equal(sub.body.code, "SIGNATURE_INVALID");
+    const tok = await w.tool("request_borrower_token", { scopes: ["spend:intent:create", "payment:read"] });
+    assert.deepEqual(tok.body.dropped_scopes, [{ scope: "spend:intent:create", reason: "WALLET_PROOF_REQUIRED" }]);
+    await w.tool("register_borrower");
+    const grant = await w.tool("authorize_agent", { operational_agent_id: w.run.identity.operational_agent_id });
+    assert.equal(grant.ok, false); assert.equal(grant.body.code, "WALLET_PROOF_REQUIRED");
+  } finally { await w.backend.close(); }
+  const n = await up("connect-wallet-no-signature-request");
+  try {
+    const reg = await n.tool("register_borrower");
+    assert.equal(reg.body.spend_ready, false);
+    assert.deepEqual(reg.body.next_actions.map((a) => a.action), ["CONNECT_WALLET", "CONNECT_BANK"]);
+    assert.ok(n.journal().includes("browser_step_listed"), "register_borrower shows the browser steps too");
+    assert.equal((await n.tool("get_borrower_status")).body.wallet_address, null, "no wallet, no address");
+    const ch = await n.tool("request_signature_challenge", {});
+    assert.equal(ch.ok, false); assert.equal(ch.body.code, "WALLET_NOT_REGISTERED");
+  } finally { await n.backend.close(); }
+});
 
 test("m5: the first-time-merchant gate clears only on a retry with the SAME idempotency_key", async () => {
   const w = await up("sequencing-consent-before-sign");

@@ -29,7 +29,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 | `BORROWER_REGISTRATION_REQUIRED` | BORROWER · yes | Borrower not registered | `{SKILLS_BASE}/borrower-onboard.md` |
 | `CREDIT_OFFER_ACCEPTANCE_REQUIRED` | BORROWER · yes | Facility not ACTIVE — credit offer must be accepted (`accept_facility_offer`) | `{SKILLS_BASE}/borrower-onboard.md` |
 | `AGENT_AUTHORIZATION_REQUIRED` | BORROWER · yes | No ACTIVE agent grant | `{SKILLS_BASE}/authorize-agent.md` |
-| `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate; borrower picks/confirms, then `claim_handle` | `{SKILLS_BASE}/borrower-onboard.md` step 8 (claim path); tool contract `{SKILLS_BASE}/handle.md` |
+| `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate (usually **not** `[0]`; emitted last — see note below); borrower picks/confirms, then `claim_handle` | `{SKILLS_BASE}/borrower-onboard.md` step 8 (claim path); tool contract `{SKILLS_BASE}/handle.md` |
 | `SPENDING_AVAILABLE` (`can_pay: true`) | AGENT · no | Spending available — pick the pay flow by context | HTTP 402 merchant → `{SKILLS_BASE}/x402-credit-pay.md`; non-x402 spend/sign → `{SKILLS_BASE}/spend-and-pay.md`; operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md` |
 | `REPAYMENT_IN_FLIGHT` | AGENT · no | A repayment is confirming | `{SKILLS_BASE}/repay.md` (monitor) |
 

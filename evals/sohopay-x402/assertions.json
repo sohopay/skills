@@ -103,6 +103,33 @@
           "after": "no_credit_account"
         }
       ]
+    },
+    {
+      "id": "browser-step-does-not-block-pay",
+      "class": "behavioral",
+      "grader": "predicate",
+      "expect_hash": "e0464395c3b14e8a4a6798820f1ad1c5a27bbc52e353b0d8c7c1c99a67f631cf",
+      "requires_labels": [
+        "profile_step_listed"
+      ],
+      "predicates": [
+        {
+          "name": "present",
+          "label": "prepare_call"
+        },
+        {
+          "name": "present",
+          "label": "voucher_sign_call"
+        },
+        {
+          "name": "present",
+          "label": "merchant_retry"
+        },
+        {
+          "name": "absent",
+          "label": "profile_data_requested"
+        }
+      ]
     }
   ]
 }
