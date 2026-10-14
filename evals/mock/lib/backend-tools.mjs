@@ -94,6 +94,16 @@ function emitListed(o, emit) {
 
 /** Whether the borrower's wallet ownership is proven (always, unless a scenario's onboarding says otherwise). */
 const walletVerified = (s) => !s.onboarding || s.onboarding.wallet === "VERIFIED";
+/**
+ * The borrower's registered wallet, as get_borrower_status reports it (backend borrower.service.ts `wallet_address`):
+ * null when they signed in without one. The wallet-proof challenge takes this address, so a world with an unproven
+ * wallet must expose it or the agent has nothing to start the proof with.
+ */
+const walletAddressOf = (s) => {
+  if (s.onboarding?.wallet === "NONE") return null;
+  s.walletAddress ??= `0x${hex(20)}`;
+  return s.walletAddress;
+};
 const SPEND_SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request"];
 
 function context(state) {
@@ -124,7 +134,7 @@ export const TOOLS = {
     return context(s);
   },
   whoami: (_a, s) => ({ principal_id: s.id.borrower_id, borrower_id: s.id.borrower_id, scopes: ["borrower:token"], roles: ["BORROWER"] }),
-  get_borrower_status: (_a, s) => ({ borrower_id: s.id.borrower_id, status: "ACTIVE", wallet_proof_verified: walletVerified(s), onboarding: context(s).next_action }),
+  get_borrower_status: (_a, s) => ({ borrower_id: s.id.borrower_id, status: "ACTIVE", wallet_proof_verified: walletVerified(s), wallet_address: walletAddressOf(s), onboarding: context(s).next_action }),
   register_borrower: (_a, s, _run, emit) => {
     s.hostRegistered = true;
     const base = { borrower_id: s.id.borrower_id, operational_agent_id: s.id.operational_agent_id, terminal_id: s.id.terminal_id, handle: s.id.handle, next_action: null };

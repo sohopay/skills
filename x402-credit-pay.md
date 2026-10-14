@@ -364,6 +364,24 @@ curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
   writes the key here via `key generate --out`, and the voucher path reads it via
   `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
   file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input. Nor may it list, `stat` or `echo` the key file, its directory or `~/.agents` (`ls`, `ls -l`, `ls -ld`, `echo <path>`): the signer checks the key; the agent never inspects it. Any command naming the key file other than the documented signer call counts as accessing it.
+
+  Paste this path **literally** after `--key` / `--out` in every keyed command — never through a variable (no `KEY=…`). The onboarding commands (`{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md`), each as its own Bash call exactly as shown:
+
+  ```
+  sohopay-signer key generate --out ~/.agents/sohopay-agent-workload/secret.json --input - --output json <<'SOHOPAY_EOF'
+  { "borrower_id": "…", "terminal_id": "…" }
+  SOHOPAY_EOF
+  ```
+
+  ```
+  sohopay-signer pop sign --key ~/.agents/sohopay-agent-workload/secret.json --input - --output json <<'SOHOPAY_EOF'
+  { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
+  SOHOPAY_EOF
+  ```
+- **Signer spelling:** write the signer exactly as the candidate that answered — `sohopay-signer`,
+  `"$SOHOPAY_SIGNER"` or the pinned `npx --no @sohopay/agent-signer@0.3.1`. Never an absolute path
+  to the binary (`/usr/local/bin/sohopay-signer`), never a default expansion (`${SOHOPAY_SIGNER:-sohopay-signer}`),
+  never `env …` / `command …` in front of it.
 - `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
 
 ### Consume the output and retry
@@ -393,13 +411,19 @@ no `signature`; the credential exists only in the header file.
 
 Any **nonzero signer exit**, unparseable stdout, incompatible `signer_protocol`, or a
 missing required field → surface the signer's error **code** and **stop before the merchant
-retry**. Never fall back to hand-signing; never re-invoke with modified input. The error
-codes and their meanings are the SP1 signer contract — do not restate them here.
+retry**. Never fall back to hand-signing; never re-invoke with modified input (the one
+exception: `INLINE_KEY_REJECTED`, below). The error codes and their meanings are the SP1
+signer contract — do not restate them here.
+
+**Every stop names its code verbatim** in the final message to the operator — the exact
+token, e.g. `SIGNER_UNAVAILABLE`, `SIGNER_UNRESOLVED`, `KEY_PATH_INVALID` — never only a
+paraphrase ("the signer isn't available").
 
 | Condition | Action |
 |-----------|--------|
 | No candidate answers | `SIGNER_UNAVAILABLE` → stop, report |
 | Nonzero exit / `{"error":{"code",…}}` | Surface the code → stop (no retry, no hand-sign) |
+| `INLINE_KEY_REJECTED` | Re-run the **same** command once, as its own Bash call, with `--key` set to the canonical key path above — never retry with an inline key |
 | `header_name` ≠ `PAYMENT-SIGNATURE` | `UNEXPECTED_HEADER_NAME` → stop |
 | `payment_id` / `agent_key_jkt` mismatch | Stop, no retry |
 | Retry fails terminally or voucher expired | **Re-prepare** (new `payment_id`), then sign the fresh envelope — never re-sign a stale one |
