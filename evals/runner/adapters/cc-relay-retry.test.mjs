@@ -142,3 +142,30 @@ test("a capture gap carries the session's evidence: tool, parallel siblings, Pos
   assert.match(eb, /CLI hook records: none/);
   assert.deepEqual(captureErrors(items, relay), ["capture gap: toolu_a has no PreToolUse record", "capture gap: toolu_b has no PreToolUse record"], "without diagnostics the messages are unchanged");
 });
+
+// Live run 38523276231: all 3 gaps read "Bash, call 2 of 5; parallel with …; relayed post: no; CLI hook records:
+// none". The CLI runs (and records) PreToolUse hooks before executing ANY tool, so a call with no relayed record AND no
+// CLI hook record was never executed (a queued parallel call the CLI cancelled). With an error result, that is not a
+// capture gap. Anything less certain stays one.
+const NEVER = { kind: "call", id: "toolu_n", name: "Bash" };
+const diagWith = (records = []) => ({ messageOf: new Map([["toolu_n", "msg_9"], ["toolu_s", "msg_9"]]), hooksOf: new Map(records.length ? [["toolu_n", records]] : []) });
+const relayOnly = (h = {}) => ({ errors: [], hooks: new Map([["toolu_s", { pre: {}, post: {} }], ...(Object.keys(h).length ? [["toolu_n", h]] : [])]) });
+const SIB = [{ kind: "call", id: "toolu_s", name: "Bash" }, { kind: "result", id: "toolu_s" }];
+
+test("a never-executed call (no relayed record, no CLI hook record, error result) is not a capture gap", () => {
+  assert.deepEqual(captureErrors([NEVER, ...SIB, { kind: "result", id: "toolu_n", isError: true }], relayOnly(), diagWith()), []);
+});
+
+test("anything short of that proof is still a gap, and the gap says what the result was", () => {
+  const ok = captureErrors([NEVER, ...SIB, { kind: "result", id: "toolu_n", isError: false }], relayOnly(), diagWith());
+  assert.equal(ok.length, 1);
+  assert.match(ok[0], /result: ok/);
+  const none = captureErrors([NEVER, ...SIB], relayOnly(), diagWith());
+  assert.match(none[0], /has no PreToolUse record .*result: none/);
+  const cliRan = captureErrors([NEVER, ...SIB, { kind: "result", id: "toolu_n", isError: true }], relayOnly(),
+    diagWith([{ event: "PreToolUse", type: "hook_non_blocking_error", exitCode: 1, durationMs: 9, stderr: "" }]));
+  assert.match(cliRan[0], /has no PreToolUse record .*result: error/, "the CLI ran a hook for it, so it may have executed");
+  const relayedPost = captureErrors([NEVER, ...SIB, { kind: "result", id: "toolu_n", isError: true }], relayOnly({ post: {} }), diagWith());
+  assert.match(relayedPost[0], /has no PreToolUse record/, "a relayed Post means it executed");
+  assert.equal(captureErrors([NEVER, ...SIB, { kind: "result", id: "toolu_n", isError: true }], relayOnly()).length, 1, "without the session's hook records there is no proof");
+});

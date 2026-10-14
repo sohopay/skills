@@ -99,11 +99,15 @@ export function captureErrors(items, relay, diag = null) {
   const out = relay.errors.map((e) => `hook relay error: ${e}`);
   const calls = new Map(items.filter((x) => x.kind === "call").map((c) => [c.id, c]));
   const results = new Map(items.filter((x) => x.kind === "result").map((r) => [r.id, r]));
-  const gap = (c, missing) => `capture gap: ${c.id} has no ${missing} record${diag ? ` (${gapEvidence(c, calls, relay, diag)})` : ""}`;
+  const gap = (c, missing) => `capture gap: ${c.id} has no ${missing} record${diag ? ` (${gapEvidence(c, calls, results, relay, diag)})` : ""}`;
+  // Live run 38523276231: the CLI runs (and records) PreToolUse hooks before executing ANY tool. A call with no
+  // relayed record, no CLI hook record and an error result was never executed (a queued parallel call the CLI
+  // cancelled), so, like a denial, it has nothing to capture. Without the session's hook records there is no proof.
+  const neverRan = (c, h, r) => diag !== null && r?.isError === true && !h.pre && !h.post && !h.denied && !(diag.hooksOf.get(c.id)?.length);
   for (const c of calls.values()) {
     const h = relay.hooks.get(c.id) ?? {};
     const r = results.get(c.id);
-    if (h.denied || r?.denialKind) continue;
+    if (h.denied || r?.denialKind || neverRan(c, h, r)) continue;
     if (!h.pre) out.push(gap(c, "PreToolUse"));
     else if (r && !h.post) out.push(gap(c, "PostToolUse"));
   }
@@ -114,7 +118,8 @@ export function captureErrors(items, relay, diag = null) {
 }
 
 /** One gap's evidence, from the session's own records: never call inputs or outputs, only ids, names and hook status. */
-function gapEvidence(c, calls, relay, diag) {
+function gapEvidence(c, calls, results, relay, diag) {
+  const r = results.get(c.id);
   const ids = [...calls.keys()];
   const msg = diag.messageOf.get(c.id);
   const siblings = msg ? ids.filter((id) => id !== c.id && diag.messageOf.get(id) === msg) : [];
@@ -125,6 +130,7 @@ function gapEvidence(c, calls, relay, diag) {
     `${c.name || "?"}, call ${ids.indexOf(c.id) + 1} of ${ids.length}`,
     siblings.length ? `parallel with ${siblings.join(", ")}` : "not parallel",
     `relayed post: ${h.post ? "yes" : "no"}`,
+    `result: ${r ? (r.isError ? "error" : "ok") : "none"}`,
     `CLI hook records: ${cli.length ? cli.join(" | ") : "none"}`,
   ].join("; ");
 }
