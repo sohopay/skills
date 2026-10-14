@@ -130,7 +130,12 @@ for (const id of SCENARIO_IDS) {
 test("SOHO-479: an unproven wallet gets the real challenge, which no borrower signs; a borrower with no wallet gets none", async () => {
   const w = await up("prove-wallet-runs-wallet-proof");
   try {
-    const ch = await w.tool("request_signature_challenge", {});
+    // The challenge takes the registered wallet's address, so get_borrower_status reports it (backend borrower.service.ts).
+    const st = await w.tool("get_borrower_status");
+    assert.equal(st.body.wallet_proof_verified, false);
+    assert.match(st.body.wallet_address, /^0x[0-9a-f]{40}$/);
+    assert.equal((await w.tool("get_borrower_status")).body.wallet_address, st.body.wallet_address, "the same wallet every call");
+    const ch = await w.tool("request_signature_challenge", { wallet_address: st.body.wallet_address });
     assert.equal(ch.ok, true);
     assert.deepEqual(Object.keys(ch.body).sort(), ["challenge_id", "expires_at", "nonce", "typed_data"]);
     assert.match(ch.body.nonce, /^0x[0-9a-f]{64}$/);
@@ -148,6 +153,7 @@ test("SOHO-479: an unproven wallet gets the real challenge, which no borrower si
     assert.equal(reg.body.spend_ready, false);
     assert.deepEqual(reg.body.next_actions.map((a) => a.action), ["CONNECT_WALLET", "CONNECT_BANK"]);
     assert.ok(n.journal().includes("browser_step_listed"), "register_borrower shows the browser steps too");
+    assert.equal((await n.tool("get_borrower_status")).body.wallet_address, null, "no wallet, no address");
     const ch = await n.tool("request_signature_challenge", {});
     assert.equal(ch.ok, false); assert.equal(ch.body.code, "WALLET_NOT_REGISTERED");
   } finally { await n.backend.close(); }
