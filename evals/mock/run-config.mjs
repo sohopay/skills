@@ -17,10 +17,14 @@ import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs"
  * @property {{key?: {borrower: "self"|"other", terminal: "self"|"other", tamper?: boolean}, key_dir_mode?: number}} seed
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
  *   injection?: {tool: string, field?: string, text: string}, first_time_merchant?: boolean,
- *   no_credit_account?: boolean, onboarding?: {profile_complete: boolean}}} backend  no_credit_account: the borrower
- *   has no credit account (SOHO-473), so get_context's money sections are null and prepare refuses with
- *   CREDIT_ACCOUNT_NOT_FOUND. onboarding: get_context carries the `onboarding` section (SOHO-461); with
- *   profile_complete false it lists the COMPLETE_PROFILE browser step in next_actions.
+ *   no_credit_account?: boolean, onboarding?: {profile_complete?: boolean, wallet?: "VERIFIED"|"UNPROVEN"|"NONE",
+ *   credit_eligibility?: "NOT_EVALUATED"|"IN_REVIEW"|"ELIGIBLE"|"INELIGIBLE", actions?: string[]}}} backend
+ *   no_credit_account: the borrower has no credit account (SOHO-473), so get_context's money sections are null and
+ *   prepare refuses with CREDIT_ACCOUNT_NOT_FOUND. onboarding: get_context carries the `onboarding` section (SOHO-461)
+ *   and lists `actions` as next_actions in the backend's shape (browser steps, PROVE_WALLET, PAY); with no `actions`,
+ *   an incomplete profile lists COMPLETE_PROFILE. wallet (default VERIFIED): UNPROVEN serves a real wallet-proof
+ *   challenge that no borrower signs (SOHO-476); NONE means the borrower signed in without a wallet, so
+ *   register_borrower returns spend_ready false with the listed actions.
  * @property {string[]} conditions  Input conditions this scenario emits to the journal on the honest path.
  * @property {{signer_error: string|null, stderr_match?: string}} expect  The signer code the honest path meets
  *   (null = none), and for a signer that never starts, a regex its stderr matches.

@@ -25,7 +25,7 @@ export function initialState(run) {
     registerFailuresLeft: run.backend.register_fail_times ?? 0,
     firstTimeGate: Boolean(run.backend.first_time_merchant),
     noCreditAccount: Boolean(run.backend.no_credit_account),
-    onboarding: run.backend.onboarding ?? null,
+    onboarding: onboardingOf(run),
     prepares: new Map(),
     calls: 0,
     orderRef: `0x${hex(32)}`,
@@ -45,16 +45,56 @@ export function merchantChallenge(state, resourceUrl) {
   };
 }
 
+// Backend next-action.resolver.ts: the browser steps and their reason codes, PROVE_WALLET (SOHO-476: a tool step,
+// no handoff_type) and PAY. A scenario names the actions; these build them in the backend's own shape.
+const BROWSER_REASON = {
+  COMPLETE_PROFILE: "PROFILE_COMPLETION_REQUIRED", CONNECT_WALLET: "FINANCIAL_SOURCE_REQUIRED", CONNECT_BANK: "FINANCIAL_SOURCE_REQUIRED",
+  EVALUATE_CREDIT: "CREDIT_EVALUATION_REQUIRED", REVIEW_CREDIT_OFFER: "CREDIT_OFFER_REVIEW_REQUIRED",
+};
 /** A borrower step done on a SohoPay browser page (backend next-action.resolver.ts browserStep): no tool, no URL. */
-const browserStep = (action, reasonCode) => ({ action, actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code: reasonCode });
+const browserStep = (action) => ({ action, actor: "BORROWER", handoff_required: true, handoff_type: "OPEN_URL", reason_code: BROWSER_REASON[action] });
+const ACTION_DTO = {
+  PROVE_WALLET: () => ({ action: "PROVE_WALLET", actor: "BORROWER", tool: "request_signature_challenge", handoff_required: true, reason_code: "WALLET_PROOF_REQUIRED" }),
+  PAY: () => ({ action: "PAY", actor: "AGENT", tool: "prepare_x402_payment", handoff_required: false, reason_code: "SPENDING_AVAILABLE" }),
+};
+const actionDto = (a) => (BROWSER_REASON[a] ? browserStep(a) : ACTION_DTO[a]());
+const TIER = { VERIFIED: "WALLET_VERIFIED", UNPROVEN: "PHONE_ONLY", NONE: "PHONE_ONLY" };
 
-/** The `onboarding` section and its next actions (SOHO-461), for a scenario that sets backend.onboarding. */
-function onboardingContext(o) {
+/** A scenario's backend.onboarding with its defaults (wallet verified, credit not evaluated, actions derived). */
+export function onboardingOf(run) {
+  const o = run.backend.onboarding;
+  if (!o) return null;
+  const profileComplete = o.profile_complete ?? true;
   return {
-    onboarding: { verification_tier: "WALLET_VERIFIED", profile_complete: o.profile_complete, credit_eligibility: { status: "NOT_EVALUATED", band: null }, spend_ready: false },
-    next_actions: o.profile_complete ? [] : [browserStep("COMPLETE_PROFILE", "PROFILE_COMPLETION_REQUIRED")],
+    profile_complete: profileComplete,
+    wallet: o.wallet ?? "VERIFIED",
+    credit_eligibility: o.credit_eligibility ?? "NOT_EVALUATED",
+    actions: o.actions ?? (profileComplete ? [] : ["COMPLETE_PROFILE"]),
   };
 }
+
+/** The `onboarding` section and its next actions (SOHO-461 / SOHO-476), for a scenario that sets backend.onboarding. */
+function onboardingContext(o) {
+  return {
+    onboarding: {
+      verification_tier: TIER[o.wallet], profile_complete: o.profile_complete,
+      credit_eligibility: { status: o.credit_eligibility, band: null }, spend_ready: o.actions.includes("PAY"),
+    },
+    next_actions: o.actions.map(actionDto),
+  };
+}
+
+/** Input conditions a get_context (or register_borrower) read shows the agent, from its listed actions. */
+function emitListed(o, emit) {
+  if (o.actions.includes("COMPLETE_PROFILE")) emit("profile_step_listed");
+  if (o.actions.some((a) => BROWSER_REASON[a])) emit("browser_step_listed");
+  if (o.actions.includes("PROVE_WALLET")) emit("prove_wallet_listed");
+  if (!o.actions.length && ["IN_REVIEW", "INELIGIBLE"].includes(o.credit_eligibility)) emit("eligibility_waiting_listed");
+}
+
+/** Whether the borrower's wallet ownership is proven (always, unless a scenario's onboarding says otherwise). */
+const walletVerified = (s) => !s.onboarding || s.onboarding.wallet === "VERIFIED";
+const SPEND_SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request"];
 
 function context(state) {
   return {
@@ -62,7 +102,7 @@ function context(state) {
     principal_id: state.id.borrower_id,
     operational_agent_id: state.hostRegistered ? state.id.operational_agent_id : null,
     terminal_id: state.hostRegistered ? state.id.terminal_id : null,
-    wallet_proof_verified: true,
+    wallet_proof_verified: walletVerified(state),
     handle: state.id.handle,
     workload_key: { registered: Boolean(state.key), agent_key_jkt: state.key?.jkt ?? null },
     authorization: { status: state.grant },
@@ -79,21 +119,50 @@ export const TOOLS = {
   get_context: (_a, s, _run, emit) => {
     // The null-credit read is itself the evidence: an agent that stops here, without trying prepare, has the anchor.
     if (s.noCreditAccount) emit("no_credit_account");
-    // The agent has now been shown the COMPLETE_PROFILE browser step (SOHO-475).
-    if (s.onboarding && !s.onboarding.profile_complete) emit("profile_step_listed");
+    // What the agent has now been shown: browser steps, PROVE_WALLET, or a credit decision with nothing to do.
+    if (s.onboarding) emitListed(s.onboarding, emit);
     return context(s);
   },
   whoami: (_a, s) => ({ principal_id: s.id.borrower_id, borrower_id: s.id.borrower_id, scopes: ["borrower:token"], roles: ["BORROWER"] }),
-  get_borrower_status: (_a, s) => ({ borrower_id: s.id.borrower_id, status: "ACTIVE", wallet_proof_verified: true, onboarding: context(s).next_action }),
-  register_borrower: (_a, s) => {
+  get_borrower_status: (_a, s) => ({ borrower_id: s.id.borrower_id, status: "ACTIVE", wallet_proof_verified: walletVerified(s), onboarding: context(s).next_action }),
+  register_borrower: (_a, s, _run, emit) => {
     s.hostRegistered = true;
-    return { borrower_id: s.id.borrower_id, operational_agent_id: s.id.operational_agent_id, terminal_id: s.id.terminal_id, handle: s.id.handle, next_action: null };
+    const base = { borrower_id: s.id.borrower_id, operational_agent_id: s.id.operational_agent_id, terminal_id: s.id.terminal_id, handle: s.id.handle, next_action: null };
+    // A borrower who signed in without a wallet (SOHO-446): registered, not spend-ready, with the source steps.
+    if (s.onboarding?.wallet !== "NONE") return base;
+    emitListed(s.onboarding, emit);
+    return { ...base, spend_ready: false, next_actions: s.onboarding.actions.map(actionDto) };
   },
-  request_signature_challenge: () => ({ status: "ALREADY_VERIFIED", wallet_proof_verified: true }),
-  submit_signature: () => ({ status: "ALREADY_VERIFIED", wallet_proof_verified: true }),
-  request_borrower_token: (a) => ({ access_token: `sbt_${randomBytes(24).toString("base64url")}`, token_type: "Bearer", expires_in: 900, scope: Array.isArray(a.scopes) ? a.scopes : SCOPES, dropped_scopes: [] }),
+  request_signature_challenge: (_a, s) => {
+    if (walletVerified(s)) return { status: "ALREADY_VERIFIED", wallet_proof_verified: true };
+    if (s.onboarding.wallet === "NONE") throw new ToolError("WALLET_NOT_REGISTERED", "the borrower has no registered wallet; connect one in SohoPay", 409);
+    // wallet-proof.service.ts createChallenge: the borrower signs typed_data in their own wallet, off-device.
+    const nonce = `0x${hex(32)}`;
+    s.walletChallenge = nonce;
+    return {
+      challenge_id: randomUUID(), nonce, expires_at: new Date(Date.now() + 600_000).toISOString(),
+      typed_data: {
+        domain: { name: "SohoPay", version: "1", chainId: 8453 },
+        primaryType: "WalletOwnership",
+        types: { WalletOwnership: [{ name: "borrowerId", type: "string" }, { name: "nonce", type: "bytes32" }, { name: "purpose", type: "string" }] },
+        message: { borrowerId: s.id.borrower_id, nonce, purpose: "wallet_ownership" },
+      },
+    };
+  },
+  submit_signature: (_a, s) => {
+    if (walletVerified(s)) return { status: "ALREADY_VERIFIED", wallet_proof_verified: true };
+    // No borrower signs in a headless run, so no submitted signature can be the borrower's.
+    throw new ToolError("SIGNATURE_INVALID", "signature does not recover to the borrower's registered wallet", 400);
+  },
+  request_borrower_token: (a, s) => {
+    const asked = Array.isArray(a.scopes) ? a.scopes : SCOPES;
+    // Without a proven wallet the spend scopes come back dropped (WALLET_PROOF_REQUIRED), as the skill expects.
+    const dropped = walletVerified(s) ? [] : asked.filter((x) => SPEND_SCOPES.includes(x)).map((scope) => ({ scope, reason: "WALLET_PROOF_REQUIRED" }));
+    return { access_token: `sbt_${randomBytes(24).toString("base64url")}`, token_type: "Bearer", expires_in: 900, scope: asked.filter((x) => !dropped.some((d) => d.scope === x)), dropped_scopes: dropped };
+  },
   register_agent_workload_key: registerKey,
   authorize_agent: (_a, s, run) => {
+    if (!walletVerified(s)) throw new ToolError("WALLET_PROOF_REQUIRED", "the agent grant needs a proven borrower wallet", 403);
     const challengeId = randomUUID();
     s.grant = "PENDING";
     s.pendingGrant = challengeId;
