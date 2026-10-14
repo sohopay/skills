@@ -3,7 +3,8 @@
   "pending": {
     "sohopay-onboard": [
       "prove-wallet-runs-wallet-proof",
-      "prove-wallet-with-bank-alternative"
+      "prove-wallet-with-bank-alternative",
+      "register-fails-then-retry-reuses-key"
     ],
     "sohopay-x402": [
       "browser-step-does-not-block-pay"
