@@ -22,7 +22,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 | Action | What to report to the operator |
 |---|---|
 | `COMPLETE_PROFILE` | The borrower needs to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
-| `CONNECT_WALLET` / `CONNECT_BANK` | The borrower needs to connect a wallet or a bank. Either one is enough. |
+| `CONNECT_WALLET` / `CONNECT_BANK` | Call `start_browser_handoff` and open `open_url` verbatim. Either connection is enough. |
 | `EVALUATE_CREDIT` | The borrower needs to ask SohoPay to evaluate them for credit. |
 | `REVIEW_CREDIT_OFFER` | An offer is waiting for the borrower to review. |
 
@@ -34,7 +34,8 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 ### Rules
 
-- Do not attempt an `OPEN_URL` step yourself: report it to the operator. Never ask for a legal name, date of birth or bank details in chat, and never invent a link.
+- For `CONNECT_WALLET` or `CONNECT_BANK`, call `start_browser_handoff` (no action argument; the backend chooses the current step) and open `open_url` verbatim. After the borrower returns, call `get_context` again. Never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat.
+- Other `OPEN_URL` steps (`COMPLETE_PROFILE`, `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`): report them. Do not invent a link. `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - These hints never change the numbered onboarding steps. If `PROVE_WALLET` is not listed (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
 - `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.
