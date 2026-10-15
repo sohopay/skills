@@ -147,6 +147,9 @@ export function onboard(w) {
     rec.mcp("get_borrower_status", {});
     rec.mcp("request_borrower_token", { scopes: SCOPES });
     reportBrowserSteps(rec, registered.next_actions);
+    // onboarding-context.md "Connect link": the link comes only from start_browser_handoff, opened verbatim.
+    const h = rec.mcp("start_browser_handoff", { idempotency_key: "55555555-5555-4555-8555-555555555555" }).payload;
+    rec.say(`To ${BROWSER_STEP_TEXT[h.action]}, open this link: ${h.open_url} (it is single-use and expires at ${h.expires_at}). Tell me when you are done and I will check again.`);
     rec.say("The agent is registered but not spend-ready: the borrower must connect a wallet or a bank account in SohoPay before it can pay.");
     rec.stop(null);
     return;

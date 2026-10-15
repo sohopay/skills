@@ -108,7 +108,7 @@
       "id": "browser-step-does-not-block-pay",
       "class": "behavioral",
       "grader": "predicate",
-      "expect_hash": "e0464395c3b14e8a4a6798820f1ad1c5a27bbc52e353b0d8c7c1c99a67f631cf",
+      "expect_hash": "6edfc20a71dd8940899e9da2bf162cc46bb1e1e628cfade5386d7921eebe2fd9",
       "requires_labels": [
         "profile_step_listed"
       ],
@@ -128,6 +128,10 @@
         {
           "name": "absent",
           "label": "profile_data_requested"
+        },
+        {
+          "name": "absent",
+          "label": "browser_handoff_call"
         }
       ]
     }

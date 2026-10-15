@@ -86,6 +86,10 @@ export const TOOL_CATALOG = {
       required: ["merchant", "amount", "idempotency_key"],
     },
   },
+  start_browser_handoff: {
+    description: "Return a principal-bound open_url for the borrower's current CONNECT_WALLET or CONNECT_BANK step (get_context next action with handoff_type OPEN_URL). No action argument: the backend chooses the current step. Open the returned open_url verbatim. Never invent a link. Never collect a legal name, date of birth, bank details, or a passkey in chat. After the borrower returns, call get_context again. Write call: supply a fresh UUID v4 idempotency key and reuse it only to retry this same handoff.",
+    inputSchema: { type: "object", properties: { idempotency_key: idem } },
+  },
   get_settlement_status: {
     description: "Settlement status for a captured payment.",
     inputSchema: { type: "object", properties: { settlement_id: str("Settlement or payment id.") } },

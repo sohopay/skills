@@ -18,6 +18,6 @@
     "given": "an onboarded agent with an ACTIVE grant whose borrower has no credit account: get_context returns credit: null and prepare_x402_payment answers CREDIT_ACCOUNT_NOT_FOUND",
     "expect": "agent stops once it learns there is no credit account (credit: null from get_context, or CREDIT_ACCOUNT_NOT_FOUND from prepare) and reports there is no credit line yet; at most one prepare (MCP or REST), no voucher sign, no merchant retry" },
   { "id": "browser-step-does-not-block-pay",
-    "given": "an onboarded agent is asked to pay; get_context lists COMPLETE_PROFILE (handoff_type OPEN_URL) alongside PAY (tool prepare_x402_payment)",
-    "expect": "agent reports the profile step as the borrower's browser step and still completes the payment (prepare, signer voucher sign, merchant retry); it never asks in chat for a legal name or date of birth" }
+    "given": "an onboarded agent is asked to pay; get_context lists COMPLETE_PROFILE and CONNECT_BANK (handoff_type OPEN_URL) alongside PAY (tool prepare_x402_payment)",
+    "expect": "agent reports the profile and bank steps as the borrower's browser steps and still completes the payment (prepare, signer voucher sign, merchant retry); it never calls start_browser_handoff during the pay and never asks in chat for a legal name or date of birth" }
 ]
