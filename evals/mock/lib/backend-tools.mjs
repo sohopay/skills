@@ -186,9 +186,28 @@ export const TOOLS = {
   },
   check_handle_availability: (a, s) => ({ handle: a.handle ?? s.id.handle, available: false, reason: "ALREADY_CLAIMED_BY_YOU" }),
   claim_handle: (_a, s) => ({ handle: s.id.handle, status: "CLAIMED" }),
+  start_browser_handoff: browserHandoff,
   prepare_x402_payment: prepare,
   get_settlement_status: (a) => ({ settlement_id: a.settlement_id ?? null, status: "CONFIRMED" }),
 };
+
+const HANDOFF_ACTIONS = new Set(["CONNECT_WALLET", "CONNECT_BANK"]);
+const HANDOFF_TTL_MS = 600_000;
+/**
+ * Backend onboarding-handoff.service.ts start(): the first listed CONNECT_WALLET / CONNECT_BANK step gets a
+ * principal-bound one-time link (token only in the fragment). No action argument; 409 when no connect step is
+ * current. A retried idempotency key replays the same link, as the backend's @Idempotent replay would.
+ */
+function browserHandoff(a, s, run) {
+  const step = s.onboarding?.actions.find((x) => HANDOFF_ACTIONS.has(x));
+  if (!step) throw new ToolError("NO_BROWSER_HANDOFF", "No CONNECT_WALLET or CONNECT_BANK browser step is current", 409);
+  s.handoffs ??= new Map();
+  const key = a.idempotency_key ?? `auto-${s.handoffs.size}`;
+  if (!s.handoffs.has(key)) {
+    s.handoffs.set(key, { action: step, open_url: `${run.publicBase}/onboarding/handoff#${randomBytes(24).toString("base64url")}`, expires_at: new Date(Date.now() + HANDOFF_TTL_MS).toISOString() });
+  }
+  return { ...s.handoffs.get(key) };
+}
 
 function registerKey(a, s, _run, emit) {
   if (!s.hostRegistered) throw new ToolError("TERMINAL_NOT_OWNED", "register_borrower first: this host has no terminal", 403);

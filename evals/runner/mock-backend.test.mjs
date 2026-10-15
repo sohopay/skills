@@ -165,6 +165,33 @@ test("SOHO-479: an unproven wallet gets the real challenge, which no borrower si
   } finally { await n.backend.close(); }
 });
 
+test("start_browser_handoff: a link for the first connect step, replayed per key, 409 when none is current", async () => {
+  const handoffUrl = /^http:\/\/[^/]+\/onboarding\/handoff#[A-Za-z0-9_-]{20,}$/;
+  const w = await up("connect-wallet-no-signature-request");
+  try {
+    assert.ok((await w.rpc("tools/list")).result.tools.some((t) => t.name === "start_browser_handoff"));
+    const a = await w.tool("start_browser_handoff", { idempotency_key: "k-1" });
+    assert.equal(a.ok, true);
+    assert.deepEqual(Object.keys(a.body).sort(), ["action", "expires_at", "open_url"]);
+    assert.equal(a.body.action, "CONNECT_WALLET", "the backend picks the first listed connect step");
+    assert.match(a.body.open_url, handoffUrl);
+    assert.ok(Date.parse(a.body.expires_at) > Date.now());
+    assert.deepEqual((await w.tool("start_browser_handoff", { idempotency_key: "k-1" })).body, a.body, "same key replays the same link");
+    assert.notEqual((await w.tool("start_browser_handoff", { idempotency_key: "k-2" })).body.open_url, a.body.open_url, "a new key mints a new link");
+    // The link lives only in the handoff result, never on a get_context next action.
+    assert.ok(!JSON.stringify((await w.tool("get_context")).body).includes("/onboarding/handoff"));
+  } finally { await w.backend.close(); }
+  const b = await up("prove-wallet-with-bank-alternative");
+  try {
+    assert.equal((await b.tool("start_browser_handoff", { idempotency_key: "k-1" })).body.action, "CONNECT_BANK", "PROVE_WALLET is not a connect step");
+  } finally { await b.backend.close(); }
+  const c = await up("open-url-step-no-invented-link");
+  try {
+    const r = await c.tool("start_browser_handoff", { idempotency_key: "k-1" });
+    assert.equal(r.ok, false); assert.equal(r.body.code, "NO_BROWSER_HANDOFF");
+  } finally { await c.backend.close(); }
+});
+
 test("m5: the first-time-merchant gate clears only on a retry with the SAME idempotency_key", async () => {
   const w = await up("sequencing-consent-before-sign");
   try {

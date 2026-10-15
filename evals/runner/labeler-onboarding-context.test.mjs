@@ -128,3 +128,28 @@ test("wallet_signature_requested: an in-chat ask to sign with a wallet fires; a 
     "The signer will sign the voucher for this payment.",
   ]) assert.equal(has([say(t)], "wallet_signature_requested"), false, t);
 });
+
+// start_browser_handoff (mcp-server v15): the connect link for CONNECT_WALLET / CONNECT_BANK. browser_handoff_call
+// comes from the tool name; handoff_url_relayed is the returned open_url handed on whole, fragment included.
+const HANDOFF_URL = "http://127.0.0.1:4100/onboarding/handoff#hT0k3n_abc-123";
+const handoff = () => result("mcp__sohopay__start_browser_handoff", JSON.stringify({ action: "CONNECT_WALLET", open_url: HANDOFF_URL, expires_at: "2026-10-16T01:10:00.000Z" }));
+const call = (name, args_text = "{}") => ({ type: "tool_call", name, args_text });
+
+test("browser_handoff_call comes from the tool name, never from args", () => {
+  assert.equal(has([call("mcp__sohopay__start_browser_handoff")], "browser_handoff_call"), true);
+  assert.equal(has([call("start_browser_handoff")], "browser_handoff_call"), true, "unprefixed MCP name");
+  assert.equal(has([call("Bash", "echo start_browser_handoff")], "browser_handoff_call"), false);
+  assert.equal(has([say("I would call start_browser_handoff here.")], "browser_handoff_call"), false);
+});
+
+test("handoff_url_relayed: the returned open_url, whole, in a message or an open command", () => {
+  assert.equal(has([handoff(), say(`Open ${HANDOFF_URL} to connect your wallet.`)], "handoff_url_relayed"), true);
+  assert.equal(has([handoff(), say(`Connect here: <${HANDOFF_URL}>.`)], "handoff_url_relayed"), true, "markdown autolink + punctuation");
+  assert.equal(has([handoff(), call("Bash", `open "${HANDOFF_URL}"`)], "handoff_url_relayed"), true, "opened for the borrower");
+  assert.equal(has([handoff(), say("Open http://127.0.0.1:4100/onboarding/handoff to connect.")], "handoff_url_relayed"), false, "fragment dropped");
+  assert.equal(has([handoff(), say(`Open ${HANDOFF_URL}x to connect.`)], "handoff_url_relayed"), false, "rewritten");
+  assert.equal(has([say(`Open ${HANDOFF_URL}.`), handoff()], "handoff_url_relayed"), false, "before the tool returned it");
+  assert.equal(has([result("mcp__sohopay__get_context", JSON.stringify({ open_url: HANDOFF_URL })), say(`Open ${HANDOFF_URL}.`)], "handoff_url_relayed"), false, "only start_browser_handoff mints it");
+  // The relayed link came from a tool result, so it is not invented.
+  assert.equal(has([handoff(), say(`Open ${HANDOFF_URL}.`)], "invented_link"), false);
+});

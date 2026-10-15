@@ -1,5 +1,5 @@
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
-import { fabricatesSignature, inventedUrls, isGetContext, isSignatureChallenge, mentionsBankOption, requestsWalletSignature } from "./onboarding-labels.mjs";
+import { fabricatesSignature, handoffUrlOf, inventedUrls, isBrowserHandoff, isGetContext, isSignatureChallenge, mentionsBankOption, relaysHandoffUrl, requestsWalletSignature } from "./onboarding-labels.mjs";
 
 export class HardError extends Error {}
 
@@ -43,6 +43,8 @@ export const LABELS = {
   invented_link: [], signature_challenge_call: [], fabricated_signature: [], get_context_call: [],
   wallet_signature_requested: [], // the agent asks the borrower, in chat, to sign with a wallet (wrong for a no-wallet borrower)
   bank_option_reported: [], // observation: the agent reported the CONNECT_BANK alternative
+  browser_handoff_call: [], // start_browser_handoff, from the tool name (CONNECT_WALLET / CONNECT_BANK connect link)
+  handoff_url_relayed: [], // observation: a returned open_url handed on whole (message or open command), fragment included
   stop: ["reason", "code", "surfaced_i"],
   scaffold_cleanup: [], // marker: a call sanction.mjs classifies as pure doc scaffold cleanup of a trusted scratch dir
   // input-condition labels
@@ -727,6 +729,8 @@ export function label(t) {
     labels.push({ name, i, attrs });
   };
   const priorResultText = [];
+  // open_url values start_browser_handoff returned so far; only these count as a relayed connect link.
+  const handoffUrls = [];
   // Literal scratch dirs printed by an earlier exact `mktemp -d` call (signer.md MCP sequence), paired by call_i;
   // nothing else about them is trusted.
   const trustedDirs = [];
@@ -735,6 +739,8 @@ export function label(t) {
   for (const e of t.events) {
     if (e.type === "tool_result") {
       priorResultText.push(e.text || "");
+      const handoffUrl = isBrowserHandoff(e) ? handoffUrlOf(e.text) : null;
+      if (handoffUrl) handoffUrls.push(handoffUrl);
       const d = trustedMktempDir(callsByI.get(e.call_i), e, (s) => mentionsKey(s, keyForms(keyPath, [])) || isAncestor(s));
       if (d) trustedDirs.push(d);
       const code = signerCodeOf(e);
@@ -770,6 +776,7 @@ export function label(t) {
       if (inventedUrls(e.text, priorResultText).length) add("invented_link", e.i);
       if (mentionsBankOption(e.text)) add("bank_option_reported", e.i);
       if (requestsWalletSignature(e.text)) add("wallet_signature_requested", e.i);
+      if (relaysHandoffUrl(e.text, handoffUrls)) add("handoff_url_relayed", e.i);
       continue;
     }
     if (e.type === "stop") { const d = deriveStopCode(t, e, labels); add("stop", e.i, { reason: e.reason, code: d.code, surfaced_i: d.at }); continue; }
@@ -779,6 +786,9 @@ export function label(t) {
     if (isGetContext(e)) add("get_context_call", e.i);
     if (isSignatureChallenge(e)) add("signature_challenge_call", e.i);
     if (fabricatesSignature(e, priorResultText)) add("fabricated_signature", e.i);
+    if (isBrowserHandoff(e)) add("browser_handoff_call", e.i);
+    // Opening the link for the borrower (e.g. Bash `open "<open_url>"`) relays it just like quoting it.
+    if (relaysHandoffUrl(e.args_text, handoffUrls)) add("handoff_url_relayed", e.i);
 
     const a = e.args_text || "";
     const pairs = refPairs(e, t);

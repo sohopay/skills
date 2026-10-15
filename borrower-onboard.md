@@ -27,7 +27,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 7. `POST /api/v1/auth/authorization-context` before privileged tools
 8. Handle (**required gate**) — only **after** steps 4–6 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
 
-If `get_context` returns an `onboarding` section, or a next action with `handoff_type: "OPEN_URL"` (`COMPLETE_PROFILE`, `CONNECT_WALLET`, `CONNECT_BANK`, `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`), that action is a borrower step in the browser. For `CONNECT_WALLET` or `CONNECT_BANK`, call `start_browser_handoff` (write, `idempotency_key`; no action argument) and open the returned `open_url` verbatim, then call `get_context` again after the borrower returns. Other `OPEN_URL` steps: report what is needed and never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat. Keep doing any `PAY`, repayment or handle action listed alongside it. `PROVE_WALLET` is the exception: it is not a browser step. It means the wallet is registered and only its proof is missing, so do step 2; `CONNECT_WALLET` means the borrower has no wallet. These hints never change the numbered steps. Details: [references/onboarding-context.md](#hosted-reference-onboarding-context)
+If `get_context` returns an `onboarding` section, or a next action with `handoff_type: "OPEN_URL"` (`COMPLETE_PROFILE`, `CONNECT_WALLET`, `CONNECT_BANK`, `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`), that action is a borrower step in the browser. For `CONNECT_WALLET` or `CONNECT_BANK`, call `start_browser_handoff` (write, fresh `idempotency_key`; no action argument) and open the returned `open_url` for the borrower verbatim. When the borrower says they are done, call `get_context` again. If that tool is not listed, report the step with no link. On `409 NO_BROWSER_HANDOFF`, re-read `get_context`. After `expires_at`, call again with a new key. Do not call it while `PROVE_WALLET` is listed, unless the borrower chooses a bank. Other `OPEN_URL` steps: report what is needed and never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat. Keep doing any `PAY`, repayment or handle action listed alongside it. `PROVE_WALLET` is the exception: it is not a browser step. It means the wallet is registered and only its proof is missing, so do step 2; `CONNECT_WALLET` means the borrower has no wallet. These hints never change the numbered steps. Details: [references/onboarding-context.md](#hosted-reference-onboarding-context)
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
@@ -101,23 +101,35 @@ This covers the borrower's own credit only. Gifts they have received still count
 
 A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a SohoPay browser page.
 
-| Action | What to report to the operator |
+| Action | What to do |
 |---|---|
-| `COMPLETE_PROFILE` | The borrower needs to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
-| `CONNECT_WALLET` / `CONNECT_BANK` | Call `start_browser_handoff` and open `open_url` verbatim. Either connection is enough. |
-| `EVALUATE_CREDIT` | The borrower needs to ask SohoPay to evaluate them for credit. |
-| `REVIEW_CREDIT_OFFER` | An offer is waiting for the borrower to review. |
+| `COMPLETE_PROFILE` | Report it: the borrower needs to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
+| `CONNECT_WALLET` / `CONNECT_BANK` | Get the borrower a link with `start_browser_handoff` (see "Connect link" below). Either connection is enough. |
+| `EVALUATE_CREDIT` | Report it: the borrower needs to ask SohoPay to evaluate them for credit. |
+| `REVIEW_CREDIT_OFFER` | Report it: an offer is waiting for the borrower to review. |
+
+Only `CONNECT_WALLET` and `CONNECT_BANK` have a link tool. For the other steps there is no link to give: report the step and never invent one.
+
+### Connect link (`start_browser_handoff`)
+
+1. If your tool list has no `start_browser_handoff` (an older server), report the step as the borrower's to do in SohoPay and give no link.
+2. Call `start_browser_handoff` with a fresh `idempotency_key`. It takes no action argument: the backend picks the current connect step and returns `action`, `open_url` and `expires_at`. Tell the borrower which connection the link is for (`action`).
+3. Open `open_url` for the borrower exactly as returned, the same way as the agent-grant consent page. If you cannot open a browser, give it to the borrower verbatim. Never shorten, rewrite or rebuild it, and never drop its `#…` part. It is single-use and bound to this borrower: give it to no one else, and do not fetch it with your own tools.
+4. Do not poll. Ask the borrower to tell you when they have finished in the browser, then call `get_context` again and follow what it lists.
+5. `409 NO_BROWSER_HANDOFF` means no connect step is current any more (your `get_context` is out of date). Call `get_context` again. Do not retry the handoff.
+6. If the link is past `expires_at`, or the borrower lost it, call `start_browser_handoff` again with a **new** `idempotency_key`. Reusing the old key returns the same expired link.
+7. Do not call it when `PROVE_WALLET` is listed. Run the wallet proof instead, and only call `start_browser_handoff` if the borrower chooses to connect a bank instead (see below).
 
 ### Wallet proof (`PROVE_WALLET`)
 
-`PROVE_WALLET` is not a browser step. It carries `tool: "request_signature_challenge"` and no `handoff_type`. Its `handoff_required` is `true` only because the borrower signs; there is no page to send them to. It means the borrower's wallet is registered and only its ownership proof is missing: run the wallet-proof step (`request_signature_challenge` → the borrower signs → `submit_signature`). Never fabricate the signature. `CONNECT_BANK` may be listed alongside it, because a bank is an alternative source; report it, and still run the proof.
+`PROVE_WALLET` is not a browser step. It carries `tool: "request_signature_challenge"` and no `handoff_type`. Its `handoff_required` is `true` only because the borrower signs; there is no page to send them to. It means the borrower's wallet is registered and only its ownership proof is missing: run the wallet-proof step (`request_signature_challenge` → the borrower signs → `submit_signature`). Never fabricate the signature. `CONNECT_BANK` may be listed alongside it, because a bank is an alternative source; report it, and still run the proof. Do not start a bank link the borrower did not ask for. If they say they would rather connect a bank, get the link with `start_browser_handoff`.
 
 `CONNECT_WALLET` is for a borrower with no wallet. The two are never listed together.
 
 ### Rules
 
-- For `CONNECT_WALLET` or `CONNECT_BANK`, call `start_browser_handoff` (no action argument; the backend chooses the current step) and open `open_url` verbatim. After the borrower returns, call `get_context` again. Never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat.
-- Other `OPEN_URL` steps (`COMPLETE_PROFILE`, `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`): report them. Do not invent a link. `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
+- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step. Never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat.
+- `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - These hints never change the numbered onboarding steps. If `PROVE_WALLET` is not listed (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
 - `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.

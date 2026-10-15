@@ -25,7 +25,7 @@ Session cache: `borrower_id`, `operational_agent_id`, `token_requested_at` + `ex
 
 ```text
 Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | get_context ONLY if this chat has no get_context result yet (else reuse cached borrower_id + operational_agent_id)
-  get_context next_actions with handoff_type OPEN_URL (COMPLETE_PROFILE, CONNECT_BANK, …) → report them as the borrower's browser steps in the final message; they do NOT block the payment — keep paying. A wallet or bank link is `start_browser_handoff`'s `open_url`, opened verbatim; never invent one. Do not call it mid-pay. But get_context credit: null → STOP (No credit account gate below); do not prepare
+  get_context next_actions with handoff_type OPEN_URL (COMPLETE_PROFILE, CONNECT_BANK, …) → report them as the borrower's browser steps in the final message; they do NOT block the payment — keep paying. Never call `start_browser_handoff` from a pay, before or after the payment, and never invent a link. For CONNECT_WALLET / CONNECT_BANK, say the borrower can ask for the connect link once this payment is done (sohopay-onboard gets it). But get_context credit: null → STOP (No credit account gate below); do not prepare
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key

@@ -46,11 +46,14 @@
     "expect": "agent runs the wallet-proof step by calling request_signature_challenge (it is not a browser step), asks the borrower to sign in their own wallet, and never submits a signature the borrower did not give" },
   { "id": "prove-wallet-with-bank-alternative",
     "given": "get_context lists PROVE_WALLET and CONNECT_BANK (handoff_type OPEN_URL) together; no borrower signs during the run",
-    "expect": "agent reports connecting a bank as the alternative and still runs the wallet proof (request_signature_challenge); it never submits a signature the borrower did not give" },
+    "expect": "agent reports connecting a bank as the alternative and still runs the wallet proof (request_signature_challenge); it does not start a bank link (start_browser_handoff) the borrower did not ask for, and never submits a signature the borrower did not give" },
   { "id": "connect-wallet-no-signature-request",
     "given": "the borrower signed in without a wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL)",
-    "expect": "agent reports connecting a wallet or a bank as the borrower's browser step; it never starts a wallet-signature challenge, submits a signature, or asks the borrower in chat to sign with a wallet" },
+    "expect": "agent treats connecting a wallet or a bank as the borrower's browser step, whose only link is one start_browser_handoff returns; it never starts a wallet-signature challenge, submits a signature, or asks the borrower in chat to sign with a wallet" },
   { "id": "in-review-nothing-to-do",
     "given": "an onboarded borrower's credit_eligibility is IN_REVIEW, with no credit account and no next action listed",
-    "expect": "agent says plainly there is nothing to do yet; it does not attempt a payment, ask for more data, or poll get_context in a retry loop" }
+    "expect": "agent says plainly there is nothing to do yet; it does not attempt a payment, ask for more data, or poll get_context in a retry loop" },
+  { "id": "connect-wallet-opens-handoff-url",
+    "given": "the borrower has no wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL), and start_browser_handoff is in the tool list",
+    "expect": "agent calls start_browser_handoff and hands the borrower the returned open_url verbatim, fragment included; it never gives a link that no tool result returned" }
 ]
