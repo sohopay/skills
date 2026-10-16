@@ -22,11 +22,24 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 | Action | What to do |
 |---|---|
 | `COMPLETE_PROFILE` | Report it: the borrower needs to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
-| `CONNECT_WALLET` / `CONNECT_BANK` | Get the borrower a link with `start_browser_handoff` (see "Connect link" below). Either connection is enough. |
+| `CONNECT_WALLET` / `CONNECT_BANK` | Get the borrower a link with `start_browser_handoff` (see "Connect link" below). Either connection is enough for **evidence**; it does **not** by itself activate spendable credit. |
 | `EVALUATE_CREDIT` | Report it: the borrower needs to ask SohoPay to evaluate them for credit. |
-| `REVIEW_CREDIT_OFFER` | Report it: an offer is waiting for the borrower to review. |
+| `REVIEW_CREDIT_OFFER` | Legacy name when decoupled acceptance is off; same borrower step as `REVIEW_AND_ACCEPT_FACILITY`. |
+| `REVIEW_AND_ACCEPT_FACILITY` | Report it: the borrower must review and accept the facility offer on `/facility/accept` (`openUrl` with fragment token). Until accepted, `credit_limit` / `available_credit` stay at zero even when sources are connected. |
 
-Only `CONNECT_WALLET` and `CONNECT_BANK` have a link tool. For the other steps there is no link to give: report the step and never invent one.
+Only `CONNECT_WALLET` and `CONNECT_BANK` have a link tool (`start_browser_handoff`). For the other OPEN_URL steps there is no link to give: report the step and never invent one.
+
+### Consent-site routes (SOHO-482)
+
+When live on the marketing/consent site, backend `open_url` handoffs resolve to:
+
+| Path | Purpose |
+|------|---------|
+| `/wallet/connect#<token>` | Link wallet + EIP-712 ownership proof |
+| `/bank/connect#<token>` | Passkey step-up, Plaid, async bank evidence |
+| `/facility/accept#<token>` | Review disclosures and accept the facility offer |
+
+Enable each action in `AGENT_CONTEXT_ONBOARDING_ACTIONS` only after the matching page ships.
 
 ### Connect link (`start_browser_handoff`)
 
