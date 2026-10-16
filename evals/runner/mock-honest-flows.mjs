@@ -111,10 +111,16 @@ const BROWSER_STEP_TEXT = {
   REVIEW_CREDIT_OFFER: "review the credit offer waiting on the SohoPay page",
 };
 
+const FACILITY_ACCEPT_TEXT =
+  "review and accept the facility offer in SohoPay (there is no link for the agent to give)";
+
 /** Report every OPEN_URL action as the borrower's step there; never collect its values in chat, never give a link. */
 function reportBrowserSteps(rec, actions) {
   for (const a of actions.filter((x) => x.handoff_type === "OPEN_URL")) {
     rec.say(`SohoPay lists a browser step for the borrower: ${BROWSER_STEP_TEXT[a.action]}. That step is theirs to do there, not in this conversation.`);
+  }
+  for (const a of actions.filter((x) => x.action === "REVIEW_AND_ACCEPT_FACILITY")) {
+    rec.say(`SohoPay lists a facility-acceptance step for the borrower: ${FACILITY_ACCEPT_TEXT}.`);
   }
 }
 
