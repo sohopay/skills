@@ -26,11 +26,11 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 | `EVALUATE_CREDIT` | Report it: the borrower needs to ask SohoPay to evaluate them for credit. |
 | `REVIEW_CREDIT_OFFER` | Report it: an offer is waiting for the borrower to review. |
 
-Only `CONNECT_WALLET` and `CONNECT_BANK` have a link tool (`start_browser_handoff`). For the other OPEN_URL steps there is no link to give: report the step and never invent one.
+`CONNECT_WALLET` and `CONNECT_BANK` use `start_browser_handoff`. `REVIEW_AND_ACCEPT_FACILITY` uses `review_facility_offer`. For the other OPEN_URL steps there is no link to give: report the step and never invent one.
 
 ### Facility acceptance (`REVIEW_AND_ACCEPT_FACILITY`)
 
-`REVIEW_AND_ACCEPT_FACILITY` is not an `OPEN_URL` step. The backend lists `tool: "review_facility_offer"`, which is **not** an MCP tool — do not call it. Report that the borrower must review and accept the facility offer; there is no link to give. Until acceptance completes, there is no credit line (`credit` is null) and `can_pay` is false, even when wallet or bank sources are connected. Linking a source is evidence only, not spendable credit.
+`REVIEW_AND_ACCEPT_FACILITY` is an `OPEN_URL` step. Call `review_facility_offer` and open `open_url` verbatim. Do not invent `/facility/accept`. If the response is a sign-in handoff, send the borrower there, refresh the borrower token, and call again with the same idempotency key only for that attempt. Until acceptance completes, there is no credit line (`credit` is null) and `can_pay` is false, even when wallet or bank sources are connected. Linking a source is evidence only, not spendable credit.
 
 ### Connect link (`start_browser_handoff`)
 
