@@ -30,7 +30,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 ### Facility acceptance (`REVIEW_AND_ACCEPT_FACILITY`)
 
-`REVIEW_AND_ACCEPT_FACILITY` is an `OPEN_URL` step. Call `review_facility_offer` and open `open_url` verbatim. Do not invent `/facility/accept`. If the response is a sign-in handoff, send the borrower there, refresh the borrower token, and call again with the same idempotency key only for that attempt. Until acceptance completes, there is no credit line (`credit` is null) and `can_pay` is false, even when wallet or bank sources are connected. Linking a source is evidence only, not spendable credit.
+`REVIEW_AND_ACCEPT_FACILITY` is an `OPEN_URL` step. Call `review_facility_offer` and open `open_url` verbatim. Do not invent `/facility/accept`. Open `open_url`, then call `get_context` after the borrower returns. `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses: report them, call no tool, and invent no link. `COMPLETE_PROFILE` stays a browser step. Until acceptance completes, there is no credit line (`credit` is null) and `can_pay` is false, even when wallet or bank sources are connected. Linking a source is evidence only, not spendable credit.
 
 ### Connect link (`start_browser_handoff`)
 
