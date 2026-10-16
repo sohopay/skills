@@ -26,7 +26,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 | `EVALUATE_CREDIT` | Report it: the borrower needs to ask SohoPay to evaluate them for credit. |
 | `REVIEW_CREDIT_OFFER` | Report it: an offer is waiting for the borrower to review. |
 
-`CONNECT_WALLET` and `CONNECT_BANK` use `start_browser_handoff`. `REVIEW_AND_ACCEPT_FACILITY` uses `review_facility_offer`. For the other OPEN_URL steps there is no link to give: report the step and never invent one.
+`CONNECT_WALLET` and `CONNECT_BANK` use `start_browser_handoff`. `REVIEW_AND_ACCEPT_FACILITY` uses `review_facility_offer`. For the other OPEN_URL steps there is no link to give: report the step and never invent one. A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence and does not block that status.
 
 ### Facility acceptance (`REVIEW_AND_ACCEPT_FACILITY`)
 
