@@ -127,19 +127,15 @@ export class AgentsSkillsStack extends cdk.Stack {
     const deployRole = new iam.Role(this, "GitHubDeployRole", {
       roleName: "SohoPaySkillsGitHubDeployRole",
       description:
-        "Assumed by GitHub Actions via OIDC to publish sohopay/skills to the agents CDN (main and develop)",
+        "Assumed by GitHub Actions via OIDC to publish sohopay/skills to the agents CDN (develop only)",
       maxSessionDuration: Duration.hours(1),
       assumedBy: new iam.WebIdentityPrincipal(
         githubProvider.openIdConnectProviderArn,
         {
           StringEquals: {
             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
-          },
-          "ForAnyValue:StringEquals": {
-            "token.actions.githubusercontent.com:sub": [
-              "repo:sohopay/skills:ref:refs/heads/main",
+            "token.actions.githubusercontent.com:sub":
               "repo:sohopay/skills:ref:refs/heads/develop",
-            ],
           },
         },
       ),
