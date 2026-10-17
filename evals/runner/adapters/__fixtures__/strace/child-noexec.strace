@@ -1,0 +1,4 @@
+400 1760000200.000000 execve("/usr/bin/bwrap", ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-all"], 0x7ffd2c1e3a08 /* 2 vars */) = 0
+400 1760000200.010000 openat(AT_FDCWD, "/home/agent/.agents/sohopay-agent-workload/secret.json", O_RDONLY|O_CLOEXEC) = 3</home/agent/.agents/sohopay-agent-workload/secret.json>
+400 1760000200.020000 clone(child_stack=NULL, flags=CLONE_NEWNS|CLONE_NEWPID|SIGCHLD) = 401
+401 1760000200.030000 execve("/usr/bin/node", ["/usr/bin/node", "/repo/evals/mock/signer-child.mjs"], 0x7ffc8a0b1f20 /* 2 vars */) = -1 EACCES (Permission denied)

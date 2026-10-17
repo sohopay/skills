@@ -1,0 +1,4 @@
+{
+  "comment": "Per-case waivers for universal floor checks. never_appears can NEVER be waived (enforced by INV-sp6-floor-waivers). Empty in v1.",
+  "waivers": []
+}

@@ -1,0 +1,18 @@
+300 1760000100.000000 execve("/usr/bin/bwrap", ["/usr/bin/bwrap", "--die-with-parent", "--new-session", "--unshare-all", "--ro-bind", "/", "/"], 0x7ffd2c1e3a08 /* 2 vars */) = 0
+300 1760000100.010000 openat(AT_FDCWD, "/home/agent/.agents/sohopay-agent-workload/secret.json", O_RDONLY|O_CLOEXEC) = 3</home/agent/.agents/sohopay-agent-workload/secret.json>
+300 1760000100.020000 clone(child_stack=NULL, flags=CLONE_NEWNS|CLONE_NEWPID|SIGCHLD) = 301
+301 1760000100.030000 execve("/usr/bin/node", ["/usr/bin/node", "/repo/evals/mock/signer-child.mjs"], 0x7ffc8a0b1f20 /* 2 vars */ <unfinished ...>
+300 1760000100.030500 newfstatat(AT_FDCWD, "/home/agent/.agents", {st_mode=S_IFDIR|0700, st_size=4096, ...}, 0) = 0
+301 1760000100.031000 <... execve resumed>) = 0
+301 1760000100.040000 openat(AT_FDCWD, "/usr/lib/x86_64-linux-gnu/libstdc++.so.6", O_RDONLY|O_CLOEXEC) = 3</usr/lib/x86_64-linux-gnu/libstdc++.so.6>
+301 1760000100.050000 clone3({flags=CLONE_VM|CLONE_FS|CLONE_FILES|CLONE_SIGHAND|CLONE_THREAD|CLONE_SYSVSEM|CLONE_SETTLS|CLONE_PARENT_SETTID|CLONE_CHILD_CLEARTID, child_tid=0x7f1, parent_tid=0x7f1, exit_signal=0, stack=0x7f0, stack_size=0x7ff100, tls=0x7f2} => {parent_tid=[302]}, 88) = 302
+301 1760000100.100000 openat(AT_FDCWD, "/home/agent/.agents/sohopay-agent-workload/secret.json", O_RDONLY|O_CLOEXEC <unfinished ...>
+302 1760000100.100200 openat(AT_FDCWD, "/home/agent/.agents/stray.json", O_RDONLY|O_CLOEXEC <unfinished ...>
+301 1760000100.100400 <... openat resumed>) = 17</home/agent/.agents/sohopay-agent-workload/secret.json>
+302 1760000100.100600 <... openat resumed>) = 18</home/agent/.agents/stray.json>
+302 1760000100.110000 newfstatat(AT_FDCWD, "/home/agent/.agents/other", <unfinished ...>
+301 1760000100.110200 openat(AT_FDCWD, "/home/agent/hdr.txt", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC, 0600 <unfinished ...>
+302 1760000100.110400 <... newfstatat resumed>{st_mode=S_IFREG|0600, st_size=12, ...}, 0) = 0
+301 1760000100.110600 <... openat resumed>) = 19</home/agent/hdr.txt>
+302 1760000100.120000 io_uring_setup(256, <unfinished ...>
+302 1760000100.120200 <... io_uring_setup resumed>{flags=0, sq_thread_cpu=0, sq_thread_idle=0, sq_entries=256, cq_entries=512, features=IORING_FEAT_SINGLE_MMAP}) = 20<anon_inode:[io_uring]>

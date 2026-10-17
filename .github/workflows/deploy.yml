@@ -6,7 +6,11 @@
 #   AGENTS_SKILLS_CF_ID  — AgentsSkillsDistributionId
 #
 # Bootstrap (cdk deploy + secrets + first publish): infra/MANUAL-BOOTSTRAP.md
-# OIDC trust is repo:sohopay/skills:ref:refs/heads/main (not the backend ECS role).
+# OIDC trust is repo:sohopay/skills:ref:refs/heads/develop (not the backend ECS role).
+# Only develop publishes agents.sohopay.xyz. GitHub evaluates this file on the
+# branch that was pushed — until the same workflow is on main, a main push still
+# uses main's older trigger; drop main from the live OIDC trust so that cannot
+# publish. workflow_dispatch is develop-only via the deploy job if.
 #
 # Until those secrets exist, the preflight job reports "not configured" and the
 # deploy job is skipped rather than failing at credential load. After secrets
@@ -18,8 +22,14 @@ name: Deploy agent skills
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   workflow_dispatch:
+
+# One CDN publisher. Do not cancel in-flight: aws s3 sync --delete mid-run is worse
+# than queuing the next develop push.
+concurrency:
+  group: agents-skills-cdn
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -62,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       needs.preflight.outputs.configured == 'true'
-      && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+      && github.ref == 'refs/heads/develop'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

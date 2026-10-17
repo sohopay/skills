@@ -15,7 +15,7 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
-**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context should already be established via `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`) — do not fetch it mid-pay if this file is already loaded.
+**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context comes from `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`). If this chat has no `get_context` result yet, call it in Wave 1 (below), never as an extra wave; do not fetch the bootstrap skill mid-pay if this file is already loaded.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -24,11 +24,13 @@ A **payRequest** (“pay” / merchant 402 URL) is consent for a stale-token ref
 Session cache: `borrower_id`, `operational_agent_id`, `token_requested_at` + `expires_in`, and the payment `idempotency_key` already used for this `orderRef`. Same `orderRef` → same payment key.
 
 ```text
-Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | reuse cached borrower_id + operational_agent_id
+Wave 1 (parallel): GET merchant URL | request_borrower_token ONLY if this chat has no successful token newer than 12 minutes (NO STOP) | get_context ONLY if this chat has no get_context result yet (else reuse cached borrower_id + operational_agent_id)
+  get_context next_actions with handoff_type OPEN_URL (COMPLETE_PROFILE, CONNECT_BANK, …) → report them as the borrower's browser steps in the final message; they do NOT block the payment — keep paying. Never call `start_browser_handoff` from a pay, before or after the payment, and never invent a link. For CONNECT_WALLET / CONNECT_BANK, say the borrower can ask for the connect link once this payment is done (sohopay-onboard gets it). But get_context credit: null → STOP (No credit account gate below); do not prepare
 Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
-Wave 3: VOUCHER_ISSUED → open references/prepare-and-voucher.md Sign steps. Key: ~/.agents/sohopay-agent-workload/secret.json (reuse only if borrower_id and jkt match). Then PAYMENT-SIGNATURE and retry the URL
+  CREDIT_ACCOUNT_NOT_FOUND → STOP: no credit line yet (no retry, no sign, no merchant retry)
+Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key (canonical path in references/signer.md); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent
@@ -53,6 +55,7 @@ whoami → register_borrower (store operational_agent_id)
 | Wallet proof | Only if not already verified — off-device signature in this turn. Do not ask a chat question first |
 | `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn. Do not ask first. Do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
+| No credit account | `credit: null` in the session's `get_context`, or `CREDIT_ACCOUNT_NOT_FOUND` (404) from prepare: the borrower has no credit line yet. Do not prepare again (any key, MCP or REST), sign, or retry the merchant. Tell the operator there is no credit line yet (never a zero limit) and follow `get_context` `next_actions`. Received gifts cannot be spent without a credit account either |
 
 | Error | Action |
 |-------|--------|
@@ -119,7 +122,7 @@ Reference implementation: [x402-merchant-server](https://github.com/sohopay/x402
 
 | Party | Holds | Must never |
 |-------|-------|------------|
-| Agent / borrower | Borrower JWT; **agent-held** Ed25519 workload key (V2); or custodial `intentSig` via MCP (V1) | Send borrower JWT or workload **private** key to the merchant / MCP |
+| Agent / borrower | Borrower JWT; **agent-held** workload key (V2); or custodial `intentSig` via MCP (V1) | Send borrower JWT or workload **private** key to the merchant / MCP |
 | Merchant | Merchant API key (`X-API-Key`) | Call borrower signing endpoints or learn signatures except inside a complete payment header |
 
 ### Agent flow (preferred)
@@ -163,13 +166,7 @@ Typical fields (use tool response, not this sketch, as source of truth):
     "nonce": "…",
     "deadline": "…"
   },
-  "signing": {
-    "algorithm": "Ed25519",
-    "domain_tag": "SohoPay:AgentPaymentVoucher:v2",
-    "canonicalization": "RFC8785",
-    "preimage": "utf8(domain_tag) || 0x00 || JCS(voucher)",
-    "signature_encoding": "base64url"
-  },
+  "signing": { "…": "signing scheme — the signer reads this from the input file" },
   "header_name": "PAYMENT-SIGNATURE",
   "envelope": {
     "x402Version": 2,
@@ -186,49 +183,31 @@ Typical fields (use tool response, not this sketch, as source of truth):
 | Field / action | Source |
 |----------------|--------|
 | Unsigned voucher | `voucher` (also echoed inside `envelope.paymentPayload.payload.voucher`) |
-| How to sign | `signing` — Ed25519 over preimage `utf8(domain_tag) + 0x00 + JCS(voucher)`; encode per `signature_encoding` |
-| Fill signature | Set `envelope.paymentPayload.payload.signature` (was `null`) |
-| Merchant header | Prefer `header_name` + `header_value` when present; else base64-encode the filled `envelope` as `PAYMENT-SIGNATURE` |
+| Sign + header | Route to the signer — see [references/signer.md](#hosted-reference-signer). The signer fills the signature and returns the `PAYMENT-SIGNATURE` header; the skill builds nothing. |
 
 Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `intentSig`.
 
-### Protocol V2 sign recipe (copy this — do not rediscover)
+### Protocol V2 sign — route to the signer
 
-**Workload key path (fixed):** look here first. Reuse only when **both** `borrower_id` (this borrower) **and** `jkt` / `agentKeyJkt` match. If the file is missing or `borrower_id` belongs to a different borrower, generate a fresh Ed25519 keypair for the current borrower — do not register another borrower's key.
+Do **not** hand-roll the signature or the header. Resolve a signer and run one call per
+[references/signer.md](#hosted-reference-signer):
 
-```text
-<Cursor AgentStores>/<this-or-known-store>/files/sohopay-agent-workload/secret.json
-```
-
-Canonical sticky copy when present:
-
-```text
-~/.agents/sohopay-agent-workload/secret.json
-```
-
-Shape:
-
-```json
-{
-  "borrower_id": "…",
-  "terminal_id": "mcp-staging",
-  "private_key_base64url": "…",
-  "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "…" },
-  "jkt": "…"
-}
-```
-
-**Sign steps:**
-
-1. Take `voucher` and `signing` from the prepare response (source of truth — do not re-fetch skills).
-2. `jcs = RFC8785/JCS(voucher)` (e.g. npm `canonicalize`).
-3. `preimage = utf8(signing.domain_tag) || 0x00 || utf8(jcs)`.
-4. Ed25519-sign `preimage` with `private_key_base64url` (e.g. `@noble/curves/ed25519`).
-5. Encode signature per `signing.signature_encoding` (usually `base64url`).
-6. Set `envelope.paymentPayload.payload.signature` (was `null`).
-7. Send `PAYMENT-SIGNATURE: <base64(JSON(envelope))>` (or use `header_value` if the tool already composed it). Prefer `header_name` from the response.
-
-Deps: prefer Node already on the machine (`@noble/curves` + `canonicalize` from a local SohoPay checkout). **Do not** WebSearch, GitHub-search, or `pip install` unless this recipe fails.
+- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.1`);
+  none answers → `SIGNER_UNAVAILABLE`, stop (never hand-sign).
+- Follow the MCP sequence in [references/signer.md](#hosted-reference-signer): one Bash call
+  `mktemp -d` (note the printed `<dir>`), write the prepare response byte-for-byte to
+  `<dir>/prep.json` with the file-write tool, then one Bash call
+  `voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json`.
+  `secret.json` is an **opaque** `--key` path — never read or parse it; the private key never
+  enters `argv`/`stdin`.
+- Assert `header_name === "PAYMENT-SIGNATURE"`; cross-check the signer's `payment_id` +
+  `agent_key_jkt` against the prepare `voucher.paymentId` + `voucher.agentKeyJkt` (mismatch →
+  stop, no retry). The header **file** is opaque (the signer no longer returns a `header_value`
+  on stdout under `--write-header`); retry with `curl -fsS -H @<dir>/hdr.txt`, then delete the
+  directory (`rm -rf <dir>`).
+- Any nonzero exit / malformed output → surface the signer's code and stop before the retry.
+  On a lapsed voucher or terminal retry failure, **re-prepare** (new `payment_id`) — never
+  re-sign a stale envelope.
 
 ### Protocol V1 — `COMPLETED` (when V2 is off)
 
@@ -301,6 +280,154 @@ API key must be bound to the same merchant UUID as the resource server. Unbound 
 **Finality / credit lag:** merchant unlock on `CONFIRMED` (typically ~5s under `l2_confirmations`); off-chain `available_credit` updates only then — see `{SKILLS_BASE}/spend-and-pay.md`.
 
 ---
+
+
+<a id="hosted-reference-signer"></a>
+
+### Hosted reference: signer.md
+
+## Route signing to the signer (never hand-roll crypto)
+
+The agent **never** canonicalizes, hashes, Ed25519-signs, or base64-encodes a voucher. It
+routes to a runtime **signer** that does, and copies the result opaquely. If no conformant
+signer is present, **fail closed** — do not improvise.
+
+**Ordering invariant:** sign runs only after the consent / first-time-merchant gate has
+passed — `consent_ok → prepare → sign → retry`. The gate lives in the pay flow
+(`{SKILLS_BASE}/spend-and-pay.md`); this reference covers only sign → retry.
+
+### Resolve a signer
+
+Try these in order; use the first that **answers**:
+
+1. `$SOHOPAY_SIGNER` (explicit command/path override)
+2. `sohopay-signer` on `PATH`
+3. `npx --no @sohopay/agent-signer@0.3.1` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
+
+Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
+next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities --output json` exits 0, its
+stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
+reports embedded vectors, run `<signer> verify-vectors --output json` once, as its own Bash call (never chained with a key command), and require exit 0 — a
+**nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
+is `@sohopay/agent-signer`, also require `implementation_version >= 0.3.1` (the pinned version;
+`0.3.0` echoed `header_value` back on stdout under `--write-header`, i.e. a header-leaking
+signer — this floor must exclude it, so never accept a version below the pin). If a resolved
+signer ever prints `header_value` on stdout, treat it as non-conformant and **STOP** — report a
+header-leaking signer and never retry the merchant with it.
+
+If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
+Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
+
+**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.1` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
+
+### Sign the voucher
+
+First obtain the prepare response; then one signer invocation (the envelope-mode
+`voucher sign` call) produces the whole header.
+
+**MCP flow (normal).** Prepare is the **MCP `prepare_x402_payment` tool** (see the prepare
+recipe in `{SKILLS_BASE}/x402-credit-pay.md`); its response is already in context. Shell variables do
+not survive between tool calls, so use the **literal** directory that `mktemp` prints:
+
+1. One Bash call: `mktemp -d` — **only** that, nothing before or after it (no signer lookup, no `echo`, no `;` / `&&` / `|`). Only a call that is exactly `mktemp -d` makes its directory a trusted scratch dir. Note the directory it prints — `<dir>` below. Paste that literal path wherever `<dir>` appears; never assign it to a shell variable (`d=/tmp/…; … $d/prep.json`) — only the literal path is recognised as this call's scratch directory.
+2. Write the prepare response to `<dir>/prep.json` with the host's **file-write tool**,
+   **byte-for-byte as received — no re-serialization**. Never put the JSON in a shell command.
+3. One Bash call:
+
+   ```
+   <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json
+   ```
+
+   Paste both paths literally. For example, if `mktemp -d` printed `/tmp/tmp.Ab12Cd`:
+
+   ```
+   sohopay-signer voucher sign --envelope --key ~/.agents/sohopay-agent-workload/secret.json --input /tmp/tmp.Ab12Cd/prep.json --write-header /tmp/tmp.Ab12Cd/hdr.txt --output json
+   ```
+4. Retry the merchant with the header file: `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}`
+   (see **Consume the output and retry** below).
+5. On any exit, delete the directory: `rm -rf <dir>`.
+
+**Raw-HTTP fallback (non-MCP host only).** A host that calls prepare over raw HTTP does it all
+in **one** Bash call, response straight to disk byte-for-byte:
+
+```
+dir=$(mktemp -d); chmod 700 "$dir"
+umask 077
+# Raw-HTTP fallback only (non-MCP host), response straight to disk byte-for-byte:
+curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
+<signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt" --output json
+```
+
+- `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
+  written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string.
+- `--key` is the **canonical key path** — the single source of this literal across all skills:
+  `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILLS_BASE}/borrower-onboard.md`)
+  writes the key here via `key generate --out`, and the voucher path reads it via
+  `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
+  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input. Nor may it list, `stat` or `echo` the key file, its directory or `~/.agents` (`ls`, `ls -l`, `ls -ld`, `echo <path>`): the signer checks the key; the agent never inspects it. Any command naming the key file other than the documented signer call counts as accessing it.
+
+  Paste this path **literally** after `--key` / `--out` in every keyed command — never through a variable (no `KEY=…`). The onboarding commands (`{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md`), each as its own Bash call exactly as shown:
+
+  ```
+  sohopay-signer key generate --out ~/.agents/sohopay-agent-workload/secret.json --input - --output json <<'SOHOPAY_EOF'
+  { "borrower_id": "…", "terminal_id": "…" }
+  SOHOPAY_EOF
+  ```
+
+  ```
+  sohopay-signer pop sign --key ~/.agents/sohopay-agent-workload/secret.json --input - --output json <<'SOHOPAY_EOF'
+  { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
+  SOHOPAY_EOF
+  ```
+- **Signer spelling:** write the signer exactly as the candidate that answered — `sohopay-signer`,
+  `"$SOHOPAY_SIGNER"` or the pinned `npx --no @sohopay/agent-signer@0.3.1`. Never an absolute path
+  to the binary (`/usr/local/bin/sohopay-signer`), never a default expansion (`${SOHOPAY_SIGNER:-sohopay-signer}`),
+  never `env …` / `command …` in front of it.
+- `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
+
+### Consume the output and retry
+
+With `--write-header`, the signer prints JSON on stdout with `signer_protocol`,
+`implementation`, `implementation_version`, `payment_id`, `agent_key_jkt`, `algorithm`,
+`header_name` and `header_file` (the path it wrote). Stdout has no `header_value`, no `envelope` and
+no `signature`; the credential exists only in the header file.
+
+1. Assert `header_name === "PAYMENT-SIGNATURE"`, else stop (`UNEXPECTED_HEADER_NAME`).
+2. **Cross-check** against the prepare response: `payment_id` must equal the prepare
+   `voucher.paymentId`, and `agent_key_jkt` must equal the prepare `voucher.agentKeyJkt`
+   (the backend-registered key's thumbprint). Any mismatch → stop, **no retry**.
+3. The header file is **opaque**: never read, print, decode, edit or copy it. It is a
+   replayable credential until expiry. Retry the merchant with the header **file** —
+   `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}` in the MCP flow, or in the raw-HTTP
+   fallback call:
+
+   ```
+   curl -fsS -H @"$dir/hdr.txt" {MERCHANT_BASE_URL}
+   ```
+4. **On any exit from this flow** (success, cross-check mismatch stop, or signer error),
+   delete the temp dir: `rm -rf <dir>` (fallback: `rm -rf "$dir"`). Both `prep.json` and
+   `hdr.txt` must never be left on disk.
+
+### If the signer fails
+
+Any **nonzero signer exit**, unparseable stdout, incompatible `signer_protocol`, or a
+missing required field → surface the signer's error **code** and **stop before the merchant
+retry**. Never fall back to hand-signing; never re-invoke with modified input (the one
+exception: `INLINE_KEY_REJECTED`, below). The error codes and their meanings are the SP1
+signer contract — do not restate them here.
+
+**Every stop names its code verbatim** in the final message to the operator — the exact
+token, e.g. `SIGNER_UNAVAILABLE`, `SIGNER_UNRESOLVED`, `KEY_PATH_INVALID` — never only a
+paraphrase ("the signer isn't available").
+
+| Condition | Action |
+|-----------|--------|
+| No candidate answers | `SIGNER_UNAVAILABLE` → stop, report |
+| Nonzero exit / `{"error":{"code",…}}` | Surface the code → stop (no retry, no hand-sign) |
+| `INLINE_KEY_REJECTED` | Re-run the **same** command once, as its own Bash call, with `--key` set to the canonical key path above — never retry with an inline key |
+| `header_name` ≠ `PAYMENT-SIGNATURE` | `UNEXPECTED_HEADER_NAME` → stop |
+| `payment_id` / `agent_key_jkt` mismatch | Stop, no retry |
+| Retry fails terminally or voucher expired | **Re-prepare** (new `payment_id`), then sign the fresh envelope — never re-sign a stale one |
 
 
 <a id="hosted-reference-v1-fallback"></a>
