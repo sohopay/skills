@@ -27,7 +27,7 @@ The system has one source of truth (`plugins/sohopay/skills/<sohopay-*>/SKILL.md
 1. **Registry skill directories** under `plugins/sohopay/skills/` — each folder is an [Agent Skill](https://agentskills.io/specification) (`name` must match the directory). `metadata.hosted_name` is the stable hosted filename (`setup`, `spend-and-pay`, `authorize-agent`, …). `sohopay-integrate` is a compatibility router only (no hosted file).
 2. **`npm run generate:hosted`** writes root `<hosted_name>.md` (curl bootstrap) and `.well-known/agent-skills/index.json` (descriptions copied from frontmatter). **Never hand-edit** those outputs.
 3. **`llms-full.txt`** concatenates hosted bodies in index order — **CI-generated, never hand-edit**. Do not tell agents to fetch it by default.
-4. On push to `main`, `.github/workflows/deploy.yml` syncs `.well-known/` and skill files under **`/skills/v1/`** to S3 + CloudFront (`agents.sohopay.xyz`). The CDK stack is `infra/` (`AgentsSkillsStack`). First-time AWS bootstrap: `infra/MANUAL-BOOTSTRAP.md`.
+4. On push to `main` or `develop`, `.github/workflows/deploy.yml` syncs `.well-known/` and skill files under **`/skills/v1/`** to S3 + CloudFront (`agents.sohopay.xyz`). Both branches publish the same objects; the last successful deploy wins. The CDK stack is `infra/` (`AgentsSkillsStack`). First-time AWS bootstrap: `infra/MANUAL-BOOTSTRAP.md`.
 
 Sibling pointers in `SKILL.md` use `{SKILL:sohopay-onboard}`; the generator rewrites them to `{SKILLS_BASE}/borrower-onboard.md`. Load `references/*.md` only when the skill says to.
 

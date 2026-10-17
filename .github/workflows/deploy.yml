@@ -6,7 +6,10 @@
 #   AGENTS_SKILLS_CF_ID  — AgentsSkillsDistributionId
 #
 # Bootstrap (cdk deploy + secrets + first publish): infra/MANUAL-BOOTSTRAP.md
-# OIDC trust is repo:sohopay/skills:ref:refs/heads/main (not the backend ECS role).
+# OIDC trust is repo:sohopay/skills:ref:refs/heads/main and
+# repo:sohopay/skills:ref:refs/heads/develop (not the backend ECS role).
+# A develop push publishes the same agents.sohopay.xyz objects as main;
+# the last successful deploy from either branch wins.
 #
 # Until those secrets exist, the preflight job reports "not configured" and the
 # deploy job is skipped rather than failing at credential load. After secrets
@@ -18,7 +21,7 @@ name: Deploy agent skills
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:
@@ -62,7 +65,7 @@ jobs:
     runs-on: ubuntu-latest
     if: |
       needs.preflight.outputs.configured == 'true'
-      && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main')
+      && (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

@@ -244,7 +244,7 @@ npm run generate:llms-full
 
 ## Deploy
 
-Push to `main` runs `.github/workflows/validate.yml` then `.github/workflows/deploy.yml`. Publish writes skill markdown and `llms-full.txt` under `/skills/v1/` on `agents.sohopay.xyz`.
+A push to `main` or `develop` runs `.github/workflows/validate.yml` and `.github/workflows/deploy.yml`. Publish writes skill markdown and `llms-full.txt` under `/skills/v1/` on `agents.sohopay.xyz`. Both branches update the same CDN; the last successful deploy wins.
 
 First-time AWS bootstrap (CDK stack, GitHub secrets, first `workflow_dispatch`, go-live curls): [infra/MANUAL-BOOTSTRAP.md](infra/MANUAL-BOOTSTRAP.md). Until those secrets exist, deploy preflight skips publish.
 
