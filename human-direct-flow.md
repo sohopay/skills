@@ -27,7 +27,10 @@ Load a sibling **only when that step is next**:
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-get_context (v8+) or whoami (v7) → register_borrower → wallet proof if needed → request_borrower_token (no chat prompt)
+get_context (v8+) or whoami (v7) → register_borrower
+  → FINANCIAL_SOURCE_REQUIRED: ask wallet or bank, start_browser_handoff with that action
+  → REVIEW_AND_ACCEPT_FACILITY: review_facility_offer (acceptance unlocks spending)
+  → wallet proof only if PROVE_WALLET remains → request_borrower_token (no chat prompt)
   → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
   → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
 ```
