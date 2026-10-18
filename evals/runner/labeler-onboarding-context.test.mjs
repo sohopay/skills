@@ -148,6 +148,8 @@ test("handoff_url_relayed: the returned open_url, whole, in a message or an open
   assert.equal(has([handoff(), call("Bash", `open "${HANDOFF_URL}"`)], "handoff_url_relayed"), true, "opened for the borrower");
   assert.equal(has([handoff(), say("Open http://127.0.0.1:4100/onboarding/handoff to connect.")], "handoff_url_relayed"), false, "fragment dropped");
   assert.equal(has([handoff(), say(`Open ${HANDOFF_URL}x to connect.`)], "handoff_url_relayed"), false, "rewritten");
+  const underscored = "http://127.0.0.1:4100/onboarding/handoff#hT0k3n_abc-12_";
+  assert.equal(has([result("mcp__sohopay__start_browser_handoff", JSON.stringify({ action: "CONNECT_WALLET", open_url: underscored, expires_at: "2026-10-16T01:10:00.000Z" })), say(`Open ${underscored} to connect your wallet.`)], "handoff_url_relayed"), true, "base64url fragment ending in underscore");
   assert.equal(has([say(`Open ${HANDOFF_URL}.`), handoff()], "handoff_url_relayed"), false, "before the tool returned it");
   assert.equal(has([result("mcp__sohopay__get_context", JSON.stringify({ open_url: HANDOFF_URL })), say(`Open ${HANDOFF_URL}.`)], "handoff_url_relayed"), false, "only start_browser_handoff mints it");
   // The relayed link came from a tool result, so it is not invented.

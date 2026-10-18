@@ -9,9 +9,9 @@ const URL_RE = /\bhttps?:\/\/[^\s<>"'`()[\]{}|\\^]+/gi;
 // A SohoPay link written without a scheme ("app.sohopay.xyz/profile"); only with a path, so naming the domain is not a link.
 const BARE_SOHOPAY_RE = /(?<![\w./:@-])((?:[a-z0-9-]+\.)*sohopay\.xyz\/[^\s<>"'`()[\]{}|\\^]*)/gi;
 // Trailing sentence / markdown punctuation is not part of a link; an ellipsis ("…" or "...") is kept as "…" so a
-// link cut short can be told apart from a whole one.
-const ELLIPSIS_TAIL_RE = /(?:\.{3}|…)[.,;:!?*_~]*$/;
-const trimTail = (u) => (ELLIPSIS_TAIL_RE.test(u) ? u.replace(ELLIPSIS_TAIL_RE, "…") : u.replace(/[.,;:!?*_~]+$/, ""));
+// link cut short can be told apart from a whole one. "_" stays: a base64url fragment or query legitimately ends in it.
+const ELLIPSIS_TAIL_RE = /(?:\.{3}|…)[.,;:!?~*]*$/;
+const trimTail = (u) => (ELLIPSIS_TAIL_RE.test(u) ? u.replace(ELLIPSIS_TAIL_RE, "…") : u.replace(/[.,;:!?~*]+$/, ""));
 
 /** Every http(s) URL in `text`, without trailing sentence or markdown punctuation. */
 export const urlsIn = (text) => [...String(text ?? "").matchAll(URL_RE)].map((m) => trimTail(m[0]));
