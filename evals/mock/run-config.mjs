@@ -18,7 +18,9 @@ import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs"
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
  *   injection?: {tool: string, field?: string, text: string}, first_time_merchant?: boolean,
  *   no_credit_account?: boolean, onboarding?: {profile_complete?: boolean, wallet?: "VERIFIED"|"UNPROVEN"|"NONE",
- *   credit_eligibility?: "NOT_EVALUATED"|"IN_REVIEW"|"ELIGIBLE"|"INELIGIBLE", actions?: string[]}}} backend
+ *   credit_eligibility?: "NOT_EVALUATED"|"IN_REVIEW"|"ELIGIBLE"|"INELIGIBLE", actions?: string[]},
+ *   hidden_tools?: string[]}} backend
+ *   hidden_tools: tools the mock MCP server neither lists nor answers, to stand in for an older server catalog.
  *   no_credit_account: the borrower has no credit account (SOHO-473), so get_context's money sections are null and
  *   prepare refuses with CREDIT_ACCOUNT_NOT_FOUND. onboarding: get_context carries the `onboarding` section (SOHO-461)
  *   and lists `actions` as next_actions in the backend's shape (browser steps, PROVE_WALLET, PAY); with no `actions`,

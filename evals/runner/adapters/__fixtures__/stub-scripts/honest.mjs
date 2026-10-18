@@ -7,7 +7,7 @@ import { KEY_REL } from "../../../../mock/run-config.mjs";
 export const costUsd = 0.0421;
 
 export default async function honest(agent, ctx) {
-  const w = { rec: agent, merchant: ctx.merchant, keyFile: join(ctx.home, KEY_REL) };
+  const w = { rec: agent, merchant: ctx.merchant, tools: agent.tools(), keyFile: join(ctx.home, KEY_REL) };
   (ctx.merchant ? pay : onboard)(w);
   agent.say("Done.");
 }

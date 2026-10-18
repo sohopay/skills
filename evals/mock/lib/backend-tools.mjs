@@ -56,6 +56,8 @@ const browserStep = (action) => ({ action, actor: "BORROWER", handoff_required: 
 const ACTION_DTO = {
   PROVE_WALLET: () => ({ action: "PROVE_WALLET", actor: "BORROWER", tool: "request_signature_challenge", handoff_required: true, reason_code: "WALLET_PROOF_REQUIRED" }),
   PAY: () => ({ action: "PAY", actor: "AGENT", tool: "prepare_x402_payment", handoff_required: false, reason_code: "SPENDING_AVAILABLE" }),
+  // SOHO-436: an open facility offer. An OPEN_URL step whose link only review_facility_offer mints (mcp-server v16).
+  REVIEW_AND_ACCEPT_FACILITY: () => ({ action: "REVIEW_AND_ACCEPT_FACILITY", actor: "BORROWER", tool: "review_facility_offer", handoff_required: true, handoff_type: "OPEN_URL", reason_code: "FACILITY_OFFER_ACCEPTANCE_REQUIRED" }),
 };
 const actionDto = (a) => (BROWSER_REASON[a] ? browserStep(a) : ACTION_DTO[a]());
 const TIER = { VERIFIED: "WALLET_VERIFIED", UNPROVEN: "PHONE_ONLY", NONE: "PHONE_ONLY" };
@@ -89,6 +91,7 @@ function emitListed(o, emit) {
   if (o.actions.includes("COMPLETE_PROFILE")) emit("profile_step_listed");
   if (o.actions.some((a) => BROWSER_REASON[a])) emit("browser_step_listed");
   if (o.actions.includes("PROVE_WALLET")) emit("prove_wallet_listed");
+  if (o.actions.includes("REVIEW_AND_ACCEPT_FACILITY")) emit("facility_offer_listed");
   if (!o.actions.length && ["IN_REVIEW", "INELIGIBLE"].includes(o.credit_eligibility)) emit("eligibility_waiting_listed");
 }
 /** Whether the borrower's wallet ownership is proven (always, unless a scenario's onboarding says otherwise). */
@@ -187,6 +190,7 @@ export const TOOLS = {
   check_handle_availability: (a, s) => ({ handle: a.handle ?? s.id.handle, available: false, reason: "ALREADY_CLAIMED_BY_YOU" }),
   claim_handle: (_a, s) => ({ handle: s.id.handle, status: "CLAIMED" }),
   start_browser_handoff: browserHandoff,
+  review_facility_offer: facilityOffer,
   prepare_x402_payment: prepare,
   get_settlement_status: (a) => ({ settlement_id: a.settlement_id ?? null, status: "CONFIRMED" }),
 };
@@ -207,6 +211,23 @@ function browserHandoff(a, s, run) {
     s.handoffs.set(key, { action: step, open_url: `${run.publicBase}/onboarding/handoff#${randomBytes(24).toString("base64url")}`, expires_at: new Date(Date.now() + HANDOFF_TTL_MS).toISOString() });
   }
   return { ...s.handoffs.get(key) };
+}
+
+/**
+ * Backend onboarding-handoff.service.ts startFacilityForMcp(): with an open facility offer, a principal-bound one-time
+ * FACILITY_ACCEPT link to the site's /facility/accept page (request id in the query); 409
+ * FACILITY_OFFER_NOT_AVAILABLE when none is open. A retried idempotency key replays the same link.
+ */
+function facilityOffer(a, s, run) {
+  if (!s.onboarding?.actions.includes("REVIEW_AND_ACCEPT_FACILITY")) {
+    throw new ToolError("FACILITY_OFFER_NOT_AVAILABLE", "No facility offer can be reviewed right now", 409);
+  }
+  s.facilityHandoffs ??= new Map();
+  const key = a.idempotency_key ?? `auto-${s.facilityHandoffs.size}`;
+  if (!s.facilityHandoffs.has(key)) {
+    s.facilityHandoffs.set(key, { action: "FACILITY_ACCEPT", open_url: `${run.publicBase}/facility/accept?request_id=${randomBytes(24).toString("base64url")}`, expires_at: new Date(Date.now() + HANDOFF_TTL_MS).toISOString() });
+  }
+  return { ...s.facilityHandoffs.get(key) };
 }
 
 function registerKey(a, s, _run, emit) {

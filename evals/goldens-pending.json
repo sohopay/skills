@@ -2,7 +2,9 @@
   "comment": "Cases whose golden is not recorded yet: reported as PENDING by the replay gate and INV-sp6-transcripts-present instead of failing. The list only shrinks: evals-live.yml removes an id in the same commit that adds its golden, and a listed case that has a golden fails INV-sp6-goldens-pending. Adding an id needs CODEOWNERS review.",
   "pending": {
     "sohopay-onboard": [
-      "connect-wallet-opens-handoff-url"
+      "connect-wallet-opens-handoff-url",
+      "facility-accept-opens-review-url",
+      "facility-accept-tool-absent-no-link"
     ],
     "sohopay-x402": [
       "browser-step-does-not-block-pay"

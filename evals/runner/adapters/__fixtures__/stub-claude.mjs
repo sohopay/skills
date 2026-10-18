@@ -18,7 +18,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { httpMcpCaller } from "../../../mock/recorder.mjs";
+import { httpMcpCaller, httpMcpToolNames } from "../../../mock/recorder.mjs";
 
 const sep = process.argv.indexOf("--", 2);
 const [scriptPath, recordDir, ...flags] = process.argv.slice(2, sep);
@@ -158,6 +158,8 @@ const agent = {
   read: (filePath) => calls([["Read", { file_path: filePath }]])[0],
   parallel: (list, order) => calls(list, order),
   say: (text) => { lastText = text; assistant([{ type: "text", text }]); },
+  /** The MCP server's tool names, as the CLI would offer them (a tools/list, never a recorded tool call). */
+  tools: () => httpMcpToolNames(mcpUrl, mcpHeaders),
   think: (thinking) => { assistant([{ type: "thinking", thinking, signature: "sig" }]); },
   /** A tool call the permission layer refuses: no execution, a denial result, a PermissionDenied hook. */
   deny: (name, input) => {
