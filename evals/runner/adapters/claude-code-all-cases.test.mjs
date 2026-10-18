@@ -44,8 +44,8 @@ beforeEach(() => {
   assert.ok(readFileSync(resolveClaude(), "utf8").slice(0, 512).includes(STUB_MARKER), "R4-1: refusing a non-stub claude");
 });
 
-test("the 25 scenarios are the 25 real cases, and the sandbox choice is explicit", () => {
-  assert.equal(SCENARIO_IDS.length, 25);
+test("the 28 scenarios are the 28 real cases, and the sandbox choice is explicit", () => {
+  assert.equal(SCENARIO_IDS.length, 28);
   assert.deepEqual([...ASSERTIONS.keys()].sort(), [...SCENARIO_IDS].sort());
   if (process.env.SP6_REQUIRE_SANDBOX === "1") assert.ok(USE_REAL, `SP6_REQUIRE_SANDBOX=1 but no traced OS sandbox here (${REAL.reason ?? childTraceSupport().reason})`);
 });

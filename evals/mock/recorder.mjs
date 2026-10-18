@@ -81,3 +81,16 @@ export function httpMcpCaller(mcpUrl, headers = {}) {
     return { ok: !res.isError, payload: JSON.parse(res.content[0].text) };
   };
 }
+
+/**
+ * The tool names the mock MCP server lists (`tools/list`), as an agent's harness would show them. Not a tool call,
+ * so it never enters the transcript; a scripted agent uses it to tell an older catalog from a current one.
+ */
+export function httpMcpToolNames(mcpUrl, headers = {}) {
+  if (!/^http:\/\/127\.0\.0\.1:\d+\//.test(mcpUrl)) throw new Error(`mock MCP caller only talks to 127.0.0.1, got ${mcpUrl}`);
+  const extra = Object.entries(headers).flatMap(([k, v]) => ["-H", `${k}: ${v}`]);
+  const body = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+  const r = spawnSync("curl", ["-sS", "-X", "POST", "-H", "content-type: application/json", "-H", "accept: application/json, text/event-stream", ...extra, "--data-binary", "@-", mcpUrl], { input: body, encoding: "utf8" });
+  if (r.status !== 0) throw new Error(`MCP tools/list failed: ${r.stderr}`);
+  return JSON.parse(r.stdout).result.tools.map((t) => t.name);
+}

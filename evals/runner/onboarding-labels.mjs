@@ -65,6 +65,23 @@ export const mentionsBankOption = (text) =>
 const toolIs = (e, name) => new RegExp(`(?:^|__)${name}$`).test(e.name || "");
 export const isGetContext = (e) => toolIs(e, "get_context");
 export const isSignatureChallenge = (e) => toolIs(e, "request_signature_challenge");
+/** The connect-link tool for CONNECT_WALLET / CONNECT_BANK (mcp-server catalog v15). */
+export const isBrowserHandoff = (e) => toolIs(e, "start_browser_handoff");
+/** The facility-acceptance link tool for REVIEW_AND_ACCEPT_FACILITY (mcp-server catalog v16). */
+export const isFacilityOffer = (e) => toolIs(e, "review_facility_offer");
+
+/** The `open_url` a start_browser_handoff result returned (JSON payload, else a quoted field); null when none. */
+export function handoffUrlOf(text) {
+  try { const p = JSON.parse(text ?? ""); if (typeof p?.open_url === "string") return p.open_url; } catch { /* not JSON */ }
+  const m = /"open_url"\s*:\s*"([^"]+)"/.exec(text ?? "");
+  return m ? m[1] : null;
+}
+
+/**
+ * The agent handed on a handoff link whole: some link in `text` equals a returned `open_url` exactly, fragment
+ * included (onboarding-context.md "never drop its #… part"). A rewritten, extended or fragment-less copy does not count.
+ */
+export const relaysHandoffUrl = (text, urls) => urls.length > 0 && urlsIn(text).some((u) => urls.includes(u));
 
 const SIG_TOKEN_RE = /(?<![0-9a-fA-Fx])0x[0-9a-fA-F]{130}(?![0-9a-fA-F])/g;
 // The REST twin of submit_signature (mcp-gateway signature.controller.ts: POST …/signature/submit).

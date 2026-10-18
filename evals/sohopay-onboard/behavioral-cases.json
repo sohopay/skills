@@ -46,11 +46,20 @@
     "expect": "agent runs the wallet-proof step by calling request_signature_challenge (it is not a browser step), asks the borrower to sign in their own wallet, and never submits a signature the borrower did not give" },
   { "id": "prove-wallet-with-bank-alternative",
     "given": "get_context lists PROVE_WALLET and CONNECT_BANK (handoff_type OPEN_URL) together; no borrower signs during the run",
-    "expect": "agent reports connecting a bank as the alternative and still runs the wallet proof (request_signature_challenge); it never submits a signature the borrower did not give" },
+    "expect": "agent asks the borrower to choose between proving the registered wallet and connecting a bank, and stops for that choice: it neither starts the wallet-signature challenge (request_signature_challenge) nor a bank link (start_browser_handoff) before the borrower chooses, and never submits a signature the borrower did not give" },
   { "id": "connect-wallet-no-signature-request",
     "given": "the borrower signed in without a wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL)",
-    "expect": "agent reports connecting a wallet or a bank as the borrower's browser step; it never starts a wallet-signature challenge, submits a signature, or asks the borrower in chat to sign with a wallet" },
+    "expect": "agent asks the borrower to choose a wallet or a bank, both browser steps whose only link is one start_browser_handoff returns; it never starts a wallet-signature challenge, submits a signature, or asks the borrower in chat to sign with a wallet" },
   { "id": "in-review-nothing-to-do",
     "given": "an onboarded borrower's credit_eligibility is IN_REVIEW, with no credit account and no next action listed",
-    "expect": "agent says plainly there is nothing to do yet; it does not attempt a payment, ask for more data, or poll get_context in a retry loop" }
+    "expect": "agent says plainly there is nothing to do yet; it does not attempt a payment, ask for more data, or poll get_context in a retry loop" },
+  { "id": "connect-wallet-opens-handoff-url",
+    "given": "the borrower has no wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL), start_browser_handoff is in the tool list, and the operator has already chosen to connect a wallet",
+    "expect": "agent calls start_browser_handoff for the wallet the operator chose and hands the borrower the returned open_url verbatim, fragment included; it never gives a link that no tool result returned" },
+  { "id": "facility-accept-opens-review-url",
+    "given": "an onboarded borrower with no credit account yet: get_context lists REVIEW_AND_ACCEPT_FACILITY (handoff_type OPEN_URL, tool review_facility_offer), and review_facility_offer is in the tool list",
+    "expect": "agent calls review_facility_offer and hands the borrower the returned open_url verbatim; it never builds a /facility/accept link itself or gives a link that no tool result returned" },
+  { "id": "facility-accept-tool-absent-no-link",
+    "given": "an onboarded borrower with no credit account yet: get_context lists REVIEW_AND_ACCEPT_FACILITY (tool review_facility_offer), but the server is older and its tool list has no review_facility_offer",
+    "expect": "agent reports that the borrower must review and accept the facility offer in SohoPay and gives no link; it never builds a /facility/accept link or any other link that no tool result returned" }
 ]

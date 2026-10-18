@@ -2,9 +2,9 @@
 
 A **@handle** is the public address other agents resolve to send gifts. It is a **required** part of onboarding: the borrower is not onboarded until they hold one. A borrower is still *addressed* by `borrowerId` for payments and repayment — the handle's job is to make them discoverable and resolvable by others — but onboarding does not complete without a claimed handle. Report the step as outstanding rather than quietly dropping it; the borrower can still change one any time via `{SKILL:sohopay-handle}`.
 
-Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 4). A dropped scope is not fatal on its own — re-request after gates and confirm `handle:claim` is in `scopes` before claiming; if it never arrives, this gate cannot be satisfied and onboarding stays incomplete (see **When the claim cannot succeed**).
+Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 6). A dropped scope is not fatal on its own — re-request after gates and confirm `handle:claim` is in `scopes` before claiming; if it never arrives, this gate cannot be satisfied and onboarding stays incomplete (see **When the claim cannot succeed**).
 
-**Ordering (critical):** run the handle step **after** `request_borrower_token` and the workload key, never before them. The borrower-token rule forbids any chat question before the token, and the confirmation below is a chat question. Keep it out of the critical chain (steps 1–7).
+**Ordering (critical):** run the handle step **after** `request_borrower_token` and, when it runs, the workload key, never before them. The borrower-token rule forbids any chat question before the token, and the confirmation below is a chat question. Keep it out of the critical chain (steps 1–9).
 
 ### Flow
 

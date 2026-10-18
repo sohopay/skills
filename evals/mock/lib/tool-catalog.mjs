@@ -86,6 +86,14 @@ export const TOOL_CATALOG = {
       required: ["merchant", "amount", "idempotency_key"],
     },
   },
+  start_browser_handoff: {
+    description: "Return a principal-bound open_url for the borrower's CONNECT_WALLET or CONNECT_BANK step (get_context next action with handoff_type OPEN_URL). Pass action with the source the borrower chose; omitted, the backend picks the first current connect step. 409 NO_BROWSER_HANDOFF when that step is not current. Open the returned open_url verbatim. Never invent a link. Never collect a legal name, date of birth, bank details, or a passkey in chat. After the borrower returns, call get_context again. Write call: supply a fresh UUID v4 idempotency key and reuse it only to retry this same handoff.",
+    inputSchema: { type: "object", properties: { action: { type: "string", enum: ["CONNECT_WALLET", "CONNECT_BANK"], description: "The source the borrower chose." }, idempotency_key: idem } },
+  },
+  review_facility_offer: {
+    description: "Return a principal-bound open_url for the borrower's facility-acceptance page when get_context lists REVIEW_AND_ACCEPT_FACILITY. No offer argument: the backend picks the open offer. Returns { action: \"FACILITY_ACCEPT\", open_url, expires_at }; 409 FACILITY_OFFER_NOT_AVAILABLE when no offer can be reviewed. Open the returned open_url verbatim. Never invent /facility/accept. After the borrower returns, call get_context again. Write call: supply a fresh UUID v4 idempotency key and reuse it only to retry this same call.",
+    inputSchema: { type: "object", properties: { idempotency_key: idem } },
+  },
   get_settlement_status: {
     description: "Settlement status for a captured payment.",
     inputSchema: { type: "object", properties: { settlement_id: str("Settlement or payment id.") } },

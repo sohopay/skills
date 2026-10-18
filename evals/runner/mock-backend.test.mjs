@@ -89,6 +89,8 @@ for (const id of SCENARIO_IDS) {
           assert.ok(!/https?:/.test(JSON.stringify(a)), `${a.action} carries no URL`);
           if (a.action === "PROVE_WALLET") assert.deepEqual(a, { action: "PROVE_WALLET", actor: "BORROWER", tool: "request_signature_challenge", handoff_required: true, reason_code: "WALLET_PROOF_REQUIRED" });
           else if (a.action === "PAY") assert.equal(a.tool, "prepare_x402_payment");
+          // SOHO-436: the one OPEN_URL step that names its link tool (mcp-server v16).
+          else if (a.action === "REVIEW_AND_ACCEPT_FACILITY") assert.deepEqual(a, { action: "REVIEW_AND_ACCEPT_FACILITY", actor: "BORROWER", tool: "review_facility_offer", handoff_required: true, handoff_type: "OPEN_URL", reason_code: "FACILITY_OFFER_ACCEPTANCE_REQUIRED" });
           else { assert.equal(a.handoff_type, "OPEN_URL"); assert.equal("tool" in a, false); }
         }
         for (const c of sc.conditions.filter((x) => x !== "consent_ok")) assert.ok(w.journal().includes(c), `get_context raised ${c}`);
@@ -163,6 +165,70 @@ test("SOHO-479: an unproven wallet gets the real challenge, which no borrower si
     const ch = await n.tool("request_signature_challenge", {});
     assert.equal(ch.ok, false); assert.equal(ch.body.code, "WALLET_NOT_REGISTERED");
   } finally { await n.backend.close(); }
+});
+
+test("start_browser_handoff: a link for the first connect step, replayed per key, 409 when none is current", async () => {
+  const handoffUrl = /^http:\/\/[^/]+\/onboarding\/handoff#[A-Za-z0-9_-]{20,}$/;
+  const w = await up("connect-wallet-no-signature-request");
+  try {
+    assert.ok((await w.rpc("tools/list")).result.tools.some((t) => t.name === "start_browser_handoff"));
+    const a = await w.tool("start_browser_handoff", { idempotency_key: "k-1" });
+    assert.equal(a.ok, true);
+    assert.deepEqual(Object.keys(a.body).sort(), ["action", "expires_at", "open_url"]);
+    assert.equal(a.body.action, "CONNECT_WALLET", "the backend picks the first listed connect step");
+    assert.equal((await w.tool("start_browser_handoff", { action: "CONNECT_BANK", idempotency_key: "k-bank" })).body.action, "CONNECT_BANK", "a named action mints that step");
+    assert.match(a.body.open_url, handoffUrl);
+    assert.ok(Date.parse(a.body.expires_at) > Date.now());
+    assert.deepEqual((await w.tool("start_browser_handoff", { idempotency_key: "k-1" })).body, a.body, "same key replays the same link");
+    assert.notEqual((await w.tool("start_browser_handoff", { idempotency_key: "k-2" })).body.open_url, a.body.open_url, "a new key mints a new link");
+    // The link lives only in the handoff result, never on a get_context next action.
+    assert.ok(!JSON.stringify((await w.tool("get_context")).body).includes("/onboarding/handoff"));
+  } finally { await w.backend.close(); }
+  const b = await up("prove-wallet-with-bank-alternative");
+  try {
+    assert.equal((await b.tool("start_browser_handoff", { idempotency_key: "k-1" })).body.action, "CONNECT_BANK", "PROVE_WALLET is not a connect step");
+    const wallet = await b.tool("start_browser_handoff", { action: "CONNECT_WALLET", idempotency_key: "k-2" });
+    assert.equal(wallet.ok, false); assert.equal(wallet.body.code, "NO_BROWSER_HANDOFF", "CONNECT_WALLET is not current beside PROVE_WALLET");
+    assert.equal((await b.tool("start_browser_handoff", { action: "CONNECT_BANK", idempotency_key: "k-3" })).body.action, "CONNECT_BANK");
+    const bad = await b.tool("start_browser_handoff", { action: "FACILITY_ACCEPT", idempotency_key: "k-4" });
+    assert.equal(bad.ok, false); assert.equal(bad.body.code, "VALIDATION_ERROR", "only the two connect steps are agent-mintable");
+  } finally { await b.backend.close(); }
+  const c = await up("open-url-step-no-invented-link");
+  try {
+    const r = await c.tool("start_browser_handoff", { idempotency_key: "k-1" });
+    assert.equal(r.ok, false); assert.equal(r.body.code, "NO_BROWSER_HANDOFF");
+  } finally { await c.backend.close(); }
+});
+
+test("review_facility_offer: a FACILITY_ACCEPT link for an open offer, replayed per key, 409 when none; hidden on an older server", async () => {
+  const acceptUrl = /^http:\/\/[^/]+\/facility\/accept\?request_id=[A-Za-z0-9_-]{20,}$/;
+  const w = await up("facility-accept-opens-review-url");
+  try {
+    assert.ok((await w.rpc("tools/list")).result.tools.some((t) => t.name === "review_facility_offer"));
+    const ctx = (await w.tool("get_context")).body;
+    assert.deepEqual(ctx.next_actions.map((a) => [a.action, a.tool, a.handoff_type]), [["REVIEW_AND_ACCEPT_FACILITY", "review_facility_offer", "OPEN_URL"]]);
+    assert.ok(w.journal().includes("facility_offer_listed"));
+    const a = await w.tool("review_facility_offer", { idempotency_key: "k-1" });
+    assert.equal(a.ok, true);
+    assert.deepEqual(Object.keys(a.body).sort(), ["action", "expires_at", "open_url"]);
+    assert.equal(a.body.action, "FACILITY_ACCEPT");
+    assert.match(a.body.open_url, acceptUrl);
+    assert.deepEqual((await w.tool("review_facility_offer", { idempotency_key: "k-1" })).body, a.body, "same key replays the same link");
+    assert.notEqual((await w.tool("review_facility_offer", { idempotency_key: "k-2" })).body.open_url, a.body.open_url, "a new key mints a new link");
+    assert.ok(!JSON.stringify(ctx).includes("/facility/accept"), "the link lives only in the tool result");
+  } finally { await w.backend.close(); }
+  const none = await up("open-url-step-no-invented-link");
+  try {
+    const r = await none.tool("review_facility_offer", { idempotency_key: "k-1" });
+    assert.equal(r.ok, false); assert.equal(r.body.code, "FACILITY_OFFER_NOT_AVAILABLE");
+  } finally { await none.backend.close(); }
+  const old = await up("facility-accept-tool-absent-no-link");
+  try {
+    assert.ok(!(await old.rpc("tools/list")).result.tools.some((t) => t.name === "review_facility_offer"), "an older catalog does not list it");
+    const r = await old.tool("review_facility_offer", { idempotency_key: "k-1" });
+    assert.equal(r.ok, false); assert.equal(r.body.code, "TOOL_NOT_FOUND");
+    assert.equal((await old.tool("get_context")).body.next_actions[0].action, "REVIEW_AND_ACCEPT_FACILITY", "the backend still lists the step");
+  } finally { await old.backend.close(); }
 });
 
 test("m5: the first-time-merchant gate clears only on a retry with the SAME idempotency_key", async () => {

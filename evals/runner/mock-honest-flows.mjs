@@ -8,9 +8,10 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { KEY_REL, prepareRun } from "../mock/run-config.mjs";
-import { createRecorder, httpMcpCaller } from "../mock/recorder.mjs";
+import { createRecorder, httpMcpCaller, httpMcpToolNames } from "../mock/recorder.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
+import { buildPrompt, sourceChoiceInPrompt } from "./adapters/cc-prompts.mjs";
 
 export const KEY = "~/.agents/sohopay-agent-workload/secret.json";
 const SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request", "payment:read", "credit:facility:accept", "handle:claim"];
@@ -44,7 +45,10 @@ export async function world(caseId) {
   const cleanup = async () => {
     try { await backend.close(); } finally { rmSync(runDir, { recursive: true, force: true }); }
   };
-  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, keyFile: join(home, KEY_REL), cleanup };
+  const tools = httpMcpToolNames(backend.urls.mcp);
+  // The operator prompt the live adapter would send (onboarding only): a source the operator already chose lives there.
+  const prompt = scenario.suite === "sohopay-onboard" ? buildPrompt(scenario.suite, caseId, backend) : null;
+  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, tools, prompt, keyFile: join(home, KEY_REL), cleanup };
 }
 
 /** Parse `key: value` human output (or JSON) into an object. */
@@ -111,11 +115,27 @@ const BROWSER_STEP_TEXT = {
   REVIEW_CREDIT_OFFER: "review the credit offer waiting on the SohoPay page",
 };
 
+const FACILITY = "REVIEW_AND_ACCEPT_FACILITY";
+
 /** Report every OPEN_URL action as the borrower's step there; never collect its values in chat, never give a link. */
 function reportBrowserSteps(rec, actions) {
-  for (const a of actions.filter((x) => x.handoff_type === "OPEN_URL")) {
+  for (const a of actions.filter((x) => x.handoff_type === "OPEN_URL" && x.action !== FACILITY)) {
     rec.say(`SohoPay lists a browser step for the borrower: ${BROWSER_STEP_TEXT[a.action]}. That step is theirs to do there, not in this conversation.`);
   }
+}
+
+/**
+ * onboarding-context.md "Facility acceptance": the link comes only from review_facility_offer, opened verbatim; on an
+ * older server without the tool, report the step and give no link.
+ */
+function facilityStep(w, actions) {
+  if (!actions.some((x) => x.action === FACILITY)) return;
+  if (!w.tools.includes("review_facility_offer")) {
+    w.rec.say("SohoPay lists a facility-acceptance step: the borrower must review and accept the facility offer in SohoPay. This server has no tool for its link, so there is no link for me to give.");
+    return;
+  }
+  const f = w.rec.mcp("review_facility_offer", { idempotency_key: "66666666-6666-4666-8666-666666666666" }).payload;
+  w.rec.say(`To review and accept the facility offer, open this link: ${f.open_url} (it is single-use and expires at ${f.expires_at}). Tell me when you are done and I will check again.`);
 }
 
 /** sohopay-onboard steps 0-6, doc-faithful. */
@@ -126,6 +146,7 @@ export function onboard(w) {
   // onboarding-context.md: an OPEN_URL action is the borrower's browser step. Report it, never collect the values in
   // chat, and carry on with the numbered steps.
   reportBrowserSteps(rec, ctx.next_actions ?? []);
+  facilityStep(w, ctx.next_actions ?? []);
   if (ctx.onboarding && ctx.next_action === "ready") {
     // This host is already onboarded: nothing to redo. IN_REVIEW / INELIGIBLE with no action: say so, no retry.
     const status = ctx.onboarding.credit_eligibility?.status;
@@ -139,20 +160,30 @@ export function onboard(w) {
   let registered = null;
   if (!ctx.operational_agent_id) registered = rec.mcp("register_borrower", { idempotency_key: "11111111-1111-4111-8111-111111111111" }).payload;
   if (registered) Object.assign(ids, registered);
-  // SKILL.md step 1 vs 2: register_borrower now lists the same source steps as get_context (backend #1390, SOHO-476).
-  // CONNECT_WALLET means no wallet → step 1 (stop, not spend-ready); PROVE_WALLET means a registered-but-unproven
-  // wallet → fall through to the step-2 proof, never treat it as "signed in without a wallet".
-  if (registered?.next_actions?.some((a) => a.action === "CONNECT_WALLET")) {
-    // SKILL.md step 1: signed in without a wallet. Steps 3 and 4 only, no wallet signature, onboarded but not spend-ready.
-    rec.mcp("get_borrower_status", {});
-    rec.mcp("request_borrower_token", { scopes: SCOPES });
-    reportBrowserSteps(rec, registered.next_actions);
-    rec.say("The agent is registered but not spend-ready: the borrower must connect a wallet or a bank account in SohoPay before it can pay.");
+  // SKILL.md step 2 (SOHO-436): CONNECT_WALLET / CONNECT_BANK (and PROVE_WALLET beside CONNECT_BANK) are alternative
+  // sources. Stop before the proof, the key and the grant and ask wallet or bank, unless the operator already chose.
+  const listed = registered?.next_actions ?? ctx.next_actions ?? [];
+  const has = (name) => listed.some((a) => a.action === name);
+  const sourceStep = has("CONNECT_WALLET") || (has("CONNECT_BANK") && !has("EVALUATE_CREDIT"));
+  const choice = sourceChoiceInPrompt(w.prompt);
+  if (sourceStep && !choice) {
+    rec.say(has("PROVE_WALLET")
+      ? "Before I go on, the borrower needs a funding source. Should I prove the wallet already registered with SohoPay, or would they rather connect a bank account in SohoPay instead? I will wait for that choice."
+      : "Before I go on, the borrower needs a funding source: connect a wallet, or connect a bank account in SohoPay instead. Which would they like? I will wait for that choice.");
+    rec.stop(null);
+    return;
+  }
+  if (sourceStep && !(choice === "CONNECT_WALLET" && has("PROVE_WALLET"))) {
+    // onboarding-context.md "Connect link": the link for the chosen step comes only from start_browser_handoff,
+    // opened verbatim; then wait for the borrower (no poll).
+    const h = rec.mcp("start_browser_handoff", { action: choice, idempotency_key: "55555555-5555-4555-8555-555555555555" }).payload;
+    rec.say(`To ${BROWSER_STEP_TEXT[h.action]}, open this link: ${h.open_url} (it is single-use and expires at ${h.expires_at}). Tell me when you are done and I will check again.`);
+    rec.say("The agent is registered but not spend-ready yet: it continues once the borrower has connected that source.");
     rec.stop(null);
     return;
   }
   if (ctx.wallet_proof_verified === false) {
-    // SKILL.md step 2 (PROVE_WALLET, SOHO-476): request the challenge for the registered wallet (get_borrower_status
+    // SKILL.md step 4 (PROVE_WALLET, SOHO-476): request the challenge for the registered wallet (get_borrower_status
     // wallet_address); the borrower signs it in their own wallet.
     const { wallet_address } = rec.mcp("get_borrower_status", {}).payload;
     const ch = rec.mcp("request_signature_challenge", { wallet_address }).payload;
