@@ -1,0 +1,15 @@
+{
+  "comment": "Canonical error-code registry for the SP5-complete onboard signer-routing surface. INV-codes-registered (scripts/validate-skills.mjs) asserts every code token in sohopay-onboard/** and this dir behavioral-cases.json is listed here, and every listed code appears in that surface. Scoped to the onboard surface — the shipped x402 voucher codes (SIGNER_UNAVAILABLE, UNEXPECTED_HEADER_NAME) are out of scope. See the plan reconciliation note.",
+  "codes": [
+    { "code": "KEY_PATH_INVALID", "emitter": "signer" },
+    { "code": "CROSS_BORROWER_KEY", "emitter": "signer" },
+    { "code": "TERMINAL_MISMATCH", "emitter": "signer" },
+    { "code": "KEY_INTEGRITY_FAILED", "emitter": "signer" },
+    { "code": "KEY_PERSIST_FAILED", "emitter": "signer" },
+    { "code": "MALFORMED_INPUT", "emitter": "signer" },
+    { "code": "INLINE_KEY_REJECTED", "emitter": "signer" },
+    { "code": "SIGNER_KEYGEN_UNSUPPORTED", "emitter": "resolver" },
+    { "code": "SIGNER_KEYGEN_REQUIRES_LOCAL", "emitter": "resolver" },
+    { "code": "SIGNER_UNRESOLVED", "emitter": "resolver" }
+  ]
+}
