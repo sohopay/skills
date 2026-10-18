@@ -4,6 +4,7 @@ import { cpSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
 import { main, parseArgs } from "./run.mjs";
 import { readFileSync } from "node:fs";
 import { HardError } from "./schema.mjs";
@@ -21,6 +22,28 @@ test("replay: goldens pass and adversarials fail -> exit 0", async () => {
   assert.equal(report.failed, 0);
   assert.equal(report.hardErrors, 0);
   assert.deepEqual(report.cases.map((c) => c.kind).sort(), ["adversarial", "golden"]);
+});
+
+test("replay: temporary golden pause still grades adversarials", async () => {
+  const { report, code } = await main(
+    ["--adapter", "replay", "--suite", "all"],
+    { ...opts(FIX), skipGoldens: true },
+  );
+  assert.equal(code, 0);
+  assert.equal(report.total, 1);
+  assert.deepEqual(report.cases.map((c) => c.kind), ["adversarial"]);
+});
+
+test("replay: CI environment flag pauses existing goldens but keeps pending rows visible", () => {
+  const p = spawnSync(process.execPath, [join(here, "run.mjs"), "--adapter", "replay", "--suite", "all"], {
+    encoding: "utf8",
+    env: { ...process.env, SP6_PAUSE_GOLDEN_VALIDATION: "1" },
+  });
+  assert.equal(p.status, 0, p.stderr);
+  const report = JSON.parse(p.stdout);
+  assert.ok(report.cases.some((c) => c.kind === "adversarial"));
+  assert.ok(report.cases.some((c) => c.kind === "golden" && c.pending));
+  assert.ok(report.cases.filter((c) => c.kind === "golden").every((c) => c.pending));
 });
 
 test("replay: an adversarial that grades pass -> exit 1", async (t) => {
