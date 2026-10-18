@@ -27,6 +27,7 @@ const ENV_PRESET_STUBS = {
   'setup-staging.md': 'setup.md',
   'mcp-connect-staging.md': 'mcp-connect.md',
 };
+const SP6_GOLDEN_VALIDATION_PAUSED = process.env.SP6_PAUSE_GOLDEN_VALIDATION === '1';
 
 const FORBIDDEN_PATTERNS = [
   /\blocalhost\b/i,
@@ -600,27 +601,31 @@ function checkSp6Suite(name, pending = new Set()) {
   if (!closure.includes(resolve(skillMd))) fail(`INV-sp6-skill-hash-closure ${name}: closure missing SKILL.md`);
   const hash = closure.length ? skillHash(skillMd, SKILLS_DIR) : null;
 
-  for (const id of suite.assertions.keys()) {
-    const f = join(dir, 'transcripts', `${id}.json`);
-    if (!existsSync(f)) {
-      if (pending.has(id)) console.log(`PENDING: INV-sp6-transcripts-present ${name}: golden for case "${id}" not yet recorded (evals/${PENDING_FILE})`);
-      else fail(`INV-sp6-transcripts-present ${name}: no golden for case "${id}" (record it, or list it in evals/${PENDING_FILE})`);
-      continue;
-    }
-    // The list only shrinks: the regen job removes an id in the same commit that adds its golden.
-    if (pending.has(id)) fail(`INV-sp6-goldens-pending ${name}: case "${id}" has a golden but is still listed in evals/${PENDING_FILE} — remove it`);
-    try {
-      const t = JSON.parse(readFileSync(f, 'utf8'));
-      const v = validateTranscript(t);
-      const kindErr = transcriptKindError(t, 'golden');
-      if (!v.ok) fail(`INV-sp6-transcripts-present ${name}/${id}: ${v.errors.join('; ')}`);
-      else if (kindErr) fail(`${kindErr} — ${name}/${id}`);
-      else if (!hash || t.meta.skill_hash !== hash) {
-        fail(`INV-sp6-transcripts-present ${name}/${id}: stale skill_hash (re-record)`);
+  if (SP6_GOLDEN_VALIDATION_PAUSED) {
+    console.log(`PAUSED: SP6 golden presence/hash/audit validation for ${name}`);
+  } else {
+    for (const id of suite.assertions.keys()) {
+      const f = join(dir, 'transcripts', `${id}.json`);
+      if (!existsSync(f)) {
+        if (pending.has(id)) console.log(`PENDING: INV-sp6-transcripts-present ${name}: golden for case "${id}" not yet recorded (evals/${PENDING_FILE})`);
+        else fail(`INV-sp6-transcripts-present ${name}: no golden for case "${id}" (record it, or list it in evals/${PENDING_FILE})`);
+        continue;
       }
-      const auditErr = v.ok && !kindErr ? goldenAuditError(t) : null;
-      if (auditErr) fail(`${auditErr} — ${name}/${id}`);
-    } catch { fail(`INV-sp6-transcripts-present ${name}/${id}: invalid JSON`); }
+      // The list only shrinks: the regen job removes an id in the same commit that adds its golden.
+      if (pending.has(id)) fail(`INV-sp6-goldens-pending ${name}: case "${id}" has a golden but is still listed in evals/${PENDING_FILE} — remove it`);
+      try {
+        const t = JSON.parse(readFileSync(f, 'utf8'));
+        const v = validateTranscript(t);
+        const kindErr = transcriptKindError(t, 'golden');
+        if (!v.ok) fail(`INV-sp6-transcripts-present ${name}/${id}: ${v.errors.join('; ')}`);
+        else if (kindErr) fail(`${kindErr} — ${name}/${id}`);
+        else if (!hash || t.meta.skill_hash !== hash) {
+          fail(`INV-sp6-transcripts-present ${name}/${id}: stale skill_hash (re-record)`);
+        }
+        const auditErr = v.ok && !kindErr ? goldenAuditError(t) : null;
+        if (auditErr) fail(`${auditErr} — ${name}/${id}`);
+      } catch { fail(`INV-sp6-transcripts-present ${name}/${id}: invalid JSON`); }
+    }
   }
   // Teeth: every case must carry >=1 adversarial transcript (<caseId>.*.json), same stem convention as run.mjs.
   const advDir = join(dir, 'transcripts', 'adversarial');

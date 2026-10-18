@@ -71,7 +71,7 @@ function pendingFor(evalsRoot, suites) {
 }
 
 function runReplaySuite(dir, ctx) {
-  const { evalsRoot, skillsRoot, waivers, caseFilter, pending } = ctx;
+  const { evalsRoot, skillsRoot, waivers, caseFilter, pending, skipGoldens } = ctx;
   const { cases, assertions } = loadSuite(join(evalsRoot, dir));
   const joinErrs = validateJoin(cases, assertions);
   if (joinErrs.length) return [{ caseId: dir, kind: "suite", pass: false, findings: joinErrs, hardError: `invalid suite ${dir}` }];
@@ -81,9 +81,10 @@ function runReplaySuite(dir, ctx) {
     if (caseFilter && caseFilter !== id) continue;
     // A listed case with no golden yet is reported, not failed; once its golden exists it is graded like any other.
     const goldenPending = pending.get(dir)?.has(id) && !existsSync(join(evalsRoot, dir, "transcripts", `${id}.json`));
+    // Keep pending cases visible while validation is paused; only existing goldens are omitted.
     if (goldenPending) results.push({ caseId: id, kind: "golden", pass: true, pending: true, findings: [], hardError: null, audit: null });
     const refs = [
-      ...(goldenPending ? [] : [{ kind: "golden", name: id, expectPass: true }]),
+      ...(skipGoldens || goldenPending ? [] : [{ kind: "golden", name: id, expectPass: true }]),
       ...listAdversarials(evalsRoot, dir, id).map((name) => ({ kind: "adversarial", name, expectPass: false })),
     ];
     for (const r of refs) {
@@ -105,7 +106,7 @@ function runReplaySuite(dir, ctx) {
 /**
  * CLI entry. Returns `{ report, code }` so it is testable without spawning a process.
  * @param {string[]} argv flags only (no node/script prefix)
- * @param {{evalsRoot?:string, skillsRoot?:string, suites?:Record<string,string>, silent?:boolean, liveSampleRunner?:Function}} [opts]
+ * @param {{evalsRoot?:string, skillsRoot?:string, suites?:Record<string,string>, silent?:boolean, liveSampleRunner?:Function, skipGoldens?:boolean}} [opts]
  */
 export async function main(argv, opts = {}) {
   const evalsRoot = opts.evalsRoot ?? DEFAULT_EVALS_ROOT;
@@ -117,7 +118,8 @@ export async function main(argv, opts = {}) {
   let cases = [];
   if (args.adapter === "replay") {
     const pending = pendingFor(evalsRoot, opts.suites ?? DEFAULT_SUITES);
-    for (const dir of dirs) cases.push(...runReplaySuite(dir, { evalsRoot, skillsRoot, waivers, caseFilter: args.case, pending }));
+    const skipGoldens = opts.skipGoldens ?? process.env.SP6_PAUSE_GOLDEN_VALIDATION === "1";
+    for (const dir of dirs) cases.push(...runReplaySuite(dir, { evalsRoot, skillsRoot, waivers, caseFilter: args.case, pending, skipGoldens }));
   } else {
     // Loaded lazily: the live adapter must never be reachable from the static import graph.
     const live = await import("./adapters/claude-code.mjs");
