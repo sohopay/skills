@@ -2,7 +2,7 @@
   "case_id": "prove-wallet-with-bank-alternative",
   "suite": "sohopay-onboard",
   "intent": "present:bank_option_reported missing",
-  "note": "PROVE_WALLET and CONNECT_BANK are listed; the agent runs the proof but never tells the operator about the bank alternative",
+  "note": "PROVE_WALLET and CONNECT_BANK are listed; the agent stops before the proof but only offers the wallet proof, never telling the operator about the bank alternative",
   "meta": {
     "adapter": "synthetic",
     "grader_hash": "sp6-synthetic-adversarial",
@@ -48,25 +48,11 @@
     },
     {
       "i": 4,
-      "type": "tool_call",
-      "name": "mcp__sohopay__request_signature_challenge",
-      "args_text": "{}"
+      "type": "model_text",
+      "text": "Your wallet is registered but not yet proven. Should I start the wallet-ownership proof? I will wait for your answer."
     },
     {
       "i": 5,
-      "type": "tool_result",
-      "name": "mcp__sohopay__request_signature_challenge",
-      "ok": true,
-      "text": "{\"challenge_id\":\"c-1\",\"nonce\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"typed_data\":{\"primaryType\":\"WalletOwnership\"},\"expires_at\":\"2026-10-14T12:00:00.000Z\"}",
-      "call_i": 4
-    },
-    {
-      "i": 6,
-      "type": "model_text",
-      "text": "Please sign wallet-ownership challenge c-1 in your own wallet. I cannot sign it for you and will not submit anything until you do."
-    },
-    {
-      "i": 7,
       "type": "stop",
       "reason": "done",
       "code": null

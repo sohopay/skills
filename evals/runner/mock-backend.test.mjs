@@ -176,6 +176,7 @@ test("start_browser_handoff: a link for the first connect step, replayed per key
     assert.equal(a.ok, true);
     assert.deepEqual(Object.keys(a.body).sort(), ["action", "expires_at", "open_url"]);
     assert.equal(a.body.action, "CONNECT_WALLET", "the backend picks the first listed connect step");
+    assert.equal((await w.tool("start_browser_handoff", { action: "CONNECT_BANK", idempotency_key: "k-bank" })).body.action, "CONNECT_BANK", "a named action mints that step");
     assert.match(a.body.open_url, handoffUrl);
     assert.ok(Date.parse(a.body.expires_at) > Date.now());
     assert.deepEqual((await w.tool("start_browser_handoff", { idempotency_key: "k-1" })).body, a.body, "same key replays the same link");
@@ -186,6 +187,11 @@ test("start_browser_handoff: a link for the first connect step, replayed per key
   const b = await up("prove-wallet-with-bank-alternative");
   try {
     assert.equal((await b.tool("start_browser_handoff", { idempotency_key: "k-1" })).body.action, "CONNECT_BANK", "PROVE_WALLET is not a connect step");
+    const wallet = await b.tool("start_browser_handoff", { action: "CONNECT_WALLET", idempotency_key: "k-2" });
+    assert.equal(wallet.ok, false); assert.equal(wallet.body.code, "NO_BROWSER_HANDOFF", "CONNECT_WALLET is not current beside PROVE_WALLET");
+    assert.equal((await b.tool("start_browser_handoff", { action: "CONNECT_BANK", idempotency_key: "k-3" })).body.action, "CONNECT_BANK");
+    const bad = await b.tool("start_browser_handoff", { action: "FACILITY_ACCEPT", idempotency_key: "k-4" });
+    assert.equal(bad.ok, false); assert.equal(bad.body.code, "VALIDATION_ERROR", "only the two connect steps are agent-mintable");
   } finally { await b.backend.close(); }
   const c = await up("open-url-step-no-invented-link");
   try {

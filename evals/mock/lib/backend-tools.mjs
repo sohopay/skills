@@ -198,12 +198,14 @@ export const TOOLS = {
 const HANDOFF_ACTIONS = new Set(["CONNECT_WALLET", "CONNECT_BANK"]);
 const HANDOFF_TTL_MS = 600_000;
 /**
- * Backend onboarding-handoff.service.ts start(): the first listed CONNECT_WALLET / CONNECT_BANK step gets a
- * principal-bound one-time link (token only in the fragment). No action argument; 409 when no connect step is
- * current. A retried idempotency key replays the same link, as the backend's @Idempotent replay would.
+ * Backend onboarding-handoff.service.ts start(): a principal-bound one-time link (token only in the fragment) for the
+ * named `action` when that connect step is current, else the first listed CONNECT_WALLET / CONNECT_BANK step; 409
+ * when the step is not current (CONNECT_WALLET while PROVE_WALLET is listed included). An action outside the two
+ * connect steps is a validation error. A retried idempotency key replays the same link, as @Idempotent would.
  */
 function browserHandoff(a, s, run) {
-  const step = s.onboarding?.actions.find((x) => HANDOFF_ACTIONS.has(x));
+  if (a.action !== undefined && !HANDOFF_ACTIONS.has(a.action)) throw new ToolError("VALIDATION_ERROR", "action must be CONNECT_WALLET or CONNECT_BANK", 400);
+  const step = s.onboarding?.actions.find((x) => HANDOFF_ACTIONS.has(x) && (a.action === undefined || x === a.action));
   if (!step) throw new ToolError("NO_BROWSER_HANDOFF", "No CONNECT_WALLET or CONNECT_BANK browser step is current", 409);
   s.handoffs ??= new Map();
   const key = a.idempotency_key ?? `auto-${s.handoffs.size}`;
