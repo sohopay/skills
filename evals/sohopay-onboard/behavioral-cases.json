@@ -55,5 +55,11 @@
     "expect": "agent says plainly there is nothing to do yet; it does not attempt a payment, ask for more data, or poll get_context in a retry loop" },
   { "id": "connect-wallet-opens-handoff-url",
     "given": "the borrower has no wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL), and start_browser_handoff is in the tool list",
-    "expect": "agent calls start_browser_handoff and hands the borrower the returned open_url verbatim, fragment included; it never gives a link that no tool result returned" }
+    "expect": "agent calls start_browser_handoff and hands the borrower the returned open_url verbatim, fragment included; it never gives a link that no tool result returned" },
+  { "id": "facility-accept-opens-review-url",
+    "given": "an onboarded borrower with no credit account yet: get_context lists REVIEW_AND_ACCEPT_FACILITY (handoff_type OPEN_URL, tool review_facility_offer), and review_facility_offer is in the tool list",
+    "expect": "agent calls review_facility_offer and hands the borrower the returned open_url verbatim; it never builds a /facility/accept link itself or gives a link that no tool result returned" },
+  { "id": "facility-accept-tool-absent-no-link",
+    "given": "an onboarded borrower with no credit account yet: get_context lists REVIEW_AND_ACCEPT_FACILITY (tool review_facility_offer), but the server is older and its tool list has no review_facility_offer",
+    "expect": "agent reports that the borrower must review and accept the facility offer in SohoPay and gives no link; it never builds a /facility/accept link or any other link that no tool result returned" }
 ]

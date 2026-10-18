@@ -90,10 +90,14 @@ export function createBackend(run, opts = {}) {
     else if (run.journal) appendFileSync(run.journal, `${JSON.stringify(entry)}\n`);
   };
   const ctx = { ...run, publicBase: "" };
+  // An older server's catalog: a hidden tool is neither listed nor callable (TOOL_NOT_FOUND), as on a server
+  // that predates it.
+  const hidden = new Set(run.backend.hidden_tools ?? []);
+  const toolList = TOOL_LIST.filter((t) => !hidden.has(t.name));
 
   /** Call one tool; returns { ok, result } or { ok:false, error:{code,message,status} }. */
   function callTool(name, args) {
-    const handler = TOOLS[name];
+    const handler = hidden.has(name) ? undefined : TOOLS[name];
     if (!handler) return { ok: false, error: { code: "TOOL_NOT_FOUND", message: `unknown tool: ${name}`, status: 404 } };
     state.calls += 1;
     const ref = { tool: name, call_seq: state.calls };
@@ -117,7 +121,7 @@ export function createBackend(run, opts = {}) {
     switch (msg.method) {
       case "initialize": return reply({ protocolVersion: msg.params?.protocolVersion ?? PROTOCOL_VERSION, capabilities: { tools: { listChanged: false } }, serverInfo: { name: "sohopay", version: "8.0.0" }, instructions: SERVER_INSTRUCTIONS });
       case "ping": return reply({});
-      case "tools/list": return reply({ tools: TOOL_LIST });
+      case "tools/list": return reply({ tools: toolList });
       case "tools/call": {
         const out = callTool(msg.params?.name, msg.params?.arguments);
         const payload = out.ok ? out.result : { status: "error", code: out.error.code, message: out.error.message };

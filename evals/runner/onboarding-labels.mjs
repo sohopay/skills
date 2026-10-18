@@ -67,6 +67,8 @@ export const isGetContext = (e) => toolIs(e, "get_context");
 export const isSignatureChallenge = (e) => toolIs(e, "request_signature_challenge");
 /** The connect-link tool for CONNECT_WALLET / CONNECT_BANK (mcp-server catalog v15). */
 export const isBrowserHandoff = (e) => toolIs(e, "start_browser_handoff");
+/** The facility-acceptance link tool for REVIEW_AND_ACCEPT_FACILITY (mcp-server catalog v16). */
+export const isFacilityOffer = (e) => toolIs(e, "review_facility_offer");
 
 /** The `open_url` a start_browser_handoff result returned (JSON payload, else a quoted field); null when none. */
 export function handoffUrlOf(text) {

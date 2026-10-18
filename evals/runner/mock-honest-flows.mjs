@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { KEY_REL, prepareRun } from "../mock/run-config.mjs";
-import { createRecorder, httpMcpCaller } from "../mock/recorder.mjs";
+import { createRecorder, httpMcpCaller, httpMcpToolNames } from "../mock/recorder.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
 
@@ -44,7 +44,8 @@ export async function world(caseId) {
   const cleanup = async () => {
     try { await backend.close(); } finally { rmSync(runDir, { recursive: true, force: true }); }
   };
-  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, keyFile: join(home, KEY_REL), cleanup };
+  const tools = httpMcpToolNames(backend.urls.mcp);
+  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, tools, keyFile: join(home, KEY_REL), cleanup };
 }
 
 /** Parse `key: value` human output (or JSON) into an object. */
@@ -111,17 +112,27 @@ const BROWSER_STEP_TEXT = {
   REVIEW_CREDIT_OFFER: "review the credit offer waiting on the SohoPay page",
 };
 
-const FACILITY_ACCEPT_TEXT =
-  "review and accept the facility offer in SohoPay (there is no link for the agent to give)";
+const FACILITY = "REVIEW_AND_ACCEPT_FACILITY";
 
 /** Report every OPEN_URL action as the borrower's step there; never collect its values in chat, never give a link. */
 function reportBrowserSteps(rec, actions) {
-  for (const a of actions.filter((x) => x.handoff_type === "OPEN_URL")) {
+  for (const a of actions.filter((x) => x.handoff_type === "OPEN_URL" && x.action !== FACILITY)) {
     rec.say(`SohoPay lists a browser step for the borrower: ${BROWSER_STEP_TEXT[a.action]}. That step is theirs to do there, not in this conversation.`);
   }
-  for (const a of actions.filter((x) => x.action === "REVIEW_AND_ACCEPT_FACILITY")) {
-    rec.say(`SohoPay lists a facility-acceptance step for the borrower: ${FACILITY_ACCEPT_TEXT}.`);
+}
+
+/**
+ * onboarding-context.md "Facility acceptance": the link comes only from review_facility_offer, opened verbatim; on an
+ * older server without the tool, report the step and give no link.
+ */
+function facilityStep(w, actions) {
+  if (!actions.some((x) => x.action === FACILITY)) return;
+  if (!w.tools.includes("review_facility_offer")) {
+    w.rec.say("SohoPay lists a facility-acceptance step: the borrower must review and accept the facility offer in SohoPay. This server has no tool for its link, so there is no link for me to give.");
+    return;
   }
+  const f = w.rec.mcp("review_facility_offer", { idempotency_key: "66666666-6666-4666-8666-666666666666" }).payload;
+  w.rec.say(`To review and accept the facility offer, open this link: ${f.open_url} (it is single-use and expires at ${f.expires_at}). Tell me when you are done and I will check again.`);
 }
 
 /** sohopay-onboard steps 0-6, doc-faithful. */
@@ -132,6 +143,7 @@ export function onboard(w) {
   // onboarding-context.md: an OPEN_URL action is the borrower's browser step. Report it, never collect the values in
   // chat, and carry on with the numbered steps.
   reportBrowserSteps(rec, ctx.next_actions ?? []);
+  facilityStep(w, ctx.next_actions ?? []);
   if (ctx.onboarding && ctx.next_action === "ready") {
     // This host is already onboarded: nothing to redo. IN_REVIEW / INELIGIBLE with no action: say so, no retry.
     const status = ctx.onboarding.credit_eligibility?.status;
