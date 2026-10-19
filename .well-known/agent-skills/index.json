@@ -61,7 +61,7 @@
     {
       "name": "authorize-agent",
       "title": "SohoPay Authorize Agent (Borrower Grant)",
-      "description": "Obtain an ACTIVE AgentAuthorizationGrant via authorize_agent (consent page + borrower EIP-712). Use when onboarding just registered the workload key, or prepare_x402_payment returns AGENT_AUTHORIZATION_REQUIRED — not for wallet-proof or voucher Ed25519 signing.",
+      "description": "Obtain an ACTIVE AgentAuthorizationGrant via authorize_agent and the passkey-backed consent page, with EOA signature only above browser thresholds. Use when onboarding just registered the workload key, or prepare_x402_payment returns AGENT_AUTHORIZATION_REQUIRED — not for wallet-proof or voucher Ed25519 signing.",
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
     },
     {

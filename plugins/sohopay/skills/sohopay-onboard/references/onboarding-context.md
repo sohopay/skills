@@ -37,7 +37,7 @@ Every entry with `reason_code: FINANCIAL_SOURCE_REQUIRED` is an alternative, so 
 4. Do not start a link, or a signature challenge, before the borrower has chosen.
 5. A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` belongs to a borrower who already has a verified source: it is optional evidence, so report it and do not stop for it.
 
-A borrower who picks the bank and has no proven wallet can accept a facility but cannot yet grant this agent spending (the grant needs a wallet signature). Report them as onboarded but not spend-ready: see **Bank only** in the onboarding steps.
+A borrower who picks the bank and has no proven wallet still registers the workload key and may activate a within-threshold grant through passkey consent. Payment can remain blocked by `REPAYMENT_METHOD_REQUIRED`; report that readiness state separately. See **Bank only** in the onboarding steps.
 
 `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses, not browser steps (an older deployment may still mark them `handoff_type: "OPEN_URL"`; treat them the same). Report them: the borrower needs SohoPay to evaluate them for credit, or has an offer waiting. Call no tool and give no link. A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence and does not block that status.
 
