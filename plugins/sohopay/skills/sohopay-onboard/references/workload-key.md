@@ -19,7 +19,7 @@ Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-speci
   npm i -g @sohopay/agent-signer@0.3.1
   ```
 
-  The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably.
+  The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably. Setup shows this same command and does not run it. `install.sh` is operator-run and may run it.
 - A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
 - A local signer is installed but none answers `capabilities --output json` (nonzero exit, stdout that is not JSON, or another `signer_protocol`) ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
 

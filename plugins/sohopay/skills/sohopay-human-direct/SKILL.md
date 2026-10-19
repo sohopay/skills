@@ -28,16 +28,15 @@ Load a sibling **only when that step is next**:
 ```text
 get_context (v8+) or whoami (v7)
   → register_borrower (store operational_agent_id + terminal_id)
-  → COMPLETE_PROFILE if listed (legal name and date of birth on the SohoPay page; never in chat)
-  → register_agent_workload_key (even with no wallet)
+  → register_agent_workload_key (even with no wallet; COMPLETE_PROFILE does not delay this)
   → request_borrower_token (credit:facility:accept and handle:claim; no chat question)
   → authorize_agent (open consent_url; poll until ACTIVE)
   → repeat get_context, one current blocker:
+       COMPLETE_PROFILE first (report; no link; no wallet or bank; end the turn)
        CONNECT_WALLET + CONNECT_BANK: ask once, start_browser_handoff with that action
        PROVE_WALLET + CONNECT_BANK: proof, or action CONNECT_BANK (never CONNECT_WALLET)
-       EVALUATE_CREDIT / REVIEW_CREDIT_OFFER: report only
        REVIEW_AND_ACCEPT_FACILITY: review_facility_offer
-       REPAYMENT_METHOD_REQUIRED: report; credit is not spendable yet
+       no agent-actionable step (EVALUATE_CREDIT, REVIEW_CREDIT_OFFER, REPAYMENT_METHOD_REQUIRED, IN_REVIEW, INELIGIBLE): report onboarded but not spend-ready; end the turn; do not poll
        CLAIM_HANDLE: claim a confirmed handle (does not block can_pay)
   → stop when purchasing_power.can_pay is true; report available credit; do not start a payment
   → prepare_x402_payment only when the operator is paying

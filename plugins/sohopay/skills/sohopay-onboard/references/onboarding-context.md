@@ -21,7 +21,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 | Action | What to do |
 |---|---|
-| `COMPLETE_PROFILE` | Report it: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. Do this before the workload key, and do not start a wallet or bank step while it is listed. Re-read `get_context` when they return. |
+| `COMPLETE_PROFILE` | Report it: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. It does not delay the workload key or the grant. After those, it is the first blocker, ahead of any wallet or bank step. There is no link. Report it and end the turn. Do not poll. |
 | `CONNECT_WALLET` / `CONNECT_BANK` | Alternatives (`reason_code: FINANCIAL_SOURCE_REQUIRED`): ask the borrower wallet or bank, then get the link for that choice with `start_browser_handoff` (see "Choosing a source" and "Connect link" below). Either connection is enough for **evidence**; it does **not** by itself activate spendable credit. |
 | `REVIEW_AND_ACCEPT_FACILITY` | Get the borrower a link with `review_facility_offer` (see "Facility acceptance" below). |
 
@@ -31,7 +31,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 Every entry with `reason_code: FINANCIAL_SOURCE_REQUIRED` is an alternative, so never act on the first one alone. `register_borrower` lists the same steps as bare action names (`CONNECT_WALLET`, `CONNECT_BANK`, `PROVE_WALLET`), with no reason code.
 
-1. This choice is the current blocker after the workload key and an ACTIVE grant. Ask the borrower one question naming both options: connect a wallet, or connect a bank. Do not make this choice before the key.
+1. The workload key, token, and ACTIVE grant come first, even when `COMPLETE_PROFILE` is listed. After that, `COMPLETE_PROFILE` is ahead of this choice: report it, invent no link, and do not start a wallet or bank step. When it is not listed, ask the borrower one question naming both options: connect a wallet, or connect a bank.
 2. `CONNECT_WALLET` + `CONNECT_BANK` (no wallet): get the link for the chosen step ("Connect link").
 3. `PROVE_WALLET` + `CONNECT_BANK` (wallet registered, proof missing): a wallet choice is the wallet proof below, with no link; a bank choice is the `CONNECT_BANK` link.
 4. Do not start a link, or a signature challenge, before the borrower has chosen.
@@ -73,5 +73,5 @@ The backend lists it with `tool: "review_facility_offer"`. Until acceptance comp
 - The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. Never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat.
 - `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
-- A source step does not delay the workload key or `authorize_agent`. Those are done before this choice. The source step gates spendable credit. Wallet proof runs when `PROVE_WALLET` is the borrower's choice. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
-- `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.
+- `COMPLETE_PROFILE` and a source step do not delay the workload key or `authorize_agent`. Those are done first. The source step gates spendable credit. Wallet proof runs when `PROVE_WALLET` is the borrower's choice. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
+- `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry, poll, or ask for more data. The borrower is onboarded but not spend-ready.

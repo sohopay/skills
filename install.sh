@@ -44,6 +44,7 @@ BASE="$DEFAULT_BASE"
 
 err()  { printf 'ERROR: %s\n' "$*" >&2; }
 info() { printf '==> %s\n' "$*"; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
 usage() {
@@ -236,11 +237,24 @@ version_older() {
   ' "$1" "$2"
 }
 
-if ! command -v sohopay-signer >/dev/null 2>&1 || version_older "$(signer_version)" "$SIGNER_PIN"; then
-  info "Installing $SIGNER_SPEC"
-  npm i -g "$SIGNER_SPEC"
+need_signer=0
+if ! command -v sohopay-signer >/dev/null 2>&1; then
+  need_signer=1
+elif version_older "$(signer_version)" "$SIGNER_PIN"; then
+  need_signer=1
 fi
-SIGNER_NOTE="$(signer_version)"
+if [[ "$need_signer" -eq 1 ]]; then
+  info "Installing $SIGNER_SPEC"
+  npm i -g "$SIGNER_SPEC" || warn "Could not install $SIGNER_SPEC (permission denied, or a scoped registry returned 401). MCP registration will continue. Install it yourself: npm i -g $SIGNER_SPEC"
+fi
+if command -v sohopay-signer >/dev/null 2>&1; then
+  SIGNER_NOTE="$(signer_version)" || SIGNER_NOTE="unknown"
+else
+  SIGNER_NOTE="not installed"
+fi
+if [[ "$SIGNER_NOTE" == "not installed" ]] || [[ "$SIGNER_NOTE" == "unknown" ]] || version_older "$SIGNER_NOTE" "$SIGNER_PIN"; then
+  warn "sohopay-signer is missing or older than $SIGNER_PIN (reported: $SIGNER_NOTE). An older binary may be earlier on PATH. Install $SIGNER_SPEC and put that binary first on PATH."
+fi
 info "Signer: $SIGNER_NOTE"
 
 # --- Step 5: register MCP server ---------------------------------------------

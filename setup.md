@@ -17,7 +17,7 @@ For **staging**, first load **sohopay-setup-staging** (`{SKILLS_BASE}/setup-stag
 
 CRITICAL: **sohopay-mcp-server** is the MCP runtime and **sohopay-backend** is the source of truth. Do not hold borrower private keys. MCP transports signatures only.
 
-Default path needs **network access** and may write **MCP config** and install the pinned global signer. Skip sticky skills unless the operator asked. Never turn off permission prompts.
+Default path needs **network access** and may write **MCP config only**. The agent does not install the signer. Skip sticky skills unless the operator asked. Never turn off permission prompts.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
@@ -27,7 +27,7 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](#hosted-reference-prereqs)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
-- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, run `npm i -g @sohopay/agent-signer@0.3.1`. Node is required for this step only. If that version is already on `PATH`, do not reinstall. Do not run this command again while registering the workload key
+- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, show the operator `npm i -g @sohopay/agent-signer@0.3.1` and wait. Do not run it. The same rule is in the workload-key reference: a human installs it, once. `install.sh` may run it when the operator executes the installer. Do not run it again while registering the workload key
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: onboard until spendable credit — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`): one `get_context` step at a time until `purchasing_power.can_pay` is true. Do not wait for the first payment, and do not start one
@@ -36,7 +36,7 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 
 Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.
 
-Onboarding chain: `get_context` → `register_borrower` (store `operational_agent_id` + `terminal_id`) → if `COMPLETE_PROFILE` is listed, the borrower enters legal name and date of birth on the SohoPay page (never in chat; do not start a wallet or bank step; re-read `get_context` when they return) → `register_agent_workload_key` immediately, even with no wallet → `request_borrower_token` including `credit:facility:accept` and `handle:claim` → `authorize_agent` and open the passkey consent page until the grant is ACTIVE (within-threshold grants need no wallet; above-threshold grants also need an EOA signature) → repeat `get_context` and do only the current blocker. `CONNECT_WALLET` and `CONNECT_BANK` together: ask once, wallet or bank, then `start_browser_handoff` with that `action`. `PROVE_WALLET` plus `CONNECT_BANK`: wallet means the proof; bank means `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed. `EVALUATE_CREDIT` or `REVIEW_CREDIT_OFFER`: report the status, no tool and no invented link. `REVIEW_AND_ACCEPT_FACILITY`: `review_facility_offer`, open `open_url`, then re-read. `REPAYMENT_METHOD_REQUIRED`: report it; credit is not spendable yet. `CLAIM_HANDLE`: claim a handle the borrower confirms. A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one. Stop when `purchasing_power.can_pay` is true, report available credit, and do not start a payment. Apart from an explicit source-choice STOP, do **not** wait for a chat reply, before `request_borrower_token`; do not wait for first payment; never fabricate a passkey assertion or signature.
+Onboarding chain: `get_context` → `register_borrower` (store `operational_agent_id` + `terminal_id`) → `register_agent_workload_key` immediately, even with no wallet and even when `COMPLETE_PROFILE` is listed → `request_borrower_token` including `credit:facility:accept` and `handle:claim` → `authorize_agent` and open the passkey consent page until the grant is ACTIVE (within-threshold grants need no wallet; above-threshold grants also need an EOA signature) → repeat `get_context` and do only the current blocker. `COMPLETE_PROFILE` is first, ahead of any wallet or bank step: the borrower enters legal name and date of birth on the SohoPay page, never in chat, with no link; report it and end the turn. `CONNECT_WALLET` and `CONNECT_BANK` together: ask once, wallet or bank, then `start_browser_handoff` with that `action`. `PROVE_WALLET` plus `CONNECT_BANK`: wallet means the proof; bank means `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed. `REVIEW_AND_ACCEPT_FACILITY`: `review_facility_offer`, open `open_url`, then re-read. When no agent-actionable step is left (`EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`, `REPAYMENT_METHOD_REQUIRED`, `IN_REVIEW`, `INELIGIBLE`), report them as onboarded but not spend-ready and end the turn. Do not poll. `CLAIM_HANDLE`: claim a handle the borrower confirms. A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one. Stop when `purchasing_power.can_pay` is true, report available credit, and do not start a payment. Apart from an explicit source-choice STOP, do **not** wait for a chat reply, before `request_borrower_token`; do not wait for first payment; never fabricate a passkey assertion or signature.
 
 A payRequest (“pay” / merchant 402 URL) is consent for that payment — **sohopay-x402**. Before a **non-payRequest** payment:
 
@@ -101,15 +101,15 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 
 ## Step 2: Check prerequisites
 
-Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). **Node.js and npm are required for one step only:** installing the pinned signer before MCP connect. Do not install Node for any other step.
+Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). The agent does not install Node, and does not run `node --version` or `npm i`.
 
-When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, run:
+When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, show the operator this command and wait. Do not run it. The same rule is in the workload-key reference: secret-handling software is installed by a human, once. `install.sh` may run it when the operator executes the installer.
 
 ```bash
 npm i -g @sohopay/agent-signer@0.3.1
 ```
 
-If that version is already on `PATH`, do not reinstall. Do not run this command again while registering the workload key. ChatGPT does not install a local signer.
+If that version is already on `PATH`, do not show the command. Do not run it while registering the workload key. ChatGPT does not install a local signer.
 
 
 <a id="hosted-reference-report"></a>
@@ -121,7 +121,7 @@ If that version is already on `PATH`, do not reinstall. Do not run this command 
 One short summary. No architecture recap.
 
 - Sticky skills: installed path, or **skipped**
-- Signer: `sohopay-signer` version, or skipped (ChatGPT)
+- Signer: version the operator installed, or not installed yet (the agent does not install it; ChatGPT skips it)
 - MCP: server id + URL
 - Borrower status if you onboarded, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is)
 - Failures: exact URL and error
