@@ -31,7 +31,7 @@ get_context (v8+) or whoami (v7)
   → register_agent_workload_key (even with no wallet; COMPLETE_PROFILE does not delay this)
   → request_borrower_token (credit:facility:accept and handle:claim; no chat question)
   → authorize_agent (open consent_url; poll until ACTIVE)
-  → repeat get_context, one current blocker:
+  → repeat get_context, one current blocker (claim a listed CLAIM_HANDLE before ending any turn):
        COMPLETE_PROFILE first (report; no link; no wallet or bank; end the turn)
        CONNECT_WALLET + CONNECT_BANK: ask once, start_browser_handoff with that action
        PROVE_WALLET + CONNECT_BANK: proof, or action CONNECT_BANK (never CONNECT_WALLET)
