@@ -29,7 +29,7 @@ Verify identity first: [references/prereqs.md](references/prereqs.md).
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: onboard until spendable credit — **sohopay-onboard** (`{SKILL:sohopay-onboard}`): one `get_context` step at a time until `purchasing_power.can_pay` is true. Do not wait for the first payment, and do not start one
-- [ ] Report — [references/report.md](references/report.md)
+- [ ] Report — [references/report.md](references/report.md). Give it even when onboarding ended the turn on a blocker (`COMPLETE_PROFILE`, a status, or a borrower handoff)
 - [ ] Then operate via **sohopay-human-direct** (`{SKILL:sohopay-human-direct}`). Load spend / x402 only when that checklist reaches them
 
 Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.

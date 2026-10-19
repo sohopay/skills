@@ -217,9 +217,10 @@ done
 SIGNER_SPEC="@sohopay/agent-signer@0.3.1"
 SIGNER_PIN="${SIGNER_SPEC##*@}"
 
+# Prints implementation_version; exits nonzero when the signer gives no readable version.
 signer_version() {
   sohopay-signer capabilities --output json 2>/dev/null \
-    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).implementation_version||"0")}catch{process.stdout.write("0")}})'
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let v;try{v=JSON.parse(s).implementation_version}catch{}if(!v)process.exit(1);process.stdout.write(String(v))})'
 }
 
 # Exit 0 when the first version is older than the second.
