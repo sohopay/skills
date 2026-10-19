@@ -459,12 +459,15 @@ function checkSp5CompleteInvariants() {
     }
   }
 
-  // INV-negative — the five excluded skills contain no agent-signing phrases and no signer routing.
+  // INV-negative — excluded skills contain no agent-signing phrases and no signer routing.
+  // sohopay-setup may name the binary and the pinned global install. It still
+  // must not route key generate, pop sign, or voucher sign.
   const EXCLUDED = ['sohopay-authorize-agent', 'sohopay-repay', 'sohopay-human-direct', 'sohopay-integrate', 'sohopay-setup'];
   const ROUTING_TOKENS = [
     /\bkey generate\b/, /\bpop sign\b/, /\bvoucher sign\b/,
     /sohopay-signer\b/, /@sohopay\/agent-signer\b/, /\bSOHOPAY_SIGNER\b/,
   ];
+  const SETUP_INSTALL_TOKENS = [/sohopay-signer\b/, /@sohopay\/agent-signer\b/];
   for (const dirName of EXCLUDED) {
     for (const f of skillFiles(join(SKILLS_DIR, dirName))) {
       const raw = read(f);
@@ -472,6 +475,9 @@ function checkSp5CompleteInvariants() {
         if (re.test(raw)) fail(`INV-negative: excluded skill ${f} contains agent-signing phrase ${re}`);
       }
       for (const re of ROUTING_TOKENS) {
+        if (dirName === 'sohopay-setup' && SETUP_INSTALL_TOKENS.some((allowed) => allowed.source === re.source)) {
+          continue;
+        }
         if (re.test(raw)) fail(`INV-negative: excluded skill ${f} contains signer-routing token ${re}`);
       }
     }
@@ -485,6 +491,11 @@ function checkSp5CompleteInvariants() {
   for (const rel of PIN_SYNC_DOCS) {
     const f = join(ROOT, rel);
     if (existsSync(f)) for (const e of pinSyncErrors(read(f), rel, SIGNER_SPEC)) fail(e);
+  }
+  // install.sh runs without a repo checkout, so it carries the pin as a literal instead of importing it.
+  const installSh = join(ROOT, 'install.sh');
+  if (existsSync(installSh) && !read(installSh).includes(`SIGNER_SPEC="${SIGNER_SPEC}"`)) {
+    fail(`INV-pin-sync: install.sh must set SIGNER_SPEC="${SIGNER_SPEC}"`);
   }
 
   // INV-no-placeholder — no <x.y.z>/<version>/@latest placeholder in signer.md or workload-key.md.

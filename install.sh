@@ -44,6 +44,7 @@ BASE="$DEFAULT_BASE"
 
 err()  { printf 'ERROR: %s\n' "$*" >&2; }
 info() { printf '==> %s\n' "$*"; }
+warn() { printf 'WARN: %s\n' "$*" >&2; }
 die()  { err "$*"; exit 1; }
 
 usage() {
@@ -209,6 +210,54 @@ for f in "${skill_files[@]}"; do
   downloaded+=("$f")
 done
 
+# --- Signer (before MCP registration; ChatGPT exited above) ------------------
+# Key generation refuses npx. This script runs without a repo checkout, so the pin
+# is a literal here; INV-pin-sync keeps it equal to scripts/signer-pin.mjs.
+
+SIGNER_SPEC="@sohopay/agent-signer@0.3.1"
+SIGNER_PIN="${SIGNER_SPEC##*@}"
+
+# Prints implementation_version; exits nonzero when the signer gives no readable version.
+signer_version() {
+  sohopay-signer capabilities --output json 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let v;try{v=JSON.parse(s).implementation_version}catch{}if(!v)process.exit(1);process.stdout.write(String(v))})'
+}
+
+# Exit 0 when the first version is older than the second.
+version_older() {
+  node -e '
+    const parse = (v) => String(v).split(".").map((n) => parseInt(n, 10) || 0);
+    const [a, b] = [parse(process.argv[1]), parse(process.argv[2])];
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const d = (a[i] || 0) - (b[i] || 0);
+      if (d < 0) process.exit(0);
+      if (d > 0) process.exit(1);
+    }
+    process.exit(1);
+  ' "$1" "$2"
+}
+
+need_signer=0
+if ! command -v sohopay-signer >/dev/null 2>&1; then
+  need_signer=1
+elif version_older "$(signer_version)" "$SIGNER_PIN"; then
+  need_signer=1
+fi
+if [[ "$need_signer" -eq 1 ]]; then
+  info "Installing $SIGNER_SPEC"
+  npm i -g "$SIGNER_SPEC" || warn "Could not install $SIGNER_SPEC (permission denied, or a scoped registry returned 401). MCP registration will continue. Install it yourself: npm i -g $SIGNER_SPEC"
+fi
+if command -v sohopay-signer >/dev/null 2>&1; then
+  SIGNER_NOTE="$(signer_version)" || SIGNER_NOTE="unknown"
+else
+  SIGNER_NOTE="not installed"
+fi
+if [[ "$SIGNER_NOTE" == "not installed" ]] || [[ "$SIGNER_NOTE" == "unknown" ]] || version_older "$SIGNER_NOTE" "$SIGNER_PIN"; then
+  warn "sohopay-signer is missing or older than $SIGNER_PIN (reported: $SIGNER_NOTE). An older binary may be earlier on PATH. Install $SIGNER_SPEC and put that binary first on PATH."
+fi
+info "Signer: $SIGNER_NOTE"
+
 # --- Step 5: register MCP server ---------------------------------------------
 # Default path is OAuth: the harness discovers the server's protected-resource
 # metadata and runs the browser consent flow itself — no token is handled here. A
@@ -267,6 +316,7 @@ Skills written: ${downloaded[*]}
 MCP server id:  $MCP_SERVER_ID
 MCP server:     $MCP_URL
 MCP register:   $register_note
+Signer:         $SIGNER_NOTE
 Verification:   $verify_note
 
 Next: open borrower-onboard.md in the skills dir and complete
