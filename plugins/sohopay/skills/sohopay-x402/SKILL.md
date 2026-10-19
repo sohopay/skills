@@ -13,7 +13,7 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
-**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context comes from `{SKILL:sohopay-bootstrap}` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`). If this chat has no `get_context` result yet, call it in Wave 1 (below), never as an extra wave; do not fetch the bootstrap skill mid-pay if this file is already loaded.
+**Before:** onboarding is complete — payment readiness from `get_context`, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. Wallet proof is not a prerequisite for the key or a within-threshold passkey grant, though payment may still require a supported repayment method. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context comes from `{SKILL:sohopay-bootstrap}` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`). If this chat has no `get_context` result yet, call it in Wave 1 (below), never as an extra wave; do not fetch the bootstrap skill mid-pay if this file is already loaded.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -40,9 +40,9 @@ Do not discover prerequisites by serial 403s. `whoami.scopes` of `["borrower:tok
 
 ```text
 whoami → register_borrower (store operational_agent_id)
-  → request_borrower_token (include credit:facility:accept) — no chat prompt
   → keygen + register_agent_workload_key
-  → authorize_agent: open consent URL in this turn — sohopay-authorize-agent
+  → request_borrower_token (include credit:facility:accept) — no chat prompt
+  → authorize_agent: open passkey consent URL in this turn — sohopay-authorize-agent
   → after Grant active: prepare SAME order / SAME idempotency_key
 ```
 
@@ -50,7 +50,7 @@ whoami → register_borrower (store operational_agent_id)
 
 | Gate | When |
 |------|------|
-| Wallet proof | Only if not already verified — off-device signature in this turn. Do not ask a chat question first |
+| Repayment/source blocker | Follow `get_context`; wallet proof is not required merely to recover the workload key or within-threshold grant |
 | `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn. Do not ask first. Do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
 | No credit account | `credit: null` in the session's `get_context`, or `CREDIT_ACCOUNT_NOT_FOUND` (404) from prepare: the borrower has no credit line yet. Do not prepare again (any key, MCP or REST), sign, or retry the merchant. Tell the operator there is no credit line yet (never a zero limit) and follow `get_context` `next_actions`. Received gifts cannot be spent without a credit account either |

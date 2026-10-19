@@ -13,13 +13,13 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Execute this grant in the same turn. Do not plan. Do not fall back to `sign_transaction`. Do not ask a chat question before the consent URL.
 
-**Before:** MCP connected; wallet proof done; workload key registered. **Primary trigger:** onboarding, immediately after `register_agent_workload_key` (`{SKILLS_BASE}/borrower-onboard.md`). `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is recovery only (onboard was skipped).
+**Before:** MCP connected; workload key registered; borrower token includes `credit:facility:accept`. Wallet proof is **not** required for a within-threshold grant. **Primary trigger:** onboarding, immediately after `register_agent_workload_key` (`{SKILLS_BASE}/borrower-onboard.md`). `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is recovery only (onboard was skipped).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Consent link: open the `consent_url` returned by the challenge **verbatim** (`…/agent/authorize#<challenge_id>`) — never rebuild it from `typed_data`. Details: [references/consent-page.md](#hosted-reference-consent-page). Staging `https://staging.sohopay.xyz/agent/authorize`. Production `https://sohopay.xyz/agent/authorize`.
 
-Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. On pay-time recovery, cover the pending payment.
+Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. These are inside the passkey-only browser thresholds. On pay-time recovery, cover the pending payment; terms above the browser thresholds require an EOA signature in addition to passkey step-up.
 
 Need `credit:facility:accept` on the borrower token. If it is missing, call `request_borrower_token` with that scope before the challenge. Do **not** ask before that token call.
 
@@ -27,7 +27,7 @@ Need `credit:facility:accept` on the borrower token. If it is missing, call `req
 1. authorize_agent challenge (operational_agent_id, terms, fresh idempotency_key)
 2. Open the response's consent_url now, verbatim. Page POSTs complete and auto-returns to the harness — do not wait for a JSON paste
 3. get_agent_authorization every 5s for up to 2 minutes (24 attempts). Do not remint the challenge. Do not end the turn after only opening the page
-4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish signing; do not invent a signature
+4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish consent; do not invent a passkey assertion or signature
 5. Onboarding: no prepare. Pay-time recovery: after ACTIVE, prepare_x402_payment SAME order / SAME payment idempotency_key
 6. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
 ```
@@ -46,7 +46,7 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 
 ## Consent page (preferred borrower UX)
 
-Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and sign in their wallet.
+Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and complete passkey step-up. A wallet is optional for within-threshold grants; larger grants also require an EOA signature.
 
 | Environment | Consent base (live) |
 |-------------|---------------------|
@@ -71,12 +71,13 @@ If your browser tool cannot open URLs, print `consent_url` for the operator to o
 - Legacy `#{base64url(JSON{ challenge_id, typed_data, expires_at? })}` is still accepted for older agents but is not the path to use.
 - `typed_data.primaryType` is `AgentAuthorizationGrant`.
 - Empty / missing hash → **Invalid authorization link** (expected without a challenge).
-- After wallet sign → the page POSTs the signature to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`). If complete returns a safe harness `redirect_uri`, the page auto-navigates (same as MCP login approve). If missing or unsafe, it stays on **Grant active**. Never put `redirect_uri` in the hash.
+- The page starts a principal-bound `AGENT_AUTHORIZATION` session with passkey step-up. Within-threshold terms can complete without a wallet. Above threshold, the page also collects the EOA signature.
+- After consent → the page POSTs completion to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`). If complete returns a safe harness `redirect_uri`, the page auto-navigates (same as MCP login approve). If missing or unsafe, it stays on **Grant active**. Never put `redirect_uri` in the hash.
 - The grant becomes ACTIVE in the backend. **Do not wait for the operator to paste JSON.** The agent still polls `get_agent_authorization` until ACTIVE.
 
 **Preferred completion:** poll `get_agent_authorization` with this `challenge_id` every **5 seconds** for **2 minutes** (max 24 attempts). Do not poll `authorizations/current`. Do not remint the challenge while polling. After ACTIVE on pay-time recovery, retry `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key`. During onboard do not invent a dummy prepare. Do not re-GET the merchant. Do not mint a new payment idempotency key.
 
-**Fallback only** if the page cannot complete (shows an error, or the operator has no in-page success): they may copy:
+**Fallback only** for an EOA-backed grant if the page cannot submit the wallet signature (shows an error, or the operator has no in-page success): they may copy:
 
 ```json
 {

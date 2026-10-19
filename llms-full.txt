@@ -37,13 +37,13 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
-- [ ] Step 6: spend-ready onboard — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), including the financial-source choice and facility review before the workload key, then **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`) immediately after the key. Do not wait for the first payment
+- [ ] Step 6: spend-ready onboard — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`): register this terminal's workload key immediately after terminal registration, then **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`) through passkey consent before financial-source/facility readiness. Do not wait for the first payment
 - [ ] Report — [references/report.md](#hosted-reference-report)
 - [ ] Then operate via **sohopay-human-direct** (`{SKILLS_BASE}/human-direct-flow.md`). Load spend / x402 only when that checklist reaches them
 
 Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.
 
-Onboarding chain: `register_borrower` (store `operational_agent_id` + `terminal_id`) → if `get_context` lists `FINANCIAL_SOURCE_REQUIRED`, STOP and ask wallet or bank, then `start_browser_handoff` with that `action` and a fresh idempotency key → when `REVIEW_AND_ACCEPT_FACILITY` is listed, `review_facility_offer` (acceptance needs no wallet proof; paying still needs the ACTIVE grant) → wallet proof when the borrower chose the wallet (`PROVE_WALLET`) → `request_borrower_token` (`spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, `credit:facility:accept`) → `register_agent_workload_key` → `authorize_agent`. `CONNECT_WALLET` means there is no wallet. `PROVE_WALLET` plus `CONNECT_BANK` means the wallet is already registered: prove it or connect a bank. A bank-only borrower (no proven wallet) skips the key and the grant and is reported onboarded but not spend-ready. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent` once the source step is done. Open the grant consent page in that same turn. Onboarding is incomplete until the grant is ACTIVE. Never fabricate a signature.
+Onboarding chain: `register_borrower` (store `operational_agent_id` + `terminal_id`) → `register_agent_workload_key` immediately (wallet-independent) → `request_borrower_token` including `credit:facility:accept` → `authorize_agent` and open the passkey consent page (within-threshold grants need no wallet; above-threshold grants also need an EOA signature) → if `get_context` lists `FINANCIAL_SOURCE_REQUIRED`, STOP and ask wallet or bank, then `start_browser_handoff` with that action and a fresh idempotency key → when `REVIEW_AND_ACCEPT_FACILITY` is listed, `review_facility_offer` → wallet proof only when the borrower chose the wallet (`PROVE_WALLET`). `CONNECT_WALLET` means there is no wallet. `PROVE_WALLET` plus `CONNECT_BANK` means the wallet is already registered: prove it or connect a bank. A bank-only borrower still registers the key and activates a within-threshold passkey grant; a later `REPAYMENT_METHOD_REQUIRED` may still leave them not spend-ready. Apart from an explicit source-choice STOP, do **not** wait for a chat reply, before `request_borrower_token`; do not wait for first payment; never fabricate a passkey assertion or signature.
 
 A payRequest (“pay” / merchant 402 URL) is consent for that payment — **sohopay-x402**. Before a **non-payRequest** payment:
 
@@ -442,22 +442,22 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/bootstrap.md`
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`. Its `next_actions` is a list of action names (no `reason_code`)
-2. Financial source — the step is listed when `get_context` has an entry with `reason_code: FINANCIAL_SOURCE_REQUIRED`, or step 1's `next_actions` names `CONNECT_WALLET` / `CONNECT_BANK`. STOP before wallet proof, the workload key and `authorize_agent`, and ask the borrower: wallet or bank (one chat question naming both). If `COMPLETE_PROFILE` is listed too, report it first: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. Then:
+2. Protocol V2 workload key — **route keygen + PoP to the signer**, never hand-roll crypto: [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this immediately after `register_borrower`, regardless of wallet state: a missing or unproven wallet does not block key registration. Do not call `start_browser_handoff` to unblock the key
+3. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**, `handle:claim`. Store `token_requested_at` + `expires_in`. Do **not** ask the operator before this call. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
+4. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key and token. Open the consent URL in this same turn. The page uses passkey step-up; within-threshold grants can complete without a wallet, while larger grants also require an EOA signature. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
+5. Financial source — the step is listed when `get_context` has an entry with `reason_code: FINANCIAL_SOURCE_REQUIRED`, or step 1's `next_actions` names `CONNECT_WALLET` / `CONNECT_BANK`. The key and grant are already complete; now STOP and ask the borrower: wallet or bank (one chat question naming both). If `COMPLETE_PROFILE` is listed too, report it first: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. Then:
    - **No wallet** (`CONNECT_WALLET` + `CONNECT_BANK`): call `start_browser_handoff` with `action` set to the chosen step and a fresh `idempotency_key`.
-   - **Unproven wallet** (`PROVE_WALLET` + `CONNECT_BANK`): wallet → step 4 (the proof, no link); bank → `start_browser_handoff` with `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed (`409 NO_BROWSER_HANDOFF`).
+   - **Unproven wallet** (`PROVE_WALLET` + `CONNECT_BANK`): wallet → step 7 (the proof, no link); bank → `start_browser_handoff` with `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed (`409 NO_BROWSER_HANDOFF`).
    - Open the returned `open_url` for the borrower verbatim, `#…` part included. Do not poll: when the borrower says they are done, call `get_context` again.
    - A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence for a borrower who already has a source: report it, do not stop for it.
    - A borrower with no wallet is registered, not an error: never ask for a wallet signature to invent one. Older server without the tool, `409`, expired link: [references/onboarding-context.md](#hosted-reference-onboarding-context)
-3. Facility offer — when `next_actions` lists `REVIEW_AND_ACCEPT_FACILITY` (`FACILITY_OFFER_ACCEPTANCE_REQUIRED`), call `review_facility_offer` (fresh `idempotency_key`, no offer argument), open the returned `open_url` verbatim, and call `get_context` when the borrower is done. Never build a `/facility/accept` link. Acceptance needs no wallet proof, so do not ask for a wallet signature to activate the facility. Acceptance opens the credit line; paying also needs the ACTIVE agent grant from step 8
-4. Wallet proof — run it when the borrower chose the wallet while `PROVE_WALLET` is listed, or when `wallet_proof_verified` is false and no source step is listed (a deployment without `PROVE_WALLET`). Skip it when `wallet_proof_verified` is true, the borrower chose a bank, or there is no wallet. `request_signature_challenge` → borrower signs EIP-712 off-device → `submit_signature`. Never fabricate a signature, and once the wallet is chosen do not insert another chat question before the challenge
-5. `get_borrower_status`
-6. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**, `handle:claim`. Store `token_requested_at` + `expires_in`. Apart from the step-2 source choice, do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token`. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
-7. Protocol V2 workload key — **route keygen + PoP to the signer**, never hand-roll crypto: [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this during onboarding, not on first pay. Skip it while the borrower has no proven wallet (see **Bank only** below)
-8. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key. Open the consent URL in this same turn. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll. Skip it while the borrower has no proven wallet: the grant needs the borrower's wallet signature (`AGENT_AUTHORIZATION_WALLET_REQUIRED`)
+6. Facility offer — when `next_actions` lists `REVIEW_AND_ACCEPT_FACILITY` (`FACILITY_OFFER_ACCEPTANCE_REQUIRED`), call `review_facility_offer` (fresh `idempotency_key`, no offer argument), open the returned `open_url` verbatim, and call `get_context` when the borrower is done. Never build a `/facility/accept` link. Acceptance needs no wallet proof. Acceptance opens the credit line; paying also needs the ACTIVE agent grant from step 4
+7. Wallet proof — run it when the borrower chose the wallet while `PROVE_WALLET` is listed, or when `wallet_proof_verified` is false and no source step is listed (a deployment without `PROVE_WALLET`). Skip it when `wallet_proof_verified` is true, the borrower chose a bank, or there is no wallet. `request_signature_challenge` → borrower signs EIP-712 off-device → `submit_signature`. Never fabricate a signature, and once the wallet is chosen do not insert another chat question before the challenge
+8. `get_borrower_status`. If step 3 returned wallet-gated scopes in `dropped_scopes`, re-request the borrower token after wallet proof/source completion
 9. `POST /api/v1/auth/authorization-context` before privileged tools
-10. Handle (**required gate**) — only **after** the token in step 6 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
+10. Handle (**required gate**) — only **after** the token in step 3 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
 
-**Bank only.** A borrower who connected a bank and has no proven wallet (`wallet_proof_verified` false) skips steps 4, 7 and 8. Once steps 3, 6 and 10 are done, report them as **onboarded but not spend-ready**: the agent grant needs a wallet signature, and some deployments also require a verified wallet before any draw (`REPAYMENT_METHOD_REQUIRED`). Tell the operator a wallet is still needed before the agent can pay. Do not loop on steps 7–8, and do not ask for a wallet signature in chat.
+**Bank only.** A borrower who connected a bank and has no proven wallet still completes steps 2–4: the workload key is wallet-independent and a within-threshold grant uses passkey consent. Skip only step 7. If `get_context` still reports `REPAYMENT_METHOD_REQUIRED` or another payment blocker, report them as **onboarded but not spend-ready** and say a supported repayment method is still needed before payment. Do not repeat key registration or authorization, and do not ask for a wallet signature in chat.
 
 `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses: report them, call no tool, and invent no link. The only links you give are the `open_url`s that `start_browser_handoff` or `review_facility_offer` returned. Never ask for a legal name, date of birth, bank details, or a passkey in chat. Keep doing any `PAY`, repayment or handle action listed alongside these steps. Details: [references/onboarding-context.md](#hosted-reference-onboarding-context)
 
@@ -477,7 +477,7 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 
 A **@handle** is the public address other agents resolve to send gifts. It is a **required** part of onboarding: the borrower is not onboarded until they hold one. A borrower is still *addressed* by `borrowerId` for payments and repayment — the handle's job is to make them discoverable and resolvable by others — but onboarding does not complete without a claimed handle. Report the step as outstanding rather than quietly dropping it; the borrower can still change one any time via `{SKILLS_BASE}/handle.md`.
 
-Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 6). A dropped scope is not fatal on its own — re-request after gates and confirm `handle:claim` is in `scopes` before claiming; if it never arrives, this gate cannot be satisfied and onboarding stays incomplete (see **When the claim cannot succeed**).
+Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 3). A dropped scope is not fatal on its own — re-request after gates and confirm `handle:claim` is in `scopes` before claiming; if it never arrives, this gate cannot be satisfied and onboarding stays incomplete (see **When the claim cannot succeed**).
 
 **Ordering (critical):** run the handle step **after** `request_borrower_token` and, when it runs, the workload key, never before them. The borrower-token rule forbids any chat question before the token, and the confirmation below is a chat question. Keep it out of the critical chain (steps 1–9).
 
@@ -551,7 +551,7 @@ Every entry with `reason_code: FINANCIAL_SOURCE_REQUIRED` is an alternative, so 
 4. Do not start a link, or a signature challenge, before the borrower has chosen.
 5. A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` belongs to a borrower who already has a verified source: it is optional evidence, so report it and do not stop for it.
 
-A borrower who picks the bank and has no proven wallet can accept a facility but cannot yet grant this agent spending (the grant needs a wallet signature). Report them as onboarded but not spend-ready: see **Bank only** in the onboarding steps.
+A borrower who picks the bank and has no proven wallet still registers the workload key and may activate a within-threshold grant through passkey consent. Payment can remain blocked by `REPAYMENT_METHOD_REQUIRED`; report that readiness state separately. See **Bank only** in the onboarding steps.
 
 `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses, not browser steps (an older deployment may still mark them `handoff_type: "OPEN_URL"`; treat them the same). Report them: the borrower needs SohoPay to evaluate them for credit, or has an offer waiting. Call no tool and give no link. A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence and does not block that status.
 
@@ -1169,7 +1169,7 @@ Execute the fast path. Do not write a plan. Do not fetch extra skills mid-pay if
 
 **Primary path:** `prepare_x402_payment` — V2 `VOUCHER_ISSUED` (agent Ed25519-signs) or V1 `COMPLETED`. Merchant settles. Never `execute_payment` / `create_agent_session` on human-direct.
 
-**Before:** onboarding is complete — wallet proof, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context comes from `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`). If this chat has no `get_context` result yet, call it in Wave 1 (below), never as an extra wave; do not fetch the bootstrap skill mid-pay if this file is already loaded.
+**Before:** onboarding is complete — payment readiness from `get_context`, spend scopes, this host's terminal, a registered workload key, and an **ACTIVE** agent grant. Wallet proof is not a prerequisite for the key or a within-threshold passkey grant, though payment may still require a supported repayment method. If prepare returns `X402_AGENT_KEY_NOT_REGISTERED` or `AGENT_AUTHORIZATION_REQUIRED`, onboard was skipped — follow § Recovery if onboard was skipped before iterating prepare. Context comes from `{SKILLS_BASE}/bootstrap.md` (v8+ `get_context`; v7 `whoami` + `get_borrower_status`). If this chat has no `get_context` result yet, call it in Wave 1 (below), never as an extra wave; do not fetch the bootstrap skill mid-pay if this file is already loaded.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -1196,9 +1196,9 @@ Do not discover prerequisites by serial 403s. `whoami.scopes` of `["borrower:tok
 
 ```text
 whoami → register_borrower (store operational_agent_id)
-  → request_borrower_token (include credit:facility:accept) — no chat prompt
   → keygen + register_agent_workload_key
-  → authorize_agent: open consent URL in this turn — sohopay-authorize-agent
+  → request_borrower_token (include credit:facility:accept) — no chat prompt
+  → authorize_agent: open passkey consent URL in this turn — sohopay-authorize-agent
   → after Grant active: prepare SAME order / SAME idempotency_key
 ```
 
@@ -1206,7 +1206,7 @@ whoami → register_borrower (store operational_agent_id)
 
 | Gate | When |
 |------|------|
-| Wallet proof | Only if not already verified — off-device signature in this turn. Do not ask a chat question first |
+| Repayment/source blocker | Follow `get_context`; wallet proof is not required merely to recover the workload key or within-threshold grant |
 | `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn. Do not ask first. Do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
 | No credit account | `credit: null` in the session's `get_context`, or `CREDIT_ACCOUNT_NOT_FOUND` (404) from prepare: the borrower has no credit line yet. Do not prepare again (any key, MCP or REST), sign, or retry the merchant. Tell the operator there is no credit line yet (never a zero limit) and follow `get_context` `next_actions`. Received gifts cannot be spent without a credit account either |
@@ -1671,13 +1671,13 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Execute this grant in the same turn. Do not plan. Do not fall back to `sign_transaction`. Do not ask a chat question before the consent URL.
 
-**Before:** MCP connected; wallet proof done; workload key registered. **Primary trigger:** onboarding, immediately after `register_agent_workload_key` (`{SKILLS_BASE}/borrower-onboard.md`). `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is recovery only (onboard was skipped).
+**Before:** MCP connected; workload key registered; borrower token includes `credit:facility:accept`. Wallet proof is **not** required for a within-threshold grant. **Primary trigger:** onboarding, immediately after `register_agent_workload_key` (`{SKILLS_BASE}/borrower-onboard.md`). `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is recovery only (onboard was skipped).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
 Consent link: open the `consent_url` returned by the challenge **verbatim** (`…/agent/authorize#<challenge_id>`) — never rebuild it from `typed_data`. Details: [references/consent-page.md](#hosted-reference-consent-page). Staging `https://staging.sohopay.xyz/agent/authorize`. Production `https://sohopay.xyz/agent/authorize`.
 
-Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. On pay-time recovery, cover the pending payment.
+Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. These are inside the passkey-only browser thresholds. On pay-time recovery, cover the pending payment; terms above the browser thresholds require an EOA signature in addition to passkey step-up.
 
 Need `credit:facility:accept` on the borrower token. If it is missing, call `request_borrower_token` with that scope before the challenge. Do **not** ask before that token call.
 
@@ -1685,7 +1685,7 @@ Need `credit:facility:accept` on the borrower token. If it is missing, call `req
 1. authorize_agent challenge (operational_agent_id, terms, fresh idempotency_key)
 2. Open the response's consent_url now, verbatim. Page POSTs complete and auto-returns to the harness — do not wait for a JSON paste
 3. get_agent_authorization every 5s for up to 2 minutes (24 attempts). Do not remint the challenge. Do not end the turn after only opening the page
-4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish signing; do not invent a signature
+4. Stop on ACTIVE, EXPIRED, or 120s. Timeout still PENDING → tell the operator to finish consent; do not invent a passkey assertion or signature
 5. Onboarding: no prepare. Pay-time recovery: after ACTIVE, prepare_x402_payment SAME order / SAME payment idempotency_key
 6. VOUCHER_ISSUED → continue sohopay-x402. Do not re-GET the merchant
 ```
@@ -1704,7 +1704,7 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 
 ## Consent page (preferred borrower UX)
 
-Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and sign in their wallet.
+Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and complete passkey step-up. A wallet is optional for within-threshold grants; larger grants also require an EOA signature.
 
 | Environment | Consent base (live) |
 |-------------|---------------------|
@@ -1729,12 +1729,13 @@ If your browser tool cannot open URLs, print `consent_url` for the operator to o
 - Legacy `#{base64url(JSON{ challenge_id, typed_data, expires_at? })}` is still accepted for older agents but is not the path to use.
 - `typed_data.primaryType` is `AgentAuthorizationGrant`.
 - Empty / missing hash → **Invalid authorization link** (expected without a challenge).
-- After wallet sign → the page POSTs the signature to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`). If complete returns a safe harness `redirect_uri`, the page auto-navigates (same as MCP login approve). If missing or unsafe, it stays on **Grant active**. Never put `redirect_uri` in the hash.
+- The page starts a principal-bound `AGENT_AUTHORIZATION` session with passkey step-up. Within-threshold terms can complete without a wallet. Above threshold, the page also collects the EOA signature.
+- After consent → the page POSTs completion to SohoPay (`POST /api/v1/auth/agent-authorizations/complete`). If complete returns a safe harness `redirect_uri`, the page auto-navigates (same as MCP login approve). If missing or unsafe, it stays on **Grant active**. Never put `redirect_uri` in the hash.
 - The grant becomes ACTIVE in the backend. **Do not wait for the operator to paste JSON.** The agent still polls `get_agent_authorization` until ACTIVE.
 
 **Preferred completion:** poll `get_agent_authorization` with this `challenge_id` every **5 seconds** for **2 minutes** (max 24 attempts). Do not poll `authorizations/current`. Do not remint the challenge while polling. After ACTIVE on pay-time recovery, retry `prepare_x402_payment` with the **same** order / **same** payment `idempotency_key`. During onboard do not invent a dummy prepare. Do not re-GET the merchant. Do not mint a new payment idempotency key.
 
-**Fallback only** if the page cannot complete (shows an error, or the operator has no in-page success): they may copy:
+**Fallback only** for an EOA-backed grant if the page cannot submit the wallet signature (shows an error, or the operator has no in-page success): they may copy:
 
 ```json
 {
