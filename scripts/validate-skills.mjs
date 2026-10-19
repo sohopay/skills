@@ -492,6 +492,11 @@ function checkSp5CompleteInvariants() {
     const f = join(ROOT, rel);
     if (existsSync(f)) for (const e of pinSyncErrors(read(f), rel, SIGNER_SPEC)) fail(e);
   }
+  // install.sh runs without a repo checkout, so it carries the pin as a literal instead of importing it.
+  const installSh = join(ROOT, 'install.sh');
+  if (existsSync(installSh) && !read(installSh).includes(`SIGNER_SPEC="${SIGNER_SPEC}"`)) {
+    fail(`INV-pin-sync: install.sh must set SIGNER_SPEC="${SIGNER_SPEC}"`);
+  }
 
   // INV-no-placeholder — no <x.y.z>/<version>/@latest placeholder in signer.md or workload-key.md.
   const PLACEHOLDER = /<x\.y\.z>|<version>|<x\.y>|@latest\b/;

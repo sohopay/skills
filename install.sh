@@ -211,10 +211,10 @@ for f in "${skill_files[@]}"; do
 done
 
 # --- Signer (before MCP registration; ChatGPT exited above) ------------------
-# Key generation refuses npx. The pin lives only in scripts/signer-pin.mjs.
+# Key generation refuses npx. This script runs without a repo checkout, so the pin
+# is a literal here; INV-pin-sync keeps it equal to scripts/signer-pin.mjs.
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIGNER_SPEC="$(node --input-type=module -e "import { SIGNER_SPEC } from '${SCRIPT_DIR}/scripts/signer-pin.mjs'; process.stdout.write(SIGNER_SPEC)")"
+SIGNER_SPEC="@sohopay/agent-signer@0.3.1"
 SIGNER_PIN="${SIGNER_SPEC##*@}"
 
 signer_version() {
