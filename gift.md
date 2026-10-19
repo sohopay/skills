@@ -24,7 +24,7 @@ Need `gift:send` on the borrower token. If it is missing, call `request_borrower
    If they gave a UUID, use it. Never send the handle string.
 2. Grant — get_agent_authorization: gift_enabled must be true and status ACTIVE (amount caps are server-side)
 3. send_gift — fresh UUID v4 idempotency_key, with borrower_id + operational_agent_id
-4. Report — gift_id, amount, recipient, remaining headroom
+4. Report — gift_id, amount, recipient, remaining_usd (that gift's unspent remainder)
 ```
 
 ## Phase 1 — Recipient resolution
@@ -80,7 +80,7 @@ is nothing to compute up front and no re-grant that raises them. Send the gift a
 
 ## Phase 4 — Confirmation
 
-The response is `{ gift_id, sender_borrower_id, recipient_borrower_id, amount_usd, remaining_usd, gifted_at, spendable, operational_agent_id, authorization_version }`. Report `gift_id`, the amount actually sent, the recipient (`@handle` and/or UUID), and `remaining_usd` as the borrower's remaining credit headroom.
+The response is `{ gift_id, sender_borrower_id, recipient_borrower_id, amount_usd, remaining_usd, gifted_at, spendable, operational_agent_id, authorization_version }`. Report `gift_id`, the amount actually sent, the recipient (`@handle` and/or UUID), and `remaining_usd` as that gift's unspent remainder (`gift.remainingAmount6`), not the sender's available credit.
 
 Gifted credit is **immediately spendable** (`spendable: true`) — it funds the recipient's own payments, including x402, and it is not a refundable credit line. Say that once, in the confirmation, before the operator gifts again. Do not follow up with a payment on the recipient's behalf; that needs the recipient's own grant.
 

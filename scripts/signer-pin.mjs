@@ -2,7 +2,8 @@
  * Single source of truth for the pinned signer identity and its command
  * contract ids. INV-pin-sync (validate-skills.mjs) asserts every doc/CI mention
  * of the version matches SIGNER_SPEC; INV-no-placeholder asserts no `<x.y.z>`
- * placeholder survives. Bump SIGNER_PIN here and nowhere else.
+ * placeholder survives. Bump SIGNER_PIN here, then fix every mention INV-pin-sync
+ * flags (docs and the literal in install.sh, which runs without a checkout).
  */
 export const SIGNER_PKG = '@sohopay/agent-signer';
 export const SIGNER_PIN = '0.3.1';

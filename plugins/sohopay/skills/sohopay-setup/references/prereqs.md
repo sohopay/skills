@@ -47,6 +47,12 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 
 ## Step 2: Check prerequisites
 
-Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). **Node.js and npm are not required** and must not be asked for or installed as part of normal setup.
+Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). The agent does not install Node, and does not run `node --version` or `npm i`.
 
-Do **not** run `node --version` / `npm --version` on the default path.
+When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, show the operator this command and wait. Do not run it. The same rule is in the workload-key reference: secret-handling software is installed by a human, once. `install.sh` may run it when the operator executes the installer.
+
+```bash
+npm i -g @sohopay/agent-signer@0.3.1
+```
+
+If that version is already on `PATH`, do not show the command. Do not run it while registering the workload key. ChatGPT does not install a local signer.

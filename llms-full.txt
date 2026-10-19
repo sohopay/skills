@@ -25,7 +25,7 @@ For **staging**, first load **sohopay-setup-staging** (`{SKILLS_BASE}/setup-stag
 
 CRITICAL: **sohopay-mcp-server** is the MCP runtime and **sohopay-backend** is the source of truth. Do not hold borrower private keys. MCP transports signatures only.
 
-Default path needs **network access** and may write **MCP config only**. Skip sticky skills unless the operator asked. Never turn off permission prompts.
+Default path needs **network access** and may write **MCP config only**. The agent does not install the signer. Skip sticky skills unless the operator asked. Never turn off permission prompts.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
@@ -35,15 +35,16 @@ Verify identity first: [references/prereqs.md](#hosted-reference-prereqs).
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](#hosted-reference-prereqs)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
+- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, show the operator `npm i -g @sohopay/agent-signer@0.3.1` and wait. Do not run it. The same rule is in the workload-key reference: a human installs it, once. `install.sh` may run it when the operator executes the installer. Do not run it again while registering the workload key
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
-- [ ] Step 6: spend-ready onboard — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`): register this terminal's workload key immediately after terminal registration, then **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`) through passkey consent before financial-source/facility readiness. Do not wait for the first payment
-- [ ] Report — [references/report.md](#hosted-reference-report)
+- [ ] Step 6: onboard until spendable credit — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`): one `get_context` step at a time until `purchasing_power.can_pay` is true. Do not wait for the first payment, and do not start one
+- [ ] Report — [references/report.md](#hosted-reference-report). Give it even when onboarding ended the turn on a blocker (`COMPLETE_PROFILE`, a status, or a borrower handoff)
 - [ ] Then operate via **sohopay-human-direct** (`{SKILLS_BASE}/human-direct-flow.md`). Load spend / x402 only when that checklist reaches them
 
 Fetch order: local `sohopay-*` `SKILL.md` → `{SKILLS_BASE}` (CDN after publish) → GitHub raw last-resort. Do not fetch `llms-full.txt`.
 
-Onboarding chain: `register_borrower` (store `operational_agent_id` + `terminal_id`) → `register_agent_workload_key` immediately (wallet-independent) → `request_borrower_token` including `credit:facility:accept` → `authorize_agent` and open the passkey consent page (within-threshold grants need no wallet; above-threshold grants also need an EOA signature) → if `get_context` lists `FINANCIAL_SOURCE_REQUIRED`, STOP and ask wallet or bank, then `start_browser_handoff` with that action and a fresh idempotency key → when `REVIEW_AND_ACCEPT_FACILITY` is listed, `review_facility_offer` → wallet proof only when the borrower chose the wallet (`PROVE_WALLET`). `CONNECT_WALLET` means there is no wallet. `PROVE_WALLET` plus `CONNECT_BANK` means the wallet is already registered: prove it or connect a bank. A bank-only borrower still registers the key and activates a within-threshold passkey grant; a later `REPAYMENT_METHOD_REQUIRED` may still leave them not spend-ready. Apart from an explicit source-choice STOP, do **not** wait for a chat reply, before `request_borrower_token`; do not wait for first payment; never fabricate a passkey assertion or signature.
+Onboarding chain: `get_context` → `register_borrower` (store `operational_agent_id` + `terminal_id`) → `register_agent_workload_key` immediately, even with no wallet and even when `COMPLETE_PROFILE` is listed → `request_borrower_token` including `credit:facility:accept` and `handle:claim` → `authorize_agent` and open the passkey consent page until the grant is ACTIVE (within-threshold grants need no wallet; above-threshold grants also need an EOA signature) → repeat `get_context` and do only the current blocker. `COMPLETE_PROFILE` is first, ahead of any wallet or bank step: the borrower enters legal name and date of birth on the SohoPay page, never in chat, with no link; report it and end the turn. `CONNECT_WALLET` and `CONNECT_BANK` together: ask once, wallet or bank, then `start_browser_handoff` with that `action`. `PROVE_WALLET` plus `CONNECT_BANK`: wallet means the proof; bank means `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed. `REVIEW_AND_ACCEPT_FACILITY`: `review_facility_offer`, open `open_url`, then re-read. When no agent-actionable step is left (`EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`, `REPAYMENT_METHOD_REQUIRED`, `IN_REVIEW`, `INELIGIBLE`), report them as onboarded but not spend-ready and end the turn. Do not poll. `CLAIM_HANDLE`: claim a handle the borrower confirms, before ending any of the turns above. A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one. Stop when `purchasing_power.can_pay` is true, report available credit, and do not start a payment. Apart from an explicit source-choice STOP, do **not** wait for a chat reply, before `request_borrower_token`; do not wait for first payment; never fabricate a passkey assertion or signature.
 
 A payRequest (“pay” / merchant 402 URL) is consent for that payment — **sohopay-x402**. Before a **non-payRequest** payment:
 
@@ -108,9 +109,15 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 
 ## Step 2: Check prerequisites
 
-Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). **Node.js and npm are not required** and must not be asked for or installed as part of normal setup.
+Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). The agent does not install Node, and does not run `node --version` or `npm i`.
 
-Do **not** run `node --version` / `npm --version` on the default path.
+When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, show the operator this command and wait. Do not run it. The same rule is in the workload-key reference: secret-handling software is installed by a human, once. `install.sh` may run it when the operator executes the installer.
+
+```bash
+npm i -g @sohopay/agent-signer@0.3.1
+```
+
+If that version is already on `PATH`, do not show the command. Do not run it while registering the workload key. ChatGPT does not install a local signer.
 
 
 <a id="hosted-reference-report"></a>
@@ -122,6 +129,7 @@ Do **not** run `node --version` / `npm --version` on the default path.
 One short summary. No architecture recap.
 
 - Sticky skills: installed path, or **skipped**
+- Signer: version the operator installed, or not installed yet (the agent does not install it; ChatGPT skips it)
 - MCP: server id + URL
 - Borrower status if you onboarded, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is)
 - Failures: exact URL and error
@@ -442,22 +450,21 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](#hosted-reference-whoami)) + `get_borrower_status`. `{SKILLS_BASE}/bootstrap.md`
 1. `register_borrower` — creates this host’s terminal; store `operational_agent_id` + `terminal_id`. Its `next_actions` is a list of action names (no `reason_code`)
-2. Protocol V2 workload key — **route keygen + PoP to the signer**, never hand-roll crypto: [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this immediately after `register_borrower`, regardless of wallet state: a missing or unproven wallet does not block key registration. Do not call `start_browser_handoff` to unblock the key
+2. Protocol V2 workload key — **route keygen + PoP to the signer**, never hand-roll crypto: [references/workload-key.md](#hosted-reference-workload-key) (requires step 1). Skipping step 1 → `TERMINAL_NOT_OWNED`. Run this immediately after `register_borrower`, even with no wallet and even when `COMPLETE_PROFILE` is listed. A missing profile does not block the key. Do not call `start_browser_handoff` to unblock the key. If the signer binary is missing, stop and do not install it
 3. `request_borrower_token` immediately with `spend:intent:create`, `policy:evaluate`, `signing:request`, `payment:read`, **`credit:facility:accept`**, `handle:claim`. Store `token_requested_at` + `expires_in`. Do **not** ask the operator before this call. `whoami.scopes` of `borrower:token` is the OAuth JWT, not expiry. A later pay refreshes only when this chat has no successful token newer than 12 minutes — `{SKILLS_BASE}/x402-credit-pay.md`
-4. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key and token. Open the consent URL in this same turn. The page uses passkey step-up; within-threshold grants can complete without a wallet, while larger grants also require an EOA signature. Onboarding is incomplete until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
-5. Financial source — the step is listed when `get_context` has an entry with `reason_code: FINANCIAL_SOURCE_REQUIRED`, or step 1's `next_actions` names `CONNECT_WALLET` / `CONNECT_BANK`. The key and grant are already complete; now STOP and ask the borrower: wallet or bank (one chat question naming both). If `COMPLETE_PROFILE` is listed too, report it first: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. Then:
-   - **No wallet** (`CONNECT_WALLET` + `CONNECT_BANK`): call `start_browser_handoff` with `action` set to the chosen step and a fresh `idempotency_key`.
-   - **Unproven wallet** (`PROVE_WALLET` + `CONNECT_BANK`): wallet → step 7 (the proof, no link); bank → `start_browser_handoff` with `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed (`409 NO_BROWSER_HANDOFF`).
-   - Open the returned `open_url` for the borrower verbatim, `#…` part included. Do not poll: when the borrower says they are done, call `get_context` again.
-   - A `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence for a borrower who already has a source: report it, do not stop for it.
-   - A borrower with no wallet is registered, not an error: never ask for a wallet signature to invent one. Older server without the tool, `409`, expired link: [references/onboarding-context.md](#hosted-reference-onboarding-context)
-6. Facility offer — when `next_actions` lists `REVIEW_AND_ACCEPT_FACILITY` (`FACILITY_OFFER_ACCEPTANCE_REQUIRED`), call `review_facility_offer` (fresh `idempotency_key`, no offer argument), open the returned `open_url` verbatim, and call `get_context` when the borrower is done. Never build a `/facility/accept` link. Acceptance needs no wallet proof. Acceptance opens the credit line; paying also needs the ACTIVE agent grant from step 4
-7. Wallet proof — run it when the borrower chose the wallet while `PROVE_WALLET` is listed, or when `wallet_proof_verified` is false and no source step is listed (a deployment without `PROVE_WALLET`). Skip it when `wallet_proof_verified` is true, the borrower chose a bank, or there is no wallet. `request_signature_challenge` → borrower signs EIP-712 off-device → `submit_signature`. Never fabricate a signature, and once the wallet is chosen do not insert another chat question before the challenge
-8. `get_borrower_status`. If step 3 returned wallet-gated scopes in `dropped_scopes`, re-request the borrower token after wallet proof/source completion
-9. `POST /api/v1/auth/authorization-context` before privileged tools
-10. Handle (**required gate**) — only **after** the token in step 3 (never a chat question before the token). Onboarding is **incomplete until a handle is claimed**. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
+4. Agent grant — `{SKILLS_BASE}/authorize-agent.md` immediately after the key and token. Open the consent URL in this same turn. The page uses passkey step-up; within-threshold grants can complete without a wallet, while larger grants also require an EOA signature. Poll until the grant is ACTIVE. Do not invent a dummy `prepare_x402_payment` to poll
+5. Repeat `get_context` and do only the current blocker. `COMPLETE_PROFILE` is first, ahead of any wallet or bank step. Before you end the turn for any reason below, do step 6 when `CLAIM_HANDLE` is listed:
+   - `COMPLETE_PROFILE`: say the borrower enters legal name and date of birth on the SohoPay page. Do not ask for them in chat. Do not invent a link. Do not start a wallet or bank step. This is not agent-actionable: report it, do step 6 if `CLAIM_HANDLE` is listed, then end the turn. Do not poll
+   - `CONNECT_WALLET` and `CONNECT_BANK` together: ask once, wallet or bank. Then `start_browser_handoff` with that `action` and a fresh `idempotency_key`. Open `open_url` verbatim, `#…` included. Wait. When the borrower returns, if step 3 returned wallet-gated scopes in `dropped_scopes`, re-request the borrower token, then re-read `get_context`. A borrower with no wallet is registered, not an error: never ask for a wallet signature to invent one
+   - `PROVE_WALLET` plus `CONNECT_BANK`: wallet means `request_signature_challenge` then `submit_signature` (no link). Bank means `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed (`409 NO_BROWSER_HANDOFF`). Once the wallet is chosen, do not insert another chat question before the challenge. Never fabricate a signature. After the source step, re-request the token when step 3 returned those scopes in `dropped_scopes`
+   - `REVIEW_AND_ACCEPT_FACILITY`: `review_facility_offer` (fresh `idempotency_key`, no offer argument), open `open_url`, wait, re-read. This opens the credit line. Never build a `/facility/accept` link. Acceptance needs no wallet proof
+   - Wallet proof when `wallet_proof_verified` is false and no source step is listed (a deployment without `PROVE_WALLET`). Skip it when the proof is already verified, the borrower chose a bank, or there is no wallet. After the proof, re-request the token when step 3 returned wallet-gated scopes in `dropped_scopes`
+   - Older server without the tool, `409`, expired link: [references/onboarding-context.md](#hosted-reference-onboarding-context)
+   - Stop when no agent-actionable step is left. Report the state, do step 6 if `CLAIM_HANDLE` is listed, then end the turn. Do not poll. That includes `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER` (report the status, no tool, no invented link; a `CONNECT_BANK` beside `EVALUATE_CREDIT` is optional evidence), `REPAYMENT_METHOD_REQUIRED`, `IN_REVIEW`, and `INELIGIBLE`. Say they are **onboarded but not spend-ready**
+6. If `CLAIM_HANDLE` is listed, claim a handle the borrower confirms. This runs even when step 5 ends the turn on `COMPLETE_PROFILE` or a status. Only **after** the token in step 3 (never a chat question before the token). A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one. If step 1's `register_borrower` returned `handle: null` with `next_action: "claim_handle"`, present its `suggested_handles` and ask the borrower to pick one or propose their own; for a custom handle, `check_handle_availability` first. Show the exact handle and get an explicit yes (one allowed chat question), then `claim_handle` (write, `idempotency_key`). Recoverable errors → offer more candidates and keep going. When candidates are exhausted, or `handle:claim` was never granted, STOP and report — do **not** report the borrower as onboarded. Details: [references/handle-claim.md](#hosted-reference-handle-claim)
+7. Stop when `purchasing_power.can_pay` is true. Report available credit (`get_borrower_status`). Do not start a payment. Do not call `authorization-context` here: it is a pay-time check, not an onboarding step
 
-**Bank only.** A borrower who connected a bank and has no proven wallet still completes steps 2–4: the workload key is wallet-independent and a within-threshold grant uses passkey consent. Skip only step 7. If `get_context` still reports `REPAYMENT_METHOD_REQUIRED` or another payment blocker, report them as **onboarded but not spend-ready** and say a supported repayment method is still needed before payment. Do not repeat key registration or authorization, and do not ask for a wallet signature in chat.
+**Bank only.** A borrower who connected a bank and has no proven wallet still completes steps 2–4: the workload key is wallet-independent and a within-threshold grant uses passkey consent. Skip the wallet proof inside step 5. If `get_context` still reports `REPAYMENT_METHOD_REQUIRED`, they are onboarded but not spend-ready. Do not repeat key registration or authorization, and do not ask for a wallet signature in chat.
 
 `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses: report them, call no tool, and invent no link. The only links you give are the `open_url`s that `start_browser_handoff` or `review_facility_offer` returned. Never ask for a legal name, date of birth, bank details, or a passkey in chat. Keep doing any `PAY`, repayment or handle action listed alongside these steps. Details: [references/onboarding-context.md](#hosted-reference-onboarding-context)
 
@@ -535,7 +542,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 | Action | What to do |
 |---|---|
-| `COMPLETE_PROFILE` | Report it: the borrower needs to enter their legal name and date of birth in SohoPay. Comes before any other step below. |
+| `COMPLETE_PROFILE` | Report it: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. It does not delay the workload key or the grant. After those, it is the first blocker, ahead of any wallet or bank step. There is no link. Report it, claim a handle first if `CLAIM_HANDLE` is listed, then end the turn. Do not poll. |
 | `CONNECT_WALLET` / `CONNECT_BANK` | Alternatives (`reason_code: FINANCIAL_SOURCE_REQUIRED`): ask the borrower wallet or bank, then get the link for that choice with `start_browser_handoff` (see "Choosing a source" and "Connect link" below). Either connection is enough for **evidence**; it does **not** by itself activate spendable credit. |
 | `REVIEW_AND_ACCEPT_FACILITY` | Get the borrower a link with `review_facility_offer` (see "Facility acceptance" below). |
 
@@ -545,7 +552,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 Every entry with `reason_code: FINANCIAL_SOURCE_REQUIRED` is an alternative, so never act on the first one alone. `register_borrower` lists the same steps as bare action names (`CONNECT_WALLET`, `CONNECT_BANK`, `PROVE_WALLET`), with no reason code.
 
-1. Stop before the wallet proof, the workload key and `authorize_agent`, and ask the borrower one question naming both options: connect a wallet, or connect a bank.
+1. The workload key, token, and ACTIVE grant come first, even when `COMPLETE_PROFILE` is listed. After that, `COMPLETE_PROFILE` is ahead of this choice: report it, invent no link, and do not start a wallet or bank step. When it is not listed, ask the borrower one question naming both options: connect a wallet, or connect a bank.
 2. `CONNECT_WALLET` + `CONNECT_BANK` (no wallet): get the link for the chosen step ("Connect link").
 3. `PROVE_WALLET` + `CONNECT_BANK` (wallet registered, proof missing): a wallet choice is the wallet proof below, with no link; a bank choice is the `CONNECT_BANK` link.
 4. Do not start a link, or a signature challenge, before the borrower has chosen.
@@ -587,8 +594,8 @@ The backend lists it with `tool: "review_facility_offer"`. Until acceptance comp
 - The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. Never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat.
 - `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
-- A source step (`FINANCIAL_SOURCE_REQUIRED`) gates the wallet proof, the workload key and `authorize_agent` until the borrower has chosen and finished it. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
-- `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry or ask for more data.
+- `COMPLETE_PROFILE` and a source step do not delay the workload key or `authorize_agent`. Those are done first. The source step gates spendable credit. Wallet proof runs when `PROVE_WALLET` is the borrower's choice. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
+- `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry, poll, or ask for more data. The borrower is onboarded but not spend-ready.
 
 
 <a id="hosted-reference-scopes"></a>
@@ -764,7 +771,7 @@ Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two 
   npm i -g @sohopay/agent-signer@0.3.1
   ```
 
-  The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably.
+  The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably. Setup shows this same command and does not run it. `install.sh` is operator-run and may run it.
 - A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
 - A local signer is installed but none answers `capabilities --output json` (nonzero exit, stdout that is not JSON, or another `signer_protocol`) ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
 
@@ -940,7 +947,8 @@ On a server advertising catalog v8+, open with `get_context` (`borrower_id` + cr
 
 Load a sibling **only when that step is next**:
 
-- [ ] Identity / register / wallet proof / token / workload key / agent grant / **claimed @handle** — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn. The handle is a required gate: a borrower without one is **not onboarded**
+- [ ] Onboarding until `purchasing_power.can_pay` is true — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn. A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one
+- [ ] Send credit to an `@handle` — **sohopay-gift** (`{SKILLS_BASE}/gift.md`), after `can_pay`
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
 - [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
 - [ ] Repay / pay back SohoPay credit — **sohopay-repay** (`{SKILLS_BASE}/repay.md`)
@@ -948,12 +956,20 @@ Load a sibling **only when that step is next**:
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-get_context (v8+) or whoami (v7) → register_borrower
-  → FINANCIAL_SOURCE_REQUIRED: ask wallet or bank, start_browser_handoff with that action
-  → REVIEW_AND_ACCEPT_FACILITY: review_facility_offer (opens the credit line; no wallet proof needed)
-  → wallet proof if the borrower chose the wallet (PROVE_WALLET) → request_borrower_token (no chat prompt)
-  → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
-  → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
+get_context (v8+) or whoami (v7)
+  → register_borrower (store operational_agent_id + terminal_id)
+  → register_agent_workload_key (even with no wallet; COMPLETE_PROFILE does not delay this)
+  → request_borrower_token (credit:facility:accept and handle:claim; no chat question)
+  → authorize_agent (open consent_url; poll until ACTIVE)
+  → repeat get_context, one current blocker (claim a listed CLAIM_HANDLE before ending any turn):
+       COMPLETE_PROFILE first (report; no link; no wallet or bank; end the turn)
+       CONNECT_WALLET + CONNECT_BANK: ask once, start_browser_handoff with that action
+       PROVE_WALLET + CONNECT_BANK: proof, or action CONNECT_BANK (never CONNECT_WALLET)
+       REVIEW_AND_ACCEPT_FACILITY: review_facility_offer
+       no agent-actionable step (EVALUATE_CREDIT, REVIEW_CREDIT_OFFER, REPAYMENT_METHOD_REQUIRED, IN_REVIEW, INELIGIBLE): report onboarded but not spend-ready; end the turn; do not poll
+       CLAIM_HANDLE: claim a confirmed handle (does not block can_pay)
+  → stop when purchasing_power.can_pay is true; report available credit; do not start a payment
+  → prepare_x402_payment only when the operator is paying
 ```
 
 Call `request_borrower_token` with no chat prompt during onboarding. On a later pay, do not call `whoami` to decide a refresh. Re-request only when this chat has no successful token newer than 12 minutes. **payRequest** = consent for the x402 fast path. Skip `whoami` on that warm path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.
@@ -1779,7 +1795,7 @@ Need `gift:send` on the borrower token. If it is missing, call `request_borrower
    If they gave a UUID, use it. Never send the handle string.
 2. Grant — get_agent_authorization: gift_enabled must be true and status ACTIVE (amount caps are server-side)
 3. send_gift — fresh UUID v4 idempotency_key, with borrower_id + operational_agent_id
-4. Report — gift_id, amount, recipient, remaining headroom
+4. Report — gift_id, amount, recipient, remaining_usd (that gift's unspent remainder)
 ```
 
 ## Phase 1 — Recipient resolution
@@ -1835,7 +1851,7 @@ is nothing to compute up front and no re-grant that raises them. Send the gift a
 
 ## Phase 4 — Confirmation
 
-The response is `{ gift_id, sender_borrower_id, recipient_borrower_id, amount_usd, remaining_usd, gifted_at, spendable, operational_agent_id, authorization_version }`. Report `gift_id`, the amount actually sent, the recipient (`@handle` and/or UUID), and `remaining_usd` as the borrower's remaining credit headroom.
+The response is `{ gift_id, sender_borrower_id, recipient_borrower_id, amount_usd, remaining_usd, gifted_at, spendable, operational_agent_id, authorization_version }`. Report `gift_id`, the amount actually sent, the recipient (`@handle` and/or UUID), and `remaining_usd` as that gift's unspent remainder (`gift.remainingAmount6`), not the sender's available credit.
 
 Gifted credit is **immediately spendable** (`spendable: true`) — it funds the recipient's own payments, including x402, and it is not a refundable credit line. Say that once, in the confirmation, before the operator gifts again. Do not follow up with a payment on the recipient's behalf; that needs the recipient's own grant.
 
@@ -2184,20 +2200,22 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 ### Routing
 `get_context` returns `next_actions` with any blocking borrower step first (if any), then `PAY` when spending is available, then `AWAIT_REPAYMENT`, then other hints. If **any** entry has `reason_code: FINANCIAL_SOURCE_REQUIRED`, take the source choice below first — it may sit behind `PROVE_WALLET` (`WALLET_PROOF_REQUIRED`) at `[0]`. Otherwise branch on `next_actions[0]`: its `reason_code`, `actor`, and `handoff_required` tell you the move and whether the borrower is needed.
 
-**`FINANCIAL_SOURCE_REQUIRED`.** Every entry with that reason is an alternative source. Ask the borrower wallet or bank before anything else, then: `CONNECT_WALLET` + `CONNECT_BANK` (no wallet) → `start_browser_handoff` with the chosen `action` and a fresh idempotency key; `PROVE_WALLET` + `CONNECT_BANK` (wallet registered, proof missing) → wallet means the proof (`request_signature_challenge` then `submit_signature`, no link), bank means `start_browser_handoff` with `action: CONNECT_BANK`. Open `open_url` verbatim. After the borrower returns, call `get_context`. Not a stop: a `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence for a borrower who already has a source. Details: `{SKILLS_BASE}/borrower-onboard.md` step 2.
+The workload key, borrower token, and ACTIVE grant come immediately after `register_borrower`, even when `COMPLETE_PROFILE` is listed. Inside the blocker loop, `COMPLETE_PROFILE` is first, ahead of any wallet or bank step: report it, invent no link, and end the turn. Do not poll. Before ending any turn in that loop, claim a handle when `HANDLE_CLAIM_REQUIRED` is listed.
+
+**`FINANCIAL_SOURCE_REQUIRED`.** Every entry with that reason is an alternative source. After the key and the ACTIVE grant, and only when `COMPLETE_PROFILE` is not listed, ask the borrower wallet or bank once, then: `CONNECT_WALLET` + `CONNECT_BANK` (no wallet) → `start_browser_handoff` with the chosen `action` and a fresh idempotency key; `PROVE_WALLET` + `CONNECT_BANK` (wallet registered, proof missing) → wallet means the proof (`request_signature_challenge` then `submit_signature`, no link), bank means `start_browser_handoff` with `action: CONNECT_BANK`. Never send `CONNECT_WALLET` while `PROVE_WALLET` is listed. Open `open_url` verbatim. After the borrower returns, call `get_context`. Not a stop: a `CONNECT_BANK` listed next to `EVALUATE_CREDIT` is optional evidence for a borrower who already has a source. `EVALUATE_CREDIT`, `REVIEW_CREDIT_OFFER`, `REPAYMENT_METHOD_REQUIRED`, `IN_REVIEW`, and `INELIGIBLE` are not agent-actionable: report onboarded but not spend-ready and end the turn. Do not poll. `REVIEW_AND_ACCEPT_FACILITY` calls `review_facility_offer`. Stop when `purchasing_power.can_pay` is true, report available credit, and do not start a payment. Details: `{SKILLS_BASE}/borrower-onboard.md` step 5.
 
 | `next_actions[0].reason_code` | `actor` · handoff | Meaning | Go to |
 |-------------------------------|-------------------|---------|-------|
 | `BORROWER_REGISTRATION_REQUIRED` | BORROWER · yes | Borrower not registered | `{SKILLS_BASE}/borrower-onboard.md` |
 | `FACILITY_OFFER_ACCEPTANCE_REQUIRED` | BORROWER · yes | Facility offer is ready — `REVIEW_AND_ACCEPT_FACILITY` calls `review_facility_offer` | `{SKILLS_BASE}/borrower-onboard.md` |
-| `FINANCIAL_SOURCE_REQUIRED` | BORROWER · yes | No verified source — `CONNECT_WALLET` / `CONNECT_BANK` are alternatives (see above) | `{SKILLS_BASE}/borrower-onboard.md` step 2 |
-| `WALLET_PROOF_REQUIRED` | BORROWER · yes | `PROVE_WALLET`: wallet registered, proof missing. With `CONNECT_BANK` listed, ask wallet or bank first | `{SKILLS_BASE}/borrower-onboard.md` steps 2 and 4 |
+| `FINANCIAL_SOURCE_REQUIRED` | BORROWER · yes | No verified source — `CONNECT_WALLET` / `CONNECT_BANK` are alternatives (see above) | `{SKILLS_BASE}/borrower-onboard.md` step 5 |
+| `WALLET_PROOF_REQUIRED` | BORROWER · yes | `PROVE_WALLET`: wallet registered, proof missing. With `CONNECT_BANK` listed, ask wallet or bank first | `{SKILLS_BASE}/borrower-onboard.md` step 5 |
 | `AGENT_AUTHORIZATION_REQUIRED` | BORROWER · yes | No ACTIVE agent grant | `{SKILLS_BASE}/authorize-agent.md` |
-| `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate (usually **not** `[0]`; emitted last — see note below); borrower picks/confirms, then `claim_handle` | `{SKILLS_BASE}/borrower-onboard.md` step 10 (claim path); tool contract `{SKILLS_BASE}/handle.md` |
+| `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate (usually **not** `[0]`; emitted last — see note below); borrower picks/confirms, then `claim_handle`. Does not block `can_pay` | `{SKILLS_BASE}/borrower-onboard.md` step 6 (claim path); tool contract `{SKILLS_BASE}/handle.md` |
 | `SPENDING_AVAILABLE` (`can_pay: true`) | AGENT · no | Spending available — pick the pay flow by context | HTTP 402 merchant → `{SKILLS_BASE}/x402-credit-pay.md`; non-x402 spend/sign → `{SKILLS_BASE}/spend-and-pay.md`; operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md` |
 | `REPAYMENT_IN_FLIGHT` | AGENT · no | A repayment is confirming | `{SKILLS_BASE}/repay.md` (monitor) |
 
-**`HANDLE_CLAIM_REQUIRED` when it is not `[0]`.** The backend may list `SPENDING_AVAILABLE` (or another AGENT step) before `HANDLE_CLAIM_REQUIRED` when the borrower can pay but has no @handle. After you act on `next_actions[0]`, scan the full array: any entry with `reason_code: HANDLE_CLAIM_REQUIRED` (`action: CLAIM_HANDLE`, `tool: claim_handle`) means onboarding is **incomplete** until a handle is claimed — hand off to the borrower via `{SKILLS_BASE}/borrower-onboard.md` step 10 (or `{SKILLS_BASE}/handle.md` for claim mechanics). Do not report the borrower as fully onboarded while that entry is present.
+**`HANDLE_CLAIM_REQUIRED` when it is not `[0]`.** The backend may list `SPENDING_AVAILABLE` (or another AGENT step) before `HANDLE_CLAIM_REQUIRED` when the borrower can pay but has no @handle. After you act on `next_actions[0]`, scan the full array: any entry with `reason_code: HANDLE_CLAIM_REQUIRED` (`action: CLAIM_HANDLE`, `tool: claim_handle`) means onboarding is **incomplete** until a handle is claimed — hand off to the borrower via `{SKILLS_BASE}/borrower-onboard.md` step 6 (or `{SKILLS_BASE}/handle.md` for claim mechanics). Do not report the borrower as fully onboarded while that entry is present.
 
 **`handoff_required: true` → stop and hand off.** The step needs the borrower's signature/decision (`actor: BORROWER`); surface it to the borrower and do not attempt it as the agent. `actor: AGENT` steps you perform yourself. For a delegated session, continue in `{SKILLS_BASE}/agent-session.md`.
 
