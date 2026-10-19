@@ -19,7 +19,8 @@ On a server advertising catalog v8+, open with `get_context` (`borrower_id` + cr
 
 Load a sibling **only when that step is next**:
 
-- [ ] Identity / register / wallet proof / token / workload key / agent grant / **claimed @handle** — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn. The handle is a required gate: a borrower without one is **not onboarded**
+- [ ] Onboarding until `purchasing_power.can_pay` is true — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn. A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one
+- [ ] Send credit to an `@handle` — **sohopay-gift** (`{SKILLS_BASE}/gift.md`), after `can_pay`
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
 - [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
 - [ ] Repay / pay back SohoPay credit — **sohopay-repay** (`{SKILLS_BASE}/repay.md`)
@@ -27,12 +28,21 @@ Load a sibling **only when that step is next**:
 - [ ] Poll `get_settlement_status` by **`settlement_id`** until terminal (~5s `l2_confirmations`)
 
 ```text
-get_context (v8+) or whoami (v7) → register_borrower
-  → FINANCIAL_SOURCE_REQUIRED: ask wallet or bank, start_browser_handoff with that action
-  → REVIEW_AND_ACCEPT_FACILITY: review_facility_offer (opens the credit line; no wallet proof needed)
-  → wallet proof if the borrower chose the wallet (PROVE_WALLET) → request_borrower_token (no chat prompt)
-  → register_agent_workload_key → authorize_agent (open consent URL; grant ACTIVE)
-  → prepare_x402_payment → VOUCHER_ISSUED sign / COMPLETED header → poll settlement_id
+get_context (v8+) or whoami (v7)
+  → register_borrower (store operational_agent_id + terminal_id)
+  → COMPLETE_PROFILE if listed (legal name and date of birth on the SohoPay page; never in chat)
+  → register_agent_workload_key (even with no wallet)
+  → request_borrower_token (credit:facility:accept and handle:claim; no chat question)
+  → authorize_agent (open consent_url; poll until ACTIVE)
+  → repeat get_context, one current blocker:
+       CONNECT_WALLET + CONNECT_BANK: ask once, start_browser_handoff with that action
+       PROVE_WALLET + CONNECT_BANK: proof, or action CONNECT_BANK (never CONNECT_WALLET)
+       EVALUATE_CREDIT / REVIEW_CREDIT_OFFER: report only
+       REVIEW_AND_ACCEPT_FACILITY: review_facility_offer
+       REPAYMENT_METHOD_REQUIRED: report; credit is not spendable yet
+       CLAIM_HANDLE: claim a confirmed handle (does not block can_pay)
+  → stop when purchasing_power.can_pay is true; report available credit; do not start a payment
+  → prepare_x402_payment only when the operator is paying
 ```
 
 Call `request_borrower_token` with no chat prompt during onboarding. On a later pay, do not call `whoami` to decide a refresh. Re-request only when this chat has no successful token newer than 12 minutes. **payRequest** = consent for the x402 fast path. Skip `whoami` on that warm path. If the grant is already ACTIVE, do not re-run `authorize_agent`. Do not fall back to custodial `sign_transaction` on `VOUCHER_ISSUED` / `CUSTODIAL_SIGNING_DISABLED`.

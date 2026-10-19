@@ -209,6 +209,40 @@ for f in "${skill_files[@]}"; do
   downloaded+=("$f")
 done
 
+# --- Signer (before MCP registration; ChatGPT exited above) ------------------
+# Key generation refuses npx. The pin lives only in scripts/signer-pin.mjs.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SIGNER_SPEC="$(node --input-type=module -e "import { SIGNER_SPEC } from '${SCRIPT_DIR}/scripts/signer-pin.mjs'; process.stdout.write(SIGNER_SPEC)")"
+SIGNER_PIN="${SIGNER_SPEC##*@}"
+
+signer_version() {
+  sohopay-signer capabilities --output json 2>/dev/null \
+    | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{process.stdout.write(JSON.parse(s).implementation_version||"0")}catch{process.stdout.write("0")}})'
+}
+
+# Exit 0 when the first version is older than the second.
+version_older() {
+  node -e '
+    const parse = (v) => String(v).split(".").map((n) => parseInt(n, 10) || 0);
+    const [a, b] = [parse(process.argv[1]), parse(process.argv[2])];
+    const len = Math.max(a.length, b.length);
+    for (let i = 0; i < len; i++) {
+      const d = (a[i] || 0) - (b[i] || 0);
+      if (d < 0) process.exit(0);
+      if (d > 0) process.exit(1);
+    }
+    process.exit(1);
+  ' "$1" "$2"
+}
+
+if ! command -v sohopay-signer >/dev/null 2>&1 || version_older "$(signer_version)" "$SIGNER_PIN"; then
+  info "Installing $SIGNER_SPEC"
+  npm i -g "$SIGNER_SPEC"
+fi
+SIGNER_NOTE="$(signer_version)"
+info "Signer: $SIGNER_NOTE"
+
 # --- Step 5: register MCP server ---------------------------------------------
 # Default path is OAuth: the harness discovers the server's protected-resource
 # metadata and runs the browser consent flow itself — no token is handled here. A
@@ -267,6 +301,7 @@ Skills written: ${downloaded[*]}
 MCP server id:  $MCP_SERVER_ID
 MCP server:     $MCP_URL
 MCP register:   $register_note
+Signer:         $SIGNER_NOTE
 Verification:   $verify_note
 
 Next: open borrower-onboard.md in the skills dir and complete

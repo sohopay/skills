@@ -3,6 +3,7 @@
 One short summary. No architecture recap.
 
 - Sticky skills: installed path, or **skipped**
+- Signer: `sohopay-signer` version, or skipped (ChatGPT)
 - MCP: server id + URL
 - Borrower status if you onboarded, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is)
 - Failures: exact URL and error

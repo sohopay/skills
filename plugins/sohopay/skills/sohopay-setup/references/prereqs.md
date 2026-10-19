@@ -47,6 +47,12 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 
 ## Step 2: Check prerequisites
 
-Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). **Node.js and npm are not required** and must not be asked for or installed as part of normal setup.
+Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). **Node.js and npm are required for one step only:** installing the pinned signer before MCP connect. Do not install Node for any other step.
 
-Do **not** run `node --version` / `npm --version` on the default path.
+When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, run:
+
+```bash
+npm i -g @sohopay/agent-signer@0.3.1
+```
+
+If that version is already on `PATH`, do not reinstall. Do not run this command again while registering the workload key. ChatGPT does not install a local signer.
