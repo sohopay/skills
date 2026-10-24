@@ -35,4 +35,6 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses: report them, call no tool, and invent no link. The only links you give are the `open_url`s that `start_browser_handoff` or `review_facility_offer` returned. Never ask for a legal name, date of birth, bank details, or a passkey in chat. Keep doing any `PAY`, repayment or handle action listed alongside these steps. Details: [references/onboarding-context.md](references/onboarding-context.md)
 
+Facility terms v2 (the offer is a maximum, renewals keep the limit) and `limit_standing` (why the limit is what it is, and the bank pause): [references/onboarding-context.md](references/onboarding-context.md).
+
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](references/scopes.md). Operate: `{SKILL:sohopay-human-direct}`. Warm pay after the grant is ACTIVE: `{SKILL:sohopay-x402}`.
