@@ -68,9 +68,22 @@ The backend lists it with `tool: "review_facility_offer"`. Until acceptance comp
 
 `CONNECT_WALLET` is for a borrower with no wallet. The two are never listed together.
 
+### Bank repayment (`handoff_required: false`)
+
+While the bank rail is on, `get_context` may list a debit the borrower does on the SohoPay portal. These are not browser handoffs: there is no `handoff_type`, no `tool`, and no `open_url`. `handoff_required: false` means you do not call `start_browser_handoff` and you do not perform the debit yourself. Report the action and stop. Do not invent a link. Do not ask for an account number or a routing number. Do not start a wallet repayment. There is no debit tool and no `repayment:bank:execute`.
+
+| Action | Reason code | When |
+| --- | --- | --- |
+| `REPAY_FROM_BANK` | `BANK_REPAYMENT_AVAILABLE` | Debit consent is ready and floored on-chain debt is at least $0.01 |
+| `SET_UP_AUTOPAY` | `BANK_AUTOPAY_AVAILABLE` | Debit consent is ready, there is no active autopay, and autopay is not paused |
+| `REAUTHORIZE_BANK_DEBIT` | `BANK_AUTOPAY_PAUSED` | Autopay is paused. This replaces `SET_UP_AUTOPAY` |
+| `REPAY_RETURNED_AMOUNT` | `BANK_RETURN_OBLIGATION_OPEN` | A return obligation is open. It is separate off-chain debt. Do not increase `outstandingDebt` |
+
+`unapplied_bank_credit`, when present, is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
+
 ### Rules
 
-- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. Never invent a link. Never ask for a legal name, date of birth, bank details, or a passkey in chat.
+- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. A bank-repayment action has no link. Never invent a link. Never ask for a legal name, date of birth, an account number, a routing number, or a passkey in chat.
 - `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - A source step (`FINANCIAL_SOURCE_REQUIRED`) gates the wallet proof, the workload key and `authorize_agent` until the borrower has chosen and finished it. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.

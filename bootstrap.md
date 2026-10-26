@@ -19,7 +19,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 1. Connect / authenticate → `{SKILLS_BASE}/mcp-connect.md` (setup presets: `{SKILLS_BASE}/setup.md`).
 2. If not yet onboarded — identity + onboarding state → `{SKILLS_BASE}/borrower-onboard.md`.
 3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and `next_actions` hints. On v7: `whoami` + `get_borrower_status`.
-4. Route using **Routing** below — branch on the first blocking `next_actions` entry, scan the full array for `HANDLE_CLAIM_REQUIRED`, and treat every `FINANCIAL_SOURCE_REQUIRED` entry as an alternative. Do not re-derive the next step from raw balances/statuses; `get_context` already decided it.
+4. Route using **Routing** below — branch on the first blocking `next_actions` entry, scan the full array for `HANDLE_CLAIM_REQUIRED` and the bank-repayment reason codes, and treat every `FINANCIAL_SOURCE_REQUIRED` entry as an alternative. Do not re-derive the next step from raw balances/statuses; `get_context` already decided it.
 
 ### Routing
 `get_context` returns `next_actions` with any blocking borrower step first (if any), then `PAY` when spending is available, then `AWAIT_REPAYMENT`, then other hints. If **any** entry has `reason_code: FINANCIAL_SOURCE_REQUIRED`, take the source choice below first — it may sit behind `PROVE_WALLET` (`WALLET_PROOF_REQUIRED`) at `[0]`. Otherwise branch on `next_actions[0]`: its `reason_code`, `actor`, and `handoff_required` tell you the move and whether the borrower is needed.
@@ -36,15 +36,30 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 | `HANDLE_CLAIM_REQUIRED` | BORROWER · yes | No @handle — required onboarding gate (usually **not** `[0]`; emitted last — see note below); borrower picks/confirms, then `claim_handle` | `{SKILLS_BASE}/borrower-onboard.md` step 10 (claim path); tool contract `{SKILLS_BASE}/handle.md` |
 | `SPENDING_AVAILABLE` (`can_pay: true`) | AGENT · no | Spending available — pick the pay flow by context | HTTP 402 merchant → `{SKILLS_BASE}/x402-credit-pay.md`; non-x402 spend/sign → `{SKILLS_BASE}/spend-and-pay.md`; operate (human-direct default) → `{SKILLS_BASE}/human-direct-flow.md` |
 | `REPAYMENT_IN_FLIGHT` | AGENT · no | A repayment is confirming | `{SKILLS_BASE}/repay.md` (monitor) |
+| `BANK_REPAYMENT_AVAILABLE` | BORROWER · no link | `REPAY_FROM_BANK`. Report it and stop | **Bank repayment** below |
+| `BANK_AUTOPAY_AVAILABLE` | BORROWER · no link | `SET_UP_AUTOPAY`. Report it and stop | **Bank repayment** below |
+| `BANK_AUTOPAY_PAUSED` | BORROWER · no link | `REAUTHORIZE_BANK_DEBIT`. Report it and stop. Replaces `SET_UP_AUTOPAY` | **Bank repayment** below |
+| `BANK_RETURN_OBLIGATION_OPEN` | BORROWER · no link | `REPAY_RETURNED_AMOUNT`. Report it and stop | **Bank repayment** below |
+
+**Bank repayment.** These four appear only while the bank rail is on. Each is `actor: BORROWER`, `handoff_required: false`, with no `tool` and no `handoff_type`. The backend returns no `open_url`. `handoff_required: false` means there is no browser handoff, not that you perform the debit. Report the action and stop. Do not call `start_browser_handoff`, invent a URL, or ask for a legal name, date of birth, account number, or routing number. Do not open `{SKILLS_BASE}/repay.md` for them: that skill is a wallet repayment. There is no debit tool and no `repayment:bank:execute`. The borrower completes the debit on the SohoPay portal.
+
+| Action | Reason code | When |
+| --- | --- | --- |
+| `REPAY_FROM_BANK` | `BANK_REPAYMENT_AVAILABLE` | Debit consent is ready and floored on-chain debt is at least $0.01 |
+| `SET_UP_AUTOPAY` | `BANK_AUTOPAY_AVAILABLE` | Debit consent is ready, there is no active autopay, and autopay is not paused |
+| `REAUTHORIZE_BANK_DEBIT` | `BANK_AUTOPAY_PAUSED` | Autopay is paused. This replaces `SET_UP_AUTOPAY` |
+| `REPAY_RETURNED_AMOUNT` | `BANK_RETURN_OBLIGATION_OPEN` | A return obligation is open. It is separate off-chain debt. Do not increase `outstandingDebt` |
+
+`unapplied_bank_credit`, when present, is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus. Scan the full `next_actions` array: these can sit beside `PAY`.
 
 **`HANDLE_CLAIM_REQUIRED` when it is not `[0]`.** The backend may list `SPENDING_AVAILABLE` (or another AGENT step) before `HANDLE_CLAIM_REQUIRED` when the borrower can pay but has no @handle. After you act on `next_actions[0]`, scan the full array: any entry with `reason_code: HANDLE_CLAIM_REQUIRED` (`action: CLAIM_HANDLE`, `tool: claim_handle`) means onboarding is **incomplete** until a handle is claimed — hand off to the borrower via `{SKILLS_BASE}/borrower-onboard.md` step 10 (or `{SKILLS_BASE}/handle.md` for claim mechanics). Do not report the borrower as fully onboarded while that entry is present.
 
 **`handoff_required: true` → stop and hand off.** The step needs the borrower's signature/decision (`actor: BORROWER`); surface it to the borrower and do not attempt it as the agent. `actor: AGENT` steps you perform yourself. For a delegated session, continue in `{SKILLS_BASE}/agent-session.md`.
 
-> v8 may emit a blocking step plus `PAY`, `AWAIT_REPAYMENT`, `GIFT_RECEIVED`, and `HANDLE_CLAIM_REQUIRED` (last when the borrower has no handle). Source steps (`FINANCIAL_SOURCE_REQUIRED`) may both be listed. `REPAYMENT_IN_FLIGHT` is reserved on some deployments. If `next_actions` is empty and `can_pay` is false, resolve the blocker shown in `authorization` (frozen / suspended / compliance) before retrying. Exception: when `credit` is `null` there is no credit account yet, not a blocker (see below).
+> v8 may emit a blocking step plus `PAY`, `AWAIT_REPAYMENT`, `GIFT_RECEIVED`, the bank-repayment actions above, and `HANDLE_CLAIM_REQUIRED` (last when the borrower has no handle). Source steps (`FINANCIAL_SOURCE_REQUIRED`) may both be listed. `REPAYMENT_IN_FLIGHT` is reserved on some deployments. If `next_actions` is empty and `can_pay` is false, resolve the blocker shown in `authorization` (frozen / suspended / compliance) before retrying. Exception: when `credit` is `null` there is no credit account yet, not a blocker (see below).
 
 ### get_context essentials
-`get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and `next_actions` hints. It replaces the `whoami` → `get_borrower_status` dance on v8+. `credit` and `repayment` are `null` when the borrower has no credit account yet: say there is no credit line yet and follow `next_actions` (if it is empty, there is nothing to do yet; say so). Never report it as a zero credit limit or credit balance. Received gifts are separate: report `gifts.available` when it is above zero, even with no credit line (not spendable until a credit account exists).
+`get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and `next_actions` hints. It replaces the `whoami` → `get_borrower_status` dance on v8+. `credit` and `repayment` are `null` when the borrower has no credit account yet: say there is no credit line yet and follow `next_actions` (if it is empty, there is nothing to do yet; say so). Never report it as a zero credit limit or credit balance. Received gifts are separate: report `gifts.available` when it is above zero, even with no credit line (not spendable until a credit account exists). `unapplied_bank_credit` is also separate from spendable credit: report it when present, and do not spend it or skip a payment because of it.
 
 **When to call:** at session start, and after onboarding, credit activation, authorization, a material payment, a repayment, or an authorization error. Not before every trivial read.
 
