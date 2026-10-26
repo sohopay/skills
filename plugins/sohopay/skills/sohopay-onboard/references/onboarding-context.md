@@ -70,16 +70,16 @@ The backend lists it with `tool: "review_facility_offer"`. Until acceptance comp
 
 ### Bank repayment (`handoff_required: false`)
 
-While the bank rail is on, `get_context` may list a debit the borrower does on the SohoPay portal. These are not browser handoffs: there is no `handoff_type`, no `tool`, and no `open_url`. `handoff_required: false` means you do not call `start_browser_handoff` and you do not perform the debit yourself. Report the action and stop. Do not invent a link. Do not ask for an account number or a routing number. Do not start a wallet repayment. There is no debit tool and no `repayment:bank:execute`.
+While the bank rail is on, `get_context` may list a debit the borrower does on the SohoPay portal. These are not browser handoffs: there is no `handoff_type`, no `tool`, and no `open_url`. `handoff_required: false` means you do not call `start_browser_handoff` and you do not perform the debit yourself. Report the action to the borrower and tell them to open the SohoPay portal themselves (give no link), then carry on with any `AGENT` action listed alongside it, such as `PAY`. Do not invent a link. Do not ask for an account number or a routing number. Do not start a wallet repayment. There is no debit tool and no `repayment:bank:execute`.
 
 | Action | Reason code | When |
 | --- | --- | --- |
-| `REPAY_FROM_BANK` | `BANK_REPAYMENT_AVAILABLE` | Debit consent is ready and floored on-chain debt is at least $0.01 |
+| `REPAY_FROM_BANK` | `BANK_REPAYMENT_AVAILABLE` | Debit consent is ready and on-chain debt, rounded down to the cent, is at least $0.01 |
 | `SET_UP_AUTOPAY` | `BANK_AUTOPAY_AVAILABLE` | Debit consent is ready, there is no active autopay, and autopay is not paused |
 | `REAUTHORIZE_BANK_DEBIT` | `BANK_AUTOPAY_PAUSED` | Autopay is paused. This replaces `SET_UP_AUTOPAY` |
 | `REPAY_RETURNED_AMOUNT` | `BANK_RETURN_OBLIGATION_OPEN` | A return obligation is open. It is separate off-chain debt. Do not increase `outstandingDebt` |
 
-`unapplied_bank_credit`, when present, is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
+`unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
 
 ### Rules
 

@@ -36,15 +36,15 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 `EVALUATE_CREDIT` and `REVIEW_CREDIT_OFFER` are statuses: report them, call no tool, and invent no link. The only links you give are the `open_url`s that `start_browser_handoff` or `review_facility_offer` returned. Never ask for a legal name, date of birth, bank details, or a passkey in chat. Keep doing any `PAY`, repayment or handle action listed alongside these steps. Details: [references/onboarding-context.md](references/onboarding-context.md)
 
-**Bank repayment.** While the rail is on, `get_context` may list these. Each is `actor: BORROWER`, `handoff_required: false`, with no `tool` and no `handoff_type`. There is no `open_url`. `handoff_required: false` means there is no browser handoff, not that you perform the debit. Report the action and stop. Do not call `start_browser_handoff`, invent a URL, or ask for an account number or routing number. Do not start `{SKILL:sohopay-repay}` for them. There is no debit tool and no `repayment:bank:execute`. The borrower completes the debit on the SohoPay portal.
+**Bank repayment.** While the rail is on, `get_context` may list these. Each is `actor: BORROWER`, `handoff_required: false`, with no `tool` and no `handoff_type`. There is no `open_url`. `handoff_required: false` means there is no browser handoff, not that you perform the debit. Report the action to the borrower and tell them to open the SohoPay portal themselves (give no link), then carry on with any `AGENT` action listed alongside it, such as `PAY`. Do not call `start_browser_handoff`, invent a URL, or ask for an account number or routing number. Do not start `{SKILL:sohopay-repay}` for them. There is no debit tool and no `repayment:bank:execute`. The borrower completes the debit on the SohoPay portal.
 
 | Action | Reason code | When |
 | --- | --- | --- |
-| `REPAY_FROM_BANK` | `BANK_REPAYMENT_AVAILABLE` | Debit consent is ready and floored on-chain debt is at least $0.01 |
+| `REPAY_FROM_BANK` | `BANK_REPAYMENT_AVAILABLE` | Debit consent is ready and on-chain debt, rounded down to the cent, is at least $0.01 |
 | `SET_UP_AUTOPAY` | `BANK_AUTOPAY_AVAILABLE` | Debit consent is ready, there is no active autopay, and autopay is not paused |
 | `REAUTHORIZE_BANK_DEBIT` | `BANK_AUTOPAY_PAUSED` | Autopay is paused. This replaces `SET_UP_AUTOPAY` |
 | `REPAY_RETURNED_AMOUNT` | `BANK_RETURN_OBLIGATION_OPEN` | A return obligation is open. It is separate off-chain debt. Do not increase `outstandingDebt` |
 
-`unapplied_bank_credit`, when present, is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
+`unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](references/scopes.md). Operate: `{SKILL:sohopay-human-direct}`. Warm pay after the grant is ACTIVE: `{SKILL:sohopay-x402}`.
