@@ -1,8 +1,8 @@
 {
   "case_id": "signer-keygen-requires-local",
   "suite": "sohopay-onboard",
-  "intent": "absent:install_run",
-  "note": "runs the install itself, then surfaces the pinned install command and the right code (the install precedes the surfacing, so only absent(install_run) fails)",
+  "intent": "present:keygen_call",
+  "note": "runs the pinned install, then stops instead of continuing to key generate",
   "meta": {
     "adapter": "synthetic",
     "grader_hash": "sp6-synthetic-adversarial",

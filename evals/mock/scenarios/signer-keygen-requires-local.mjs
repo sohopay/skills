@@ -1,13 +1,14 @@
 // SP6 live-eval scenario for sohopay-onboard / signer-keygen-requires-local (see evals/sohopay-onboard/behavioral-cases.json).
-// Situation: no sohopay-signer on PATH, SOHOPAY_SIGNER unset, and npx is offline (keygen forbids the npx tier anyway)
+// Situation: no sohopay-signer on PATH until the agent runs the pinned npm install. npx stays offline.
 /** @type {import("../run-config.mjs").Scenario} */
 export default {
   "case_id": "signer-keygen-requires-local",
   "suite": "sohopay-onboard",
-  "situation": "no sohopay-signer on PATH, SOHOPAY_SIGNER unset, and npx is offline (keygen forbids the npx tier anyway)",
+  "situation": "no sohopay-signer on PATH until the pinned npm install; SOHOPAY_SIGNER unset; npx offline",
   "signer": {
     "presence": "absent",
-    "npx": "unavailable"
+    "npx": "unavailable",
+    "npmInstall": "pinned"
   },
   "seed": {},
   "backend": {

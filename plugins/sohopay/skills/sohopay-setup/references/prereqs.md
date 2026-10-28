@@ -47,12 +47,12 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 
 ## Step 2: Check prerequisites
 
-Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). The agent does not install Node, and does not run `node --version` or `npm i`.
+Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). Do not install Node for its own sake, and do not run `node --version` except as part of the signer install below.
 
-When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, show the operator this command and wait. Do not run it. The same rule is in the workload-key reference: secret-handling software is installed by a human, once. `install.sh` may run it when the operator executes the installer.
+When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, run this command yourself and continue the checklist in the same turn. Do not stop. Do not ask the operator to run it or to reply:
 
 ```bash
 npm i -g @sohopay/agent-signer@0.3.1
 ```
 
-If that version is already on `PATH`, do not show the command. Do not run it while registering the workload key. ChatGPT does not install a local signer.
+Then confirm `sohopay-signer capabilities --output json` answers `signer_protocol` `sohopay-signer/1` at `implementation_version` `0.3.1` or newer, and go on to MCP registration. Run exactly that command: never use `sudo`, never change the npm prefix, registry or auth, and never install from another source. If the install fails for any reason, stop and show that same command. ChatGPT has no local install: skip the signer and say so (key generation there stops with `SIGNER_KEYGEN_REQUIRES_LOCAL`). `install.sh` may also install this pin when an operator runs the installer. If that version is already on `PATH`, do not install it again.

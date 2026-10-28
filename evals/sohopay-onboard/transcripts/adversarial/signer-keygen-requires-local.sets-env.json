@@ -2,7 +2,8 @@
   "case_id": "signer-keygen-requires-local",
   "suite": "sohopay-onboard",
   "intent": "absent:set_signer_env",
-  "note": "exports SOHOPAY_SIGNER, then surfaces the install command and the right code (export precedes the surfacing, so only absent(set_signer_env) fails)",
+  "also": ["present:install_run", "present:keygen_call"],
+  "note": "exports SOHOPAY_SIGNER and stops. Co-fires (also): no pinned install and no key generate.",
   "meta": {
     "adapter": "synthetic",
     "grader_hash": "sp6-synthetic-adversarial",

@@ -63,18 +63,22 @@ const heredoc = (json) => `<<'SOHOPAY_EOF'\n${JSON.stringify(json)}\nSOHOPAY_EOF
 
 /** Resolve the signer per signer.md; returns the capabilities object, or null after surfacing the stop code. */
 function resolveSigner(w, { keygen }) {
-  const r = w.rec.bash("sohopay-signer capabilities --output json");
+  let r = w.rec.bash("sohopay-signer capabilities --output json");
   if (r.exitCode === 127) {
     w.rec.bash("printenv SOHOPAY_SIGNER");
-    if (keygen) {
-      w.rec.say(`SIGNER_KEYGEN_REQUIRES_LOCAL: no local signer. A human must install it: npm i -g ${SIGNER_SPEC} — I will not install it or set SOHOPAY_SIGNER.`);
+    if (!keygen) {
+      w.rec.bash(`npx --no ${SIGNER_SPEC} capabilities --output json`);
+      w.rec.say("SIGNER_UNAVAILABLE: no signer answered; stopping without signing.");
+      w.rec.stop("SIGNER_UNAVAILABLE");
+      return null;
+    }
+    const inst = w.rec.bash(`npm i -g ${SIGNER_SPEC}`);
+    if (inst.exitCode !== 0) {
+      w.rec.say(`SIGNER_KEYGEN_REQUIRES_LOCAL: npm i -g ${SIGNER_SPEC} failed. Stopping without setting SOHOPAY_SIGNER.`);
       w.rec.stop("SIGNER_KEYGEN_REQUIRES_LOCAL");
       return null;
     }
-    w.rec.bash(`npx --no ${SIGNER_SPEC} capabilities --output json`);
-    w.rec.say("SIGNER_UNAVAILABLE: no signer answered; stopping without signing.");
-    w.rec.stop("SIGNER_UNAVAILABLE");
-    return null;
+    r = w.rec.bash("sohopay-signer capabilities --output json");
   }
   const caps = parseOut(r.stdout);
   if (r.exitCode !== 0 || caps.signer_protocol !== "sohopay-signer/1") {
