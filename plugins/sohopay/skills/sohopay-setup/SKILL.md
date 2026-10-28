@@ -25,7 +25,7 @@ Verify identity first: [references/prereqs.md](references/prereqs.md).
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](references/prereqs.md)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](references/sticky-install.md)
-- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, run `npm i -g @sohopay/agent-signer@0.3.1` and continue. Do not stop, and do not ask the operator to reply. ChatGPT skips the local signer. Details: [references/prereqs.md](references/prereqs.md)
+- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, run `npm i -g @sohopay/agent-signer@0.3.1` and continue. Do not stop, and do not ask the operator to reply. Never use `sudo` or change npm settings; stop if the install fails. ChatGPT skips the local signer. Details: [references/prereqs.md](references/prereqs.md)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: onboard until spendable credit — **sohopay-onboard** (`{SKILL:sohopay-onboard}`): one `get_context` step at a time until `purchasing_power.can_pay` is true. Do not wait for the first payment, and do not start one

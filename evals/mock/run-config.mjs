@@ -124,7 +124,7 @@ export function installSigner(run, { binDir, runPath }) {
     const wrapper = `#!/bin/sh\nSP6_MOCK_RUN=${shq(runPath)} exec ${shq(process.execPath)} ${shq(SIGNER_SHIM)} "$@"\n`;
     const npm = join(binDir, "npm");
     writeFileSync(npm, `#!/bin/sh
-if [ "$1" = "i" ] && [ "$2" = "-g" ] && [ "$3" = ${shq(SIGNER_SPEC)} ]; then
+if [ "$#" -eq 3 ] && { [ "$1" = "i" ] || [ "$1" = "install" ] || [ "$1" = "add" ]; } && [ "$2" = "-g" ] && [ "$3" = ${shq(SIGNER_SPEC)} ]; then
   cat > ${shq(dest)} << 'EOF'
 ${wrapper}EOF
   chmod 755 ${shq(dest)}

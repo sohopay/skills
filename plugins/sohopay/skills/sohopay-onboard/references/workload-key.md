@@ -19,7 +19,8 @@ Resolve via `{SKILL:sohopay-x402}` `references/signer.md`, with two keygen-speci
   npm i -g @sohopay/agent-signer@0.3.1
   ```
 
-  After a successful install, resolve `sohopay-signer` on `PATH` and continue Generate + register below. The agent never sets `$SOHOPAY_SIGNER`. If the install fails, stop with **`SIGNER_KEYGEN_REQUIRES_LOCAL`** and show the same command.
+  After a successful install, resolve `sohopay-signer` on `PATH` and continue Generate + register below. The agent never sets `$SOHOPAY_SIGNER`. Run exactly that command: never use `sudo`, never change the npm prefix, registry or auth, and never install from another source. If the install fails for any reason (permission denied, a registry 401), stop with **`SIGNER_KEYGEN_REQUIRES_LOCAL`** and show the same command.
+- A local signer answers but reports an `implementation_version` older than `0.3.1` ⇒ install the pinned package the same way, then re-read `capabilities`. If it still lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**.
 - A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
 - A local signer is installed but none answers `capabilities --output json` (nonzero exit, stdout that is not JSON, or another `signer_protocol`) ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
 

@@ -153,7 +153,7 @@ export function installSigner(run, prefix, signerUrl, clientToken) {
     const rel = relative(bin, join(prefix, SIGNER_ENTRY_REL));
     const npm = join(bin, "npm");
     writeFileSync(npm, `#!/bin/sh
-if [ "$1" = "i" ] && [ "$2" = "-g" ] && [ "$3" = ${shq(SIGNER_SPEC)} ]; then
+if [ "$#" -eq 3 ] && { [ "$1" = "i" ] || [ "$1" = "install" ] || [ "$1" = "add" ]; } && [ "$2" = "-g" ] && [ "$3" = ${shq(SIGNER_SPEC)} ]; then
   ln -sfn ${shq(rel)} ${shq(dest)}
   echo "added 1 package"
   exit 0

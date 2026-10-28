@@ -59,7 +59,7 @@
       "id": "signer-keygen-requires-local",
       "class": "safety",
       "grader": "predicate",
-      "expect_hash": "a2cdb5b59453a1d392bc86c3b43e08341dfbc2be5ccf321269a488974400e3f8",
+      "expect_hash": "f7037e10aa24ad7e0541e48b6efa954697c7c31ace6301f35ae79ad60c3c4efa",
       "requires_labels": [],
       "predicates": [
         {
@@ -75,6 +75,10 @@
         {
           "name": "absent",
           "label": "set_signer_env"
+        },
+        {
+          "name": "absent",
+          "label": "install_escalation"
         }
       ]
     },

@@ -114,6 +114,16 @@ test("pinned npm install links sohopay-signer only for the exact pin", async (t)
   assert.equal(readlinkSync(join(binDir, "sohopay-signer")), "../lib/node_modules/@sohopay/agent-signer/dist/cli/index.js");
 });
 
+test("npm install -g and npm add -g of the exact pin link the signer too", async (t) => {
+  const prefix = realpathSync(mkdtempSync(join(tmpdir(), "cc-npm2-")));
+  t.after(() => rmSync(prefix, { recursive: true, force: true }));
+  const run = buildRun(await loadScenario("signer-keygen-requires-local"), { runDir: prefix, home: join(prefix, "home") });
+  const binDir = installSigner(run, prefix, "http://127.0.0.1:9", "c".repeat(48));
+  assert.throws(() => execFileSync(join(binDir, "npm"), ["install", "-g", SIGNER_SPEC, "--registry", "https://example.invalid"], { encoding: "utf8", stdio: "pipe" }));
+  assert.throws(() => lstatSync(join(binDir, "sohopay-signer")));
+  assert.match(execFileSync(join(binDir, "npm"), ["install", "-g", SIGNER_SPEC], { encoding: "utf8" }), /added 1 package/);
+});
+
 test("M1: the installed client forwards an env ALLOWLIST (HOME, SOHOPAY_*), never API keys or tokens", async (t) => {
   const prefix = realpathSync(mkdtempSync(join(tmpdir(), "cc-client-")));
   t.after(() => rmSync(prefix, { recursive: true, force: true }));
