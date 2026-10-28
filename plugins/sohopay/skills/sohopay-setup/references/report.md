@@ -3,7 +3,7 @@
 One short summary. No architecture recap.
 
 - Sticky skills: installed path, or **skipped**
-- Signer: version the operator installed, or not installed yet (the agent does not install it; ChatGPT skips it)
+- Signer: installed version, or that the install failed (ChatGPT skips it)
 - MCP: server id + URL
 - Borrower status if you onboarded, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is)
 - Failures: exact URL and error

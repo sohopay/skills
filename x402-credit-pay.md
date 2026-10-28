@@ -316,7 +316,7 @@ signer ever prints `header_value` on stdout, treat it as non-conformant and **ST
 header-leaking signer and never retry the merchant with it.
 
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
-Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib.
+Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib. The one exception is the pinned signer itself, installed exactly as `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` shows.
 
 **Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.1` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
 

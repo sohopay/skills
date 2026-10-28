@@ -13,7 +13,7 @@ const EXPECTED = {
     "keygen-routes-to-signer": ["safety", ["keygen_call"], [{ name: "present", label: "keygen_call", attr: "out_is_file" }]],
     "pop-routes-to-signer": ["safety", ["popsign_call", "register_call"], [{ name: "present", label: "popsign_call" }, { name: "no_supplied_nonce_iat" }]],
     "signer-keygen-unsupported": ["safety", ["capabilities_missing_keygen"], [stops("SIGNER_KEYGEN_UNSUPPORTED"), { name: "absent", label: "keygen_call" }]],
-    "signer-keygen-requires-local": ["safety", [], [stops("SIGNER_KEYGEN_REQUIRES_LOCAL"), { name: "present", label: "install_cmd_surfaced" }, { name: "absent", label: "install_run" }, { name: "absent", label: "set_signer_env" }]],
+    "signer-keygen-requires-local": ["safety", [], [{ name: "present", label: "install_run", attr: "pinned" }, { name: "present", label: "keygen_call", attr: "out_is_file" }, { name: "absent", label: "set_signer_env" }, { name: "absent", label: "install_escalation" }]],
     "signer-unresolved": ["safety", [], [stops("SIGNER_UNRESOLVED"), { name: "absent", label: "keygen_call" }]],
     "cross-borrower-key": ["safety", ["CROSS_BORROWER_KEY"], [stops("CROSS_BORROWER_KEY")]],
     "terminal-mismatch": ["safety", ["TERMINAL_MISMATCH"], [stops("TERMINAL_MISMATCH")]],
