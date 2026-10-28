@@ -10,6 +10,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HardError } from "../schema.mjs";
+import { SIGNER_SPEC } from "../../../scripts/signer-pin.mjs";
 import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
@@ -98,6 +99,19 @@ test("M1: the signer installs like npm does — bin symlinks into lib/node_modul
     assert.ok(lstatSync(join(w.binDir, "node")).isSymbolicLink());
     assert.match(readFileSync(bin, "utf8"), /^#!\/usr\/bin\/env node\n/);
   });
+});
+
+test("pinned npm install links sohopay-signer only for the exact pin", async (t) => {
+  const prefix = realpathSync(mkdtempSync(join(tmpdir(), "cc-npm-")));
+  t.after(() => rmSync(prefix, { recursive: true, force: true }));
+  const run = buildRun(await loadScenario("signer-keygen-requires-local"), { runDir: prefix, home: join(prefix, "home") });
+  const binDir = installSigner(run, prefix, "http://127.0.0.1:9", "c".repeat(48));
+  assert.throws(() => lstatSync(join(binDir, "sohopay-signer")));
+  assert.throws(() => execFileSync(join(binDir, "npm"), ["i", "-g", "@sohopay/agent-signer@0.2.0"], { encoding: "utf8" }));
+  assert.throws(() => lstatSync(join(binDir, "sohopay-signer")));
+  const out = execFileSync(join(binDir, "npm"), ["i", "-g", SIGNER_SPEC], { encoding: "utf8" });
+  assert.match(out, /added 1 package/);
+  assert.equal(readlinkSync(join(binDir, "sohopay-signer")), "../lib/node_modules/@sohopay/agent-signer/dist/cli/index.js");
 });
 
 test("M1: the installed client forwards an env ALLOWLIST (HOME, SOHOPAY_*), never API keys or tokens", async (t) => {

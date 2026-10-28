@@ -16,6 +16,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HardError } from "../schema.mjs";
+import { SIGNER_SPEC } from "../../../scripts/signer-pin.mjs";
 import { registerWorld, sweepStale } from "./cc-lifecycle.mjs";
 import { closureFiles } from "../hashes.mjs";
 import { MKTEMP_DIR_RE, trustedMktempDir } from "../sanction.mjs";
@@ -110,32 +111,57 @@ function startBackend(runPath, tokensPath, ctlToken) {
   });
 }
 
+/** Write the npm-global package and return its bin entry. Not on PATH until linked. */
+function materializeSigner(prefix, signerUrl, clientToken, { broken = false } = {}) {
+  let entry;
+  if (broken) entry = brokenInstallEntry(prefix); // Node itself fails: ERR_MODULE_NOT_FOUND
+  else {
+    const pkg = join(prefix, "lib", "node_modules", "@sohopay", "agent-signer");
+    entry = join(prefix, SIGNER_ENTRY_REL);
+    mkdirSync(dirname(entry), { recursive: true });
+    writeFileSync(join(pkg, "package.json"), `${JSON.stringify({ name: "@sohopay/agent-signer", version: "0.3.1", type: "module", bin: { "sohopay-signer": "dist/cli/index.js" } }, null, 2)}\n`);
+    // The installed copy keeps code only: the repo comments describe the eval and must not reach the agent.
+    const code = readFileSync(CLIENT_SRC, "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
+    writeFileSync(entry, code.replace("__SIGNER_ENDPOINT__", signerUrl).replace("__SIGNER_CLIENT__", clientToken));
+  }
+  chmodSync(entry, 0o755);
+  return entry;
+}
+
 /**
  * Install the signer the scenario calls for under the npm-global prefix `prefix`, laid out the way npm does it:
  * bin/node, and bin/sohopay-signer a relative symlink to lib/node_modules/@sohopay/agent-signer/dist/cli/index.js.
+ * When `run.signer.npmInstall` is `pinned`, the binary stays off PATH until `npm i -g` of the pinned spec.
  * Returns the bin dir.
  */
 export function installSigner(run, prefix, signerUrl, clientToken) {
   const bin = join(prefix, "bin");
   mkdirSync(bin, { recursive: true });
   if (!existsSync(join(bin, "node"))) symlinkSync(process.execPath, join(bin, "node"));
-  if ((run.signer.presence ?? "path") !== "absent") {
-    let entry;
-    if (run.signer.answers === false) entry = brokenInstallEntry(prefix); // Node itself fails: ERR_MODULE_NOT_FOUND
-    else {
-      const pkg = join(prefix, "lib", "node_modules", "@sohopay", "agent-signer");
-      entry = join(prefix, SIGNER_ENTRY_REL);
-      mkdirSync(dirname(entry), { recursive: true });
-      writeFileSync(join(pkg, "package.json"), `${JSON.stringify({ name: "@sohopay/agent-signer", version: "0.3.1", type: "module", bin: { "sohopay-signer": "dist/cli/index.js" } }, null, 2)}\n`);
-      // The installed copy keeps code only: the repo comments describe the eval and must not reach the agent.
-      const code = readFileSync(CLIENT_SRC, "utf8").split("\n").filter((l) => !/^\s*\/\//.test(l)).join("\n");
-      writeFileSync(entry, code.replace("__SIGNER_ENDPOINT__", signerUrl).replace("__SIGNER_CLIENT__", clientToken));
-    }
-    chmodSync(entry, 0o755);
-    symlinkSync(relative(bin, entry), join(bin, "sohopay-signer"));
+  const absent = (run.signer.presence ?? "path") === "absent";
+  // A pinned install starts with no binary. The package is already on disk; only the exact
+  // `npm i -g` links it onto PATH, which is what the honest keygen flow does.
+  if (!absent || run.signer.npmInstall === "pinned") {
+    const entry = materializeSigner(prefix, signerUrl, clientToken, { broken: run.signer.answers === false });
+    if (!absent) symlinkSync(relative(bin, entry), join(bin, "sohopay-signer"));
   }
   if (run.signer.npx === "unavailable") {
     writeFileSync(join(bin, "npx"), `#!/bin/sh\necho "npm error npx canceled due to missing packages and no YES option: [\\"$2\\"]" >&2\nexit 1\n`, { mode: 0o755 });
+  }
+  if (run.signer.npmInstall === "pinned") {
+    const dest = join(bin, "sohopay-signer");
+    const rel = relative(bin, join(prefix, SIGNER_ENTRY_REL));
+    const npm = join(bin, "npm");
+    writeFileSync(npm, `#!/bin/sh
+if [ "$1" = "i" ] && [ "$2" = "-g" ] && [ "$3" = ${shq(SIGNER_SPEC)} ]; then
+  ln -sfn ${shq(rel)} ${shq(dest)}
+  echo "added 1 package"
+  exit 0
+fi
+echo "refusing unexpected npm invocation" >&2
+exit 1
+`, { mode: 0o755 });
+    chmodSync(npm, 0o755);
   }
   return bin;
 }
