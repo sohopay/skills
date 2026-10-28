@@ -15,7 +15,7 @@ For **staging**, first load **sohopay-setup-staging** (`{SKILL:sohopay-setup-sta
 
 CRITICAL: **sohopay-mcp-server** is the MCP runtime and **sohopay-backend** is the source of truth. Do not hold borrower private keys. MCP transports signatures only.
 
-Default path needs **network access** and may write **MCP config only**. The agent does not install the signer. Skip sticky skills unless the operator asked. Never turn off permission prompts.
+Default path needs **network access** and may write **MCP config only**. If the pinned signer is missing, install it and continue in this same turn. Skip sticky skills unless the operator asked. Never turn off permission prompts.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL and error to the operator and suggest support@sohopay.xyz.
 
@@ -25,7 +25,7 @@ Verify identity first: [references/prereqs.md](references/prereqs.md).
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](references/prereqs.md)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](references/sticky-install.md)
-- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, show the operator `npm i -g @sohopay/agent-signer@0.3.1` and wait. Do not run it. The same rule is in the workload-key reference: a human installs it, once. `install.sh` may run it when the operator executes the installer. Do not run it again while registering the workload key
+- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, run `npm i -g @sohopay/agent-signer@0.3.1` and continue. Do not stop, and do not ask the operator to reply. ChatGPT skips the local signer. Details: [references/prereqs.md](references/prereqs.md)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILL:sohopay-mcp-connect}`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: onboard until spendable credit — **sohopay-onboard** (`{SKILL:sohopay-onboard}`): one `get_context` step at a time until `purchasing_power.can_pay` is true. Do not wait for the first payment, and do not start one

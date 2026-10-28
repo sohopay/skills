@@ -6,13 +6,14 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs";
+import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
 
 /**
  * @typedef {object} Scenario  One live-eval case's world (evals/mock/scenarios/<case_id>.mjs).
  * @property {string} case_id
  * @property {string} suite
  * @property {string} situation  What the case's `given` needs, in words.
- * @property {{presence: "path"|"absent", profile?: "0.3.1"|"0.2.0", answers?: boolean, npx?: "unavailable",
+ * @property {{presence: "path"|"absent", profile?: "0.3.1"|"0.2.0", answers?: boolean, npx?: "unavailable", npmInstall?: "pinned",
  *   force_errors?: {command: string, code: string, times?: number}[], voucher_output_override?: object}} signer
  * @property {{key?: {borrower: "self"|"other", terminal: "self"|"other", tamper?: boolean}, key_dir_mode?: number}} seed
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
@@ -116,6 +117,23 @@ export function installSigner(run, { binDir, runPath }) {
   if (run.signer.npx === "unavailable") {
     const npx = join(binDir, "npx");
     writeFileSync(npx, `#!/bin/sh\necho "npm error npx canceled due to missing packages and no YES option: [\\"$2\\"]" >&2\nexit 1\n`, { mode: 0o755 });
+  }
+  // The pinned global install is the only npm this world accepts, and it places sohopay-signer on PATH.
+  if (run.signer.npmInstall === "pinned") {
+    const dest = join(binDir, "sohopay-signer");
+    const wrapper = `#!/bin/sh\nSP6_MOCK_RUN=${shq(runPath)} exec ${shq(process.execPath)} ${shq(SIGNER_SHIM)} "$@"\n`;
+    const npm = join(binDir, "npm");
+    writeFileSync(npm, `#!/bin/sh
+if [ "$1" = "i" ] && [ "$2" = "-g" ] && [ "$3" = ${shq(SIGNER_SPEC)} ]; then
+  cat > ${shq(dest)} << 'EOF'
+${wrapper}EOF
+  chmod 755 ${shq(dest)}
+  echo "added 1 package"
+  exit 0
+fi
+echo "refusing unexpected npm invocation" >&2
+exit 1
+`, { mode: 0o755 });
   }
 }
 const shq = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;

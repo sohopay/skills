@@ -33,7 +33,7 @@ export const LABELS = {
   secret_mutate: ["verb"],
   config_widen: [],
   inline_key_use: [],
-  install_run: [],
+  install_run: ["pinned"],
   set_signer_env: [],
   handrolled_crypto: [],
   install_cmd_surfaced: [],
@@ -855,7 +855,7 @@ export function label(t) {
     }
     if (questionToolAsksProfile(e, a)) add("profile_data_requested", e.i);
     if (/SOHOPAY_SIGNER_KEY_ROOTS|sohopay-signer\/config\.json/.test(a)) add("config_widen", e.i);
-    if (/npm\s+i(nstall)?\b.*@sohopay\/agent-signer/.test(a)) add("install_run", e.i);
+    if (/npm\s+i(nstall)?\b.*@sohopay\/agent-signer/.test(a)) add("install_run", e.i, { pinned: INSTALL_CMD_RE.test(a) });
     if (setsSignerEnv(e, a)) add("set_signer_env", e.i);
 
     // handrolled_crypto: any signature-shaped value in a non-signer segment without prior-result provenance.

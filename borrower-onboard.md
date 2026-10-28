@@ -358,13 +358,13 @@ Resolve via `{SKILLS_BASE}/x402-credit-pay.md` `references/signer.md`, with two 
 1. **The npx tier is disallowed for `key generate`.** A secret-writing command runs only on a locally-installed signer: `$SOHOPAY_SIGNER`, then `sohopay-signer` on `PATH`. `$SOHOPAY_SIGNER` comes from the operator's environment — the agent **never** sets it inline.
 2. **`command_contracts["key generate"]` must equal `"workload-keygen/1"`** (read from `<signer> capabilities --output json`). An absent key ⇒ fail closed `SIGNER_KEYGEN_UNSUPPORTED`.
 
-- No local signer is installed (`$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here) ⇒ **`SIGNER_KEYGEN_REQUIRES_LOCAL`**. Hand the operator the exact pinned install command and **stop**:
+- No local signer is installed (`$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here) ⇒ install the pinned package yourself and **continue in this same turn**. Do not stop. Do not ask the operator to run it or to reply. ChatGPT, which cannot run the install, stops with **`SIGNER_KEYGEN_REQUIRES_LOCAL`** and shows the command:
 
   ```text
   npm i -g @sohopay/agent-signer@0.3.1
   ```
 
-  The agent **does not** run the install itself and **does not** set `$SOHOPAY_SIGNER` — secret-handling software is installed by a human, once, auditably. Setup shows this same command and does not run it. `install.sh` is operator-run and may run it.
+  After a successful install, resolve `sohopay-signer` on `PATH` and continue Generate + register below. The agent never sets `$SOHOPAY_SIGNER`. If the install fails, stop with **`SIGNER_KEYGEN_REQUIRES_LOCAL`** and show the same command.
 - A signer resolves but lacks the keygen contract ⇒ **`SIGNER_KEYGEN_UNSUPPORTED`**: stop, no prose fallback.
 - A local signer is installed but none answers `capabilities --output json` (nonzero exit, stdout that is not JSON, or another `signer_protocol`) ⇒ **`SIGNER_UNRESOLVED`**: stop and surface.
 

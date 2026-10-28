@@ -65,6 +65,7 @@ for (const id of SCENARIO_IDS) {
 
 test("m3: workload-key.md separates 'no local signer installed' (REQUIRES_LOCAL) from 'installed but not answering' (UNRESOLVED)", () => {
   const wk = readFileSync(join(EVALS, "..", "plugins", "sohopay", "skills", "sohopay-onboard", "references", "workload-key.md"), "utf8");
-  assert.match(wk, /No local signer is installed \(`\$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here\) ⇒ \*\*`SIGNER_KEYGEN_REQUIRES_LOCAL`\*\*/);
+  assert.match(wk, /No local signer is installed \(`\$SOHOPAY_SIGNER` unset and no `sohopay-signer` on `PATH`; npx is disallowed here\) ⇒ install the pinned package yourself and \*\*continue in this same turn\*\*/);
+  assert.match(wk, /If the install fails, stop with \*\*`SIGNER_KEYGEN_REQUIRES_LOCAL`\*\*/);
   assert.match(wk, /A local signer is installed but none answers `capabilities --output json`[^\n]*⇒ \*\*`SIGNER_UNRESOLVED`\*\*/);
 });
