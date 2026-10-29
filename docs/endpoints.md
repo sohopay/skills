@@ -11,6 +11,7 @@ Validated against [sohopay-backend/infrastructure/lib/config.ts](https://github.
 | Backend API | `https://api.sohopay.xyz` | `https://staging.api.sohopay.xyz` |
 | MCP server (origin) | `https://mcp.sohopay.xyz` | `https://staging.mcp.sohopay.xyz` |
 | MCP HTTP URL (register) | `https://mcp.sohopay.xyz` until PRM confirms `/mcp` | `https://staging.mcp.sohopay.xyz/mcp` |
+| Borrower portal (web dashboard) | — (not live; `borrower.sohopay.xyz` does not resolve — do not suggest it) | `https://staging.borrower.sohopay.xyz/` |
 
 Register harnesses against the MCP **resource** URL (staging includes the `/mcp` path). Health and OAuth protected-resource metadata stay on the MCP origin (`https://staging.mcp.sohopay.xyz/health`, `/.well-known/oauth-protected-resource`). Production will use the same `/mcp` resource path once that host’s PRM is confirmed.
 | Skill index | `https://agents.sohopay.xyz/.well-known/agent-skills/index.json` | — |

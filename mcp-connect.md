@@ -17,14 +17,16 @@ Execute the hosted path. Do not plan. Local MCP setup is currently not available
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-| Environment | `{API_BASE}` | `{MCP_URL}` | `{MCP_ORIGIN}` | `{MCP_SERVER_ID}` |
-|-------------|--------------|-------------|----------------|-------------------|
-| **Production** | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` |
-| **Staging** | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` |
+| Environment | `{API_BASE}` | `{MCP_URL}` | `{MCP_ORIGIN}` | `{MCP_SERVER_ID}` | `{BORROWER_PORTAL_URL}` |
+|-------------|--------------|-------------|----------------|-------------------|--------------------------|
+| **Production** | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` | — (no portal yet; skip the dashboard suggestion) |
+| **Staging** | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` | `https://staging.borrower.sohopay.xyz/` |
 
 Do not mix production and staging hosts. Staging stub: `{SKILLS_BASE}/mcp-connect-staging.md`.
 
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
+
+**OAuth login:** operator-in-the-loop only — do **not** run `mcp login` from an agent shell with a short timeout; see [references/harnesses.md](#hosted-reference-harnesses) (OAuth browser login).
 
 - **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
 - **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](#hosted-reference-local-server)
@@ -57,6 +59,47 @@ stores and refreshes the token itself. You never paste a token on this path.
 
 > The consent page is where the human authorizes the agent — it is the borrower
 > approval step, not a developer credential. Approve only the scopes you intend to grant.
+
+### OAuth browser login (operator-in-the-loop)
+
+CLI harnesses (Claude Code, Codex, Hermes) start a **local callback listener** on the
+operator's machine for the OAuth redirect. The hosted MCP server and SohoPay API **do not** control that listener —
+only the harness process on the operator's machine does.
+
+**Agent rule — do not run `mcp login` in an agent shell.** Many agent environments stop
+shell commands after about **30 seconds**. That kills the harness CLI, closes the callback
+listener, and leaves the browser on the harness callback URL (`…/callback?code=…&state=…`)
+with **connection refused** even though consent succeeded. Instead:
+
+1. **Tell the operator** to run the harness login command in a **normal Terminal tab** (or the harness UI — e.g. Cursor "Needs Login") and **leave it open** until login finishes or the harness asks for a redirect URL paste.
+2. **Never** chain login with other commands (`;`, `&&`, `|`), wrap it in `timeout`, or run it as a background job the agent will abandon.
+3. If the browser already shows **`ERR_CONNECTION_REFUSED`** on the harness `/callback` URL that includes `code=` and `state=`, OAuth succeeded — have the operator **copy the full address bar** and paste it into the **same** terminal where `mcp login` is still waiting (Hermes prints a paste prompt). Authorization codes expire in **120 seconds** on the SohoPay API; paste promptly or run login again.
+
+**Wait times (defaults):**
+
+| Layer | What it bounds | Typical default |
+|-------|----------------|-----------------|
+| Hermes | Callback + paste wait | **300 s** (`oauth.timeout` under the server entry) |
+| SohoPay API | Authorization `code` lifetime | **120 s** (not configurable from skills) |
+| SohoPay API | Pending consent session | **600 s** |
+
+The five-minute wait is already the default; a **30 s** cutoff almost always
+means the **agent or IDE** stopped the login command, not SohoPay.
+
+**Hermes** — to set the callback wait explicitly, use `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  {MCP_SERVER_ID}:
+    url: "{MCP_URL}"
+    auth: oauth
+    oauth:
+      timeout: 300
+```
+
+**Hermes — no callback listener:** `hermes mcp login {MCP_SERVER_ID} --flow device` when
+the operator cannot keep a listener alive (device authorization only if the
+authorization server advertises it).
 
 ### Register per harness (OAuth — primary)
 

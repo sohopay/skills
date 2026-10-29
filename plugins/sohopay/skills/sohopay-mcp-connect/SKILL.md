@@ -15,14 +15,16 @@ Execute the hosted path. Do not plan. Local MCP setup is currently not available
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-| Environment | `{API_BASE}` | `{MCP_URL}` | `{MCP_ORIGIN}` | `{MCP_SERVER_ID}` |
-|-------------|--------------|-------------|----------------|-------------------|
-| **Production** | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` |
-| **Staging** | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` |
+| Environment | `{API_BASE}` | `{MCP_URL}` | `{MCP_ORIGIN}` | `{MCP_SERVER_ID}` | `{BORROWER_PORTAL_URL}` |
+|-------------|--------------|-------------|----------------|-------------------|--------------------------|
+| **Production** | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` | — (no portal yet; skip the dashboard suggestion) |
+| **Staging** | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` | `https://staging.borrower.sohopay.xyz/` |
 
 Do not mix production and staging hosts. Staging stub: `{SKILL:sohopay-mcp-connect-staging}`.
 
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILL:sohopay-idempotency}`.
+
+**OAuth login:** operator-in-the-loop only — do **not** run `mcp login` from an agent shell with a short timeout; see [references/harnesses.md](references/harnesses.md) (OAuth browser login).
 
 - **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](references/harnesses.md)
 - **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](references/local-server.md)

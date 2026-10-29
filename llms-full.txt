@@ -134,6 +134,7 @@ One short summary. No architecture recap.
 - Borrower status if you onboarded, and whether the **agent grant is ACTIVE** (onboarding is incomplete until it is)
 - Failures: exact URL and error
 - Repayment is due weekly, on Sunday, settled by the operator
+- **Onboarding complete? End with the dashboard invitation** (skip it on an incomplete / failed onboarding): the “📊 Explore your web dashboard” block from **sohopay-onboard** step 9, with `{BORROWER_PORTAL_URL}` resolved from the environment row in **sohopay-mcp-connect** (staging: `https://staging.borrower.sohopay.xyz/`). No portal for the environment → no invitation; never point a production borrower at the staging portal
 
 
 <a id="hosted-reference-sticky-install"></a>
@@ -193,6 +194,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 | MCP register | `https://staging.mcp.sohopay.xyz/mcp` |
 | MCP origin | `https://staging.mcp.sohopay.xyz` |
 | Server id | `sohopay-staging` |
+| Borrower portal | `https://staging.borrower.sohopay.xyz/` |
 | Paste | `Set up https://staging.sohopay.xyz/install` |
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
@@ -225,14 +227,16 @@ Execute the hosted path. Do not plan. Local MCP setup is currently not available
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-| Environment | `{API_BASE}` | `{MCP_URL}` | `{MCP_ORIGIN}` | `{MCP_SERVER_ID}` |
-|-------------|--------------|-------------|----------------|-------------------|
-| **Production** | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` |
-| **Staging** | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` |
+| Environment | `{API_BASE}` | `{MCP_URL}` | `{MCP_ORIGIN}` | `{MCP_SERVER_ID}` | `{BORROWER_PORTAL_URL}` |
+|-------------|--------------|-------------|----------------|-------------------|--------------------------|
+| **Production** | `https://api.sohopay.xyz` | `https://mcp.sohopay.xyz` | `https://mcp.sohopay.xyz` | `sohopay` | — (no portal yet; skip the dashboard suggestion) |
+| **Staging** | `https://staging.api.sohopay.xyz` | `https://staging.mcp.sohopay.xyz/mcp` | `https://staging.mcp.sohopay.xyz` | `sohopay-staging` | `https://staging.borrower.sohopay.xyz/` |
 
 Do not mix production and staging hosts. Staging stub: `{SKILLS_BASE}/mcp-connect-staging.md`.
 
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
+
+**OAuth login:** operator-in-the-loop only — do **not** run `mcp login` from an agent shell with a short timeout; see [references/harnesses.md](#hosted-reference-harnesses) (OAuth browser login).
 
 - **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
 - **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](#hosted-reference-local-server)
@@ -265,6 +269,47 @@ stores and refreshes the token itself. You never paste a token on this path.
 
 > The consent page is where the human authorizes the agent — it is the borrower
 > approval step, not a developer credential. Approve only the scopes you intend to grant.
+
+### OAuth browser login (operator-in-the-loop)
+
+CLI harnesses (Claude Code, Codex, Hermes) start a **local callback listener** on the
+operator's machine for the OAuth redirect. The hosted MCP server and SohoPay API **do not** control that listener —
+only the harness process on the operator's machine does.
+
+**Agent rule — do not run `mcp login` in an agent shell.** Many agent environments stop
+shell commands after about **30 seconds**. That kills the harness CLI, closes the callback
+listener, and leaves the browser on the harness callback URL (`…/callback?code=…&state=…`)
+with **connection refused** even though consent succeeded. Instead:
+
+1. **Tell the operator** to run the harness login command in a **normal Terminal tab** (or the harness UI — e.g. Cursor "Needs Login") and **leave it open** until login finishes or the harness asks for a redirect URL paste.
+2. **Never** chain login with other commands (`;`, `&&`, `|`), wrap it in `timeout`, or run it as a background job the agent will abandon.
+3. If the browser already shows **`ERR_CONNECTION_REFUSED`** on the harness `/callback` URL that includes `code=` and `state=`, OAuth succeeded — have the operator **copy the full address bar** and paste it into the **same** terminal where `mcp login` is still waiting (Hermes prints a paste prompt). Authorization codes expire in **120 seconds** on the SohoPay API; paste promptly or run login again.
+
+**Wait times (defaults):**
+
+| Layer | What it bounds | Typical default |
+|-------|----------------|-----------------|
+| Hermes | Callback + paste wait | **300 s** (`oauth.timeout` under the server entry) |
+| SohoPay API | Authorization `code` lifetime | **120 s** (not configurable from skills) |
+| SohoPay API | Pending consent session | **600 s** |
+
+The five-minute wait is already the default; a **30 s** cutoff almost always
+means the **agent or IDE** stopped the login command, not SohoPay.
+
+**Hermes** — to set the callback wait explicitly, use `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  {MCP_SERVER_ID}:
+    url: "{MCP_URL}"
+    auth: oauth
+    oauth:
+      timeout: 300
+```
+
+**Hermes — no callback listener:** `hermes mcp login {MCP_SERVER_ID} --flow device` when
+the operator cannot keep a listener alive (device authorization only if the
+authorization server advertises it).
 
 ### Register per harness (OAuth — primary)
 
@@ -418,7 +463,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-**Environment: STAGING.** Server id `sohopay-staging`. Register `https://staging.mcp.sohopay.xyz/mcp`. Origin `https://staging.mcp.sohopay.xyz`. API `https://staging.api.sohopay.xyz`. Do not overwrite a production `sohopay` entry.
+**Environment: STAGING.** Server id `sohopay-staging`. Register `https://staging.mcp.sohopay.xyz/mcp`. Origin `https://staging.mcp.sohopay.xyz`. API `https://staging.api.sohopay.xyz`. Borrower portal (web dashboard): `https://staging.borrower.sohopay.xyz/`. Do not overwrite a production `sohopay` entry.
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
@@ -478,6 +523,28 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 | `REPAY_RETURNED_AMOUNT` | `BANK_RETURN_OBLIGATION_OPEN` | A return obligation is open. It is separate off-chain debt. Do not increase `outstandingDebt` |
 
 `unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
+
+9. **Completion — welcome the borrower, then hand over the web dashboard.** Only when onboarding is actually complete (agent grant ACTIVE **and** @handle claimed; plus `can_pay` true, or the onboarded-but-not-spend-ready no-wallet path in step 1). Never on an incomplete / STOP report. Do not start a payment. End the turn with this block, filling `<>` from `get_context` (v7: `get_borrower_status`). Omit a table row whose value you do not have — never invent a statistic. `get_context` returns `available_credit.value` as a 6-decimal USDC base-unit string (`"20000000"` is $20.00): convert it and show dollars, never the raw string. The v7 `get_borrower_status` `available_credit` is already a decimal dollar string (`"20"`): show it as is, do not convert it again.
+
+---
+>
+> ## You're in — welcome to SohoPay!
+>
+> | | |
+> | :--- | :--- |
+> | **Handle** | `@<handle>` |
+> | **Available credit** | **$<available_credit in USD>** |
+> | **Agent grant** | **ACTIVE** |
+>
+> ### 📊 Explore your web dashboard
+>
+> **👉 <BORROWER_PORTAL_URL>**
+>
+> Your personal overview in the browser — check credit and spending statistics, follow settlements, watch your outstanding balance and repayments, and manage your account and agent grant, all in one place.
+>
+> *Sign in to your SohoPay account there, and bookmark it for a quick check-in anytime.*
+
+Resolve `<BORROWER_PORTAL_URL>` from the environment row in `{SKILLS_BASE}/mcp-connect.md` — **staging: `https://staging.borrower.sohopay.xyz/`**. Show it as a bare URL on its own line so every harness renders it clickable. If the environment has no portal (production row is `—`), skip the dashboard section entirely: never send a production borrower the staging link, and never invent a production portal URL. On the not-spend-ready path, keep the block but replace the credit row's value with “Connect a wallet or bank account to start paying”.
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
