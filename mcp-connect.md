@@ -58,6 +58,47 @@ stores and refreshes the token itself. You never paste a token on this path.
 > The consent page is where the human authorizes the agent — it is the borrower
 > approval step, not a developer credential. Approve only the scopes you intend to grant.
 
+### OAuth browser login (operator-in-the-loop)
+
+CLI harnesses (Claude Code, Codex, Hermes) start a **localhost HTTP listener** for the
+OAuth redirect. The hosted MCP server and SohoPay API **do not** control that listener —
+only the harness process on the operator's machine does.
+
+**Agent rule — do not run `mcp login` in an agent shell.** Many agent environments stop
+shell commands after about **30 seconds**. That kills the harness CLI, closes the callback
+listener, and leaves the browser on a URL like `http://127.0.0.1:27890/callback?code=…`
+with **connection refused** even though consent succeeded. Instead:
+
+1. **Tell the operator** to run the harness login command in a **normal Terminal tab** (or the harness UI — e.g. Cursor "Needs Login") and **leave it open** until login finishes or the harness asks for a redirect URL paste.
+2. **Never** chain login with other commands (`;`, `&&`, `|`), wrap it in `timeout`, or run it as a background job the agent will abandon.
+3. If the browser already shows **`ERR_CONNECTION_REFUSED`** on a loopback `/callback` URL that includes `code=` and `state=`, OAuth succeeded — have the operator **copy the full address bar** and paste it into the **same** terminal where `mcp login` is still waiting (Hermes prints a paste prompt). Authorization codes expire in **120 seconds** on the SohoPay API; paste promptly or run login again.
+
+**Wait times (defaults):**
+
+| Layer | What it bounds | Typical default |
+|-------|----------------|-----------------|
+| Hermes / Codex | Loopback callback + paste wait | **300 s** (`oauth.timeout` under the server entry) |
+| SohoPay API | Authorization `code` lifetime | **120 s** (not configurable from skills) |
+| SohoPay API | Pending consent session | **600 s** |
+
+Raising Hermes wait to five minutes is already the default; a **30 s** cutoff almost always
+means the **agent or IDE** stopped the login command, not SohoPay.
+
+**Hermes** — optional explicit callback wait in `~/.hermes/config.yaml`:
+
+```yaml
+mcp_servers:
+  {MCP_SERVER_ID}:
+    url: "{MCP_URL}"
+    auth: oauth
+    oauth:
+      timeout: 300
+```
+
+**Hermes — no loopback listener:** `hermes mcp login {MCP_SERVER_ID} --flow device` when
+the operator cannot keep a callback listener alive (device authorization only if the
+authorization server advertises it).
+
 ### Register per harness (OAuth — primary)
 
 <!-- Claude Code / Cursor / Codex OAuth verified 2026-08-02; Hermes + ChatGPT verified 2026-08-03 — all against vendor docs. ChatGPT connector UI labels shift between releases. -->
