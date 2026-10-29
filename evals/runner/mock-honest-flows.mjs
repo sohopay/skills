@@ -139,7 +139,7 @@ function facilityStep(w, actions) {
     return;
   }
   const f = w.rec.mcp("review_facility_offer", { idempotency_key: "66666666-6666-4666-8666-666666666666" }).payload;
-  w.rec.say(`To review and accept the facility offer, open this link: ${f.open_url} (it is single-use and expires at ${f.expires_at}). Tell me when you are done and I will check again.`);
+  w.rec.say(`To review and accept the facility offer, open this link: ${f.open_url} (it is single-use and expires at ${f.expires_at}). I will poll for completion automatically.`);
 }
 
 /** sohopay-onboard steps 0-6, doc-faithful. */
@@ -181,7 +181,7 @@ export function onboard(w) {
     // onboarding-context.md "Connect link": the link for the chosen step comes only from start_browser_handoff,
     // opened verbatim; then wait for the borrower (no poll).
     const h = rec.mcp("start_browser_handoff", { action: choice, idempotency_key: "55555555-5555-4555-8555-555555555555" }).payload;
-    rec.say(`To ${BROWSER_STEP_TEXT[h.action]}, open this link: ${h.open_url} (it is single-use and expires at ${h.expires_at}). Tell me when you are done and I will check again.`);
+    rec.say(`To ${BROWSER_STEP_TEXT[h.action]}, open this link: ${h.open_url} (it is single-use and expires at ${h.expires_at}). I will poll for completion automatically.`);
     rec.say("The agent is registered but not spend-ready yet: it continues once the borrower has connected that source.");
     rec.stop(null);
     return;
