@@ -48,6 +48,28 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 `unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
 
+9. **Completion — celebrate, then hand over the web dashboard.** Only when onboarding is actually complete (agent grant ACTIVE **and** @handle claimed; plus `can_pay` true, or the onboarded-but-not-spend-ready no-wallet path in step 1). Never on an incomplete / STOP report. Do not start a payment. End the turn with this block, filling `<>` from `get_context` / `get_borrower_status` (omit a table row whose value you do not have — never invent a statistic):
+
+---
+>
+> ## 🎉 You're in — welcome to SohoPay!
+>
+> | | |
+> | :--- | :--- |
+> | 🪪 **Handle** | `@<handle>` |
+> | 💳 **Available credit** | **<available_credit>** |
+> | 🔐 **Agent grant** | **ACTIVE** ✅ |
+>
+> ### 📊 Explore your web dashboard
+>
+> **👉 <BORROWER_PORTAL_URL>**
+>
+> Your personal overview in the browser — check credit and spending statistics, follow settlements, watch your outstanding balance and repayments, and manage your account and agent grant, all in one place.
+>
+> ✨ *Log in with the same account you just onboarded with — and bookmark it for a quick check-in anytime.*
+
+Resolve `<BORROWER_PORTAL_URL>` from the environment row in `{SKILLS_BASE}/mcp-connect.md` — **staging: `https://staging.borrower.sohopay.xyz/`**. Show it as a bare URL on its own line so every harness renders it clickable. If the environment has no portal (production row is `—`), skip the dashboard section entirely: never send a production borrower the staging link, and never invent a production portal URL. On the not-spend-ready path, keep the block but replace the credit row's value with “Connect a wallet or bank account to start paying”.
+
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
 ---

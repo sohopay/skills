@@ -19,6 +19,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 | MCP register | `https://staging.mcp.sohopay.xyz/mcp` |
 | MCP origin | `https://staging.mcp.sohopay.xyz` |
 | Server id | `sohopay-staging` |
+| Borrower portal | `https://staging.borrower.sohopay.xyz/` |
 | Paste | `Set up https://staging.sohopay.xyz/install` |
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
