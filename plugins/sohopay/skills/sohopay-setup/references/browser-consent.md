@@ -22,7 +22,7 @@ If your harness has no browser tool:
 
 ### After opening — poll, do not wait in chat
 
-When a skill says to poll `get_context` or `get_agent_authorization`, do that on a **5 s** interval for at most **10 minutes**. **Do not** ask the borrower to type "done" or end the turn waiting for chat. If the step has not cleared after 10 minutes (or the handoff token has expired), stop polling, tell the operator which step is outstanding, and offer to re-issue the link. Onboarding handoff polling: `{SKILL:sohopay-onboard}` — load `references/onboarding-context.md` ("Connect link", "Facility acceptance").
+When a skill says to poll `get_context` or `get_agent_authorization`, do that on a **5 s** interval for the cap that skill states (onboarding handoffs: 15 minutes; agent authorization: 2 minutes), or 10 minutes if it states none. **Do not** ask the borrower to type "done" or end the turn waiting for chat. If the step has not cleared within the cap (or the handoff token has expired), stop polling, tell the operator which step is outstanding, and offer to re-issue the link. Onboarding handoff polling: `{SKILL:sohopay-onboard}` — load `references/onboarding-context.md` ("Connect link", "Facility acceptance").
 
 ### Success pages without "return to agent"
 
