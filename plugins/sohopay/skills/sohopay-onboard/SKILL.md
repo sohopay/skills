@@ -13,6 +13,8 @@ Execute the numbered workflow in **one turn**. Do not plan. Do not defer the wor
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
+Browser consent and handoffs: [references/browser-consent.md](references/browser-consent.md) (open `consent_url` / `open_url` verbatim, poll after open — never fetch handoff URLs with curl).
+
 Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on writes — `{SKILL:sohopay-idempotency}`.
 
 0. `get_context` (catalog v8+) or `whoami` (v7) — skip *user* register if borrower exists; still `register_borrower` if this host has no `operational_agent_id`. On v8+, `get_context` returns `borrower_id` + credit + authorization directly; on v7 use `whoami` (field caveats: [references/whoami.md](references/whoami.md)) + `get_borrower_status`. `{SKILL:sohopay-bootstrap}`

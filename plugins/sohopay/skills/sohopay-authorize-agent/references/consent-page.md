@@ -1,5 +1,7 @@
 ## Consent page (preferred borrower UX)
 
+General browser rules (models, `#` fragments, polling, Hermes close-tab): load `{SKILL:sohopay-setup}` and read `references/browser-consent.md` (or this skill's onboard path via `{SKILL:sohopay-onboard}` `references/browser-consent.md`).
+
 Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and complete passkey step-up. A wallet is optional for within-threshold grants; larger grants also require an EOA signature.
 
 | Environment | Consent base (live) |
