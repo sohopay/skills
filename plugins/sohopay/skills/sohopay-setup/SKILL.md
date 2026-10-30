@@ -21,6 +21,8 @@ Default path needs **network access** and may write **MCP config only**. If the 
 
 Verify identity first: [references/prereqs.md](references/prereqs.md).
 
+Browser consent and handoff pages (verbatim URLs, polling, harness limits): [references/browser-consent.md](references/browser-consent.md).
+
 ## Checklist
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](references/prereqs.md)
