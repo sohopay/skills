@@ -27,7 +27,7 @@ Do not mix production and staging hosts. Staging stub: `{SKILLS_BASE}/mcp-connec
 MCP never moves money. Read live `tools/list`. Cursor/ChatGPT: pass `idempotency_key` on writes — `{SKILLS_BASE}/idempotency.md`.
 
 **OAuth login:** operator-in-the-loop only — do **not** run `mcp login` from an agent shell with a short timeout; see [references/harnesses.md](#hosted-reference-harnesses) (OAuth browser login).
-After login, onboarding handoffs use the same browser rules — load `{SKILLS_BASE}/setup.md` and read `references/browser-consent.md`.
+After login, onboarding handoffs use the same browser rules — see the "Browser consent and handoff pages" reference in `{SKILLS_BASE}/setup.md`.
 
 - **Hosted (the only available path, no Node):** per-harness OAuth — [references/harnesses.md](#hosted-reference-harnesses)
 - **Local MCP** is currently not available. Do not clone or run `sohopay-mcp-server`. A 404 from that private repo is expected and is not a failed check. Details: [references/local-server.md](#hosted-reference-local-server)

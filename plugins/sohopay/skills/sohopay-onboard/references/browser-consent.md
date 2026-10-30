@@ -4,7 +4,7 @@ SohoPay onboarding and MCP login depend on **opening HTTPS URLs in the operator'
 
 ### Use a capable agent model
 
-Free or weak chat models often **fail tool calling**, **truncate URLs**, or **drop the `#` fragment**. That breaks consent and bank handoff pages. For setup and onboarding, use a model with reliable tool use (for example a current Sonnet-class model in your harness). If a page opens blank or "Invalid link", re-run the step with a stronger model and open the URL **verbatim** again.
+Weaker models often **fail tool calling**, **truncate URLs**, or **drop the `#` fragment**. That breaks consent and bank handoff pages. For setup and onboarding, use a model with reliable tool calling that preserves long URLs and fragments. If a page opens blank or "Invalid link", re-run the step with a stronger model and open the URL **verbatim** again.
 
 ### Open URLs verbatim — never fetch them
 
@@ -17,16 +17,16 @@ Free or weak chat models often **fail tool calling**, **truncate URLs**, or **dr
 
 If your harness has no browser tool:
 
-1. **macOS (Hermes and other CLIs):** `open 'https://…#…'` with the **full** URL in single quotes so the shell does not strip the fragment.
+1. **macOS (Hermes and other CLIs):** `open 'https://…#…'` with the **full** URL in single quotes so the shell does not strip the fragment. Run this only for an `https://` URL on the SohoPay console/consent host returned by the tool, and never when the URL contains a `'` — print it for the operator instead.
 2. **Otherwise:** print the full URL for the operator to open on phone or desktop. Do not retype it.
 
 ### After opening — poll, do not wait in chat
 
-When a skill says to poll `get_context` or `get_agent_authorization`, do that on a **5 s** interval. **Do not** ask the borrower to type "done" or end the turn waiting for chat. Onboarding handoff polling: [references/onboarding-context.md](references/onboarding-context.md) ("Connect link", "Facility acceptance").
+When a skill says to poll `get_context` or `get_agent_authorization`, do that on a **5 s** interval for at most **10 minutes**. **Do not** ask the borrower to type "done" or end the turn waiting for chat. If the step has not cleared after 10 minutes (or the handoff token has expired), stop polling, tell the operator which step is outstanding, and offer to re-issue the link. Onboarding handoff polling: [references/onboarding-context.md](references/onboarding-context.md) ("Connect link", "Facility acceptance").
 
 ### Success pages without "return to agent"
 
-Some harnesses (notably **Hermes**) register only **loopback HTTP** OAuth redirects, not deep links such as `cursor://`. Bank connect and other handoffs may finish on a SohoPay success screen **without** a safe `return_uri`. The **Close** control may only call `window.close()`, which browsers block for user-opened tabs.
+Some harnesses (for example **Hermes**, at the time of writing) register only **loopback HTTP** OAuth redirects, not deep links such as `cursor://`. Bank connect and other handoffs may finish on a SohoPay success screen **without** a safe `return_uri`. The **Close** control may only call `window.close()`, which browsers block for user-opened tabs.
 
 **Agent rule:** treat completion from **`get_context`** (or the relevant poll), not from the operator closing a tab. Tell the operator they can close the tab manually (⌘W / Ctrl+W) if the button does nothing; **keep polling** until the connect or facility step clears.
 
