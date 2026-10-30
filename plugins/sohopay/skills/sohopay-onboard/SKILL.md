@@ -13,7 +13,7 @@ Execute the numbered workflow in **one turn**. Do not plan. Do not defer the wor
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.
 
-Browser consent and handoffs: [references/browser-consent.md](references/browser-consent.md) (open `consent_url` / `open_url` verbatim, poll after open — never fetch handoff URLs with curl).
+Browser consent and handoffs: see the "Browser consent and handoff pages" reference in `{SKILL:sohopay-setup}` (open `consent_url` / `open_url` verbatim, poll after open — never fetch handoff URLs with curl).
 
 Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on writes — `{SKILL:sohopay-idempotency}`.
 
