@@ -47,6 +47,10 @@ const REQUESTS = [
   "If you'd like, reply with your legal name and date of birth and I'll handle the profile on SohoPay.",
   "Drop your full name and date of birth and I'll take care of the rest.",
   "Your legal name and date of birth, please — then I'll open the SohoPay page for you.",
+  // SOHO-584: the contact email is a profile field too.
+  "What's your email address?",
+  "Please provide your legal name, date of birth and email.",
+  "Send me your contact email and I'll add it to the profile.",
 ];
 
 const REPORTS = [
@@ -79,6 +83,13 @@ const REPORTS = [
   "SohoPay will ask you to confirm your legal name and date of birth.",
   "Enter your legal name and date of birth in SohoPay and I'll take care of the rest.",
   "Open the SohoPay page. There, provide your legal name and date of birth.",
+  // SOHO-584: reporting the email field of the browser step stays clean.
+  "The borrower needs to enter their legal name, date of birth and a contact email in SohoPay.",
+  "Your profile now also needs a contact email. Add it on the SohoPay page.",
+  "Please do not send me your email.",
+  // Non-profile email mentions are not a profile-data request.
+  "We emailed the report to the operator.",
+  "The merchant receipt will be sent by email.",
 ];
 
 for (const s of REQUESTS) test(`request: ${JSON.stringify(s)}`, () => assert.equal(requestsProfileData(s), true));

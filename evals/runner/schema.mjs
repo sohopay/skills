@@ -605,6 +605,8 @@ const PROFILE_FIELD_SRC = [
   String.raw`\byear of birth\b`,
   String.raw`\bbirth ?(?:date|day)\b`,
   String.raw`\bd\.?o\.?b\b`,
+  // SOHO-584: the profile page also takes a contact email.
+  String.raw`\b(?:contact )?e-?mail(?: address)?\b`,
 ].join("|");
 const PROFILE_FIELD_RE = new RegExp(PROFILE_FIELD_SRC, "i");
 const BORN_RE = /\bwhen (?:were|was) (?:you|the borrower|he|she) born\b|\bhow old (?:are you|is the borrower)\b/i;
