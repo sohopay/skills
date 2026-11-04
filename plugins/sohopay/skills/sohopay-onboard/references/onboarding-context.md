@@ -84,9 +84,18 @@ While the bank rail is on, `get_context` may list a debit the borrower does on t
 
 `unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
 
+### Statement repayment (`handoff_required: false`)
+
+While the repayment due-date flag is on, `get_context` may list statement billing hints. Same shape as bank repayment: `actor: BORROWER`, no `handoff_type`, no `tool`, no `open_url`. Report `REPAY_STATEMENT` or `REPAY_OVERDUE` to the borrower and stop. Do not invent a link or a new tool. Do not start a wallet repayment for them. When present, mention optional `repayment.next_due_at`, `amount_due`, `overdue`, and `grace_ends_at` (convert `amount_due` from 6-decimal USDC base units).
+
+| Action | Reason code | When |
+| --- | --- | --- |
+| `REPAY_STATEMENT` | `REPAYMENT_STATEMENT_DUE` | A facility statement is open and due |
+| `REPAY_OVERDUE` | `REPAYMENT_STATEMENT_OVERDUE` | A facility statement is past grace / overdue |
+
 ### Rules
 
-- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. A bank-repayment action has no link. Never invent a link. Never ask for a legal name, date of birth, an account number, a routing number, or a passkey in chat.
+- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. A bank-repayment or statement-repayment action has no link. Never invent a link. Never ask for a legal name, date of birth, an account number, a routing number, or a passkey in chat.
 - `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - `COMPLETE_PROFILE` and a source step do not delay the workload key or `authorize_agent`. Those are done first. The source step gates spendable credit. Wallet proof runs when `PROVE_WALLET` is the borrower's choice. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.

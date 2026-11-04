@@ -11,6 +11,8 @@ metadata:
 
 Execute this repay in the same turn. Do not plan. Do not invent a signature. Do not ask the borrower to paste `SohoSettlement.repay` calldata.
 
+This skill is wallet consent repayment only. It is **not** the handler for `get_context` `REPAY_STATEMENT` / `REPAY_OVERDUE` (statement billing) or bank-rail debit actions — those are report-only borrower hints with no tool and no handoff (see `{SKILL:sohopay-bootstrap}`).
+
 **Before:** MCP connected; borrower onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers.
 
 **First — orient:** confirm identity and outstanding balance with `{SKILL:sohopay-bootstrap}` (v8+: `get_context` returns `borrower_id` + outstanding debt; v7: `whoami` + `get_borrower_status`).
