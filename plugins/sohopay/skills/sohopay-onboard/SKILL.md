@@ -70,6 +70,6 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 Resolve `<BORROWER_PORTAL_URL>` from the environment row in `{SKILL:sohopay-mcp-connect}` — **staging: `https://staging.borrower.sohopay.xyz/`**. Show it as a bare URL on its own line so every harness renders it clickable. If the environment has no portal (production row is `—`), skip the dashboard section entirely: never send a production borrower the staging link, and never invent a production portal URL. On the not-spend-ready path, keep the block but replace the credit row's value with “Connect a wallet or bank account to start paying”.
 
-Facility terms v2 (the offer is a maximum, renewals keep the limit) and `limit_standing` (why the limit is what it is, and the bank pause): [references/onboarding-context.md](references/onboarding-context.md).
+Facility terms v2 (the offer is a maximum, renewals keep the limit) `limit_standing` (why the limit is what it is, and the bank or overdue-payment pause) and `RECONNECT_BANK` (report it, no link): [references/onboarding-context.md](references/onboarding-context.md).
 
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](references/scopes.md). Operate: `{SKILL:sohopay-human-direct}`. Warm pay after the grant is ACTIVE: `{SKILL:sohopay-x402}`.

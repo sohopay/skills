@@ -103,11 +103,17 @@ Some deployments add a `limit_standing` section to `get_context` when limits are
 | `limit`, `headroom` | The current limit and what is left under it, as `credit` reports them. |
 | `band`, `effective_tier` | Opaque labels from the credit profile (`effective_tier` is `PRIME`, `STANDARD`, `STARTER` or `DECLINE`). Name them if asked; never turn them into a score or promise a higher tier. Both are null before the first evaluation. |
 | `sources_used` | How many banks and wallets the profile used. |
-| `frozen` | New spending is paused until the borrower's bank connection is repaired. The limit shows as 0, `can_pay` is false, what they owe is unchanged and repayment still works. |
-| `modifiers` | Live adjustments: `BANK_FREEZE` (the pause above), `NEGATIVE_REPULL` (the limit is 25% lower after a bank update showed a new overdraft, fee or negative balance, and it rises when a later update looks healthy), `OVERRIDE` (SohoPay adjusted it by hand). |
+| `frozen` | New spending is paused. The limit shows as 0, `can_pay` is false, what they owe is unchanged and repayment still works. The `modifiers` say why: a bank connection to repair (`BANK_FREEZE`) or an overdue payment (`LATE_FREEZE`, `DEFAULT_ZERO`). |
+| `modifiers` | Live adjustments: `BANK_FREEZE` (the bank pause above), `LATE_FREEZE` (a statement is past its grace period: the limit returns when it is paid), `DEFAULT_ZERO` (a statement is 30 or more days past grace: the same, and it lifts on payment), `NEGATIVE_REPULL` (the limit is 25% lower after a bank update showed a new overdraft, fee or negative balance, and it rises when a later update looks healthy), `OVERRIDE` (SohoPay adjusted it by hand). |
 | `reason_codes` | Why the borrower is not scored (for example `INSUFFICIENT_HISTORY`). A status: report it, no tool. |
 | `last_change` | `previous_limit` to `current_limit` with `reason_codes`, or null when nothing has moved. |
 
 When the borrower asks why their limit changed, answer from `last_change` and `modifiers` in plain words, and say which amounts moved. If the reason code is not one you recognise, say the limit was re-evaluated; never guess a cause. Never promise when or whether the limit will rise.
 
-When `frozen` is true, tell the operator that spending is paused until the bank connection is repaired and that the borrower does this on SohoPay. There is no agent tool or link for it: give only a link a tool returned, never invent one, and do not start a new `CONNECT_BANK` handoff for a bank that needs re-login. Do not poll; call `get_context` again only when the borrower says they have finished.
+When `frozen` is true, read `modifiers`. For `LATE_FREEZE` or `DEFAULT_ZERO`, tell the operator that spending is paused because a payment is overdue and returns once it is paid; offer the repayment flow, and do not blame the bank. For `BANK_FREEZE`, tell the operator that spending is paused until the bank connection is repaired and that the borrower does this on SohoPay. There is no agent tool or link for it: give only a link a tool returned, never invent one, and do not start a new `CONNECT_BANK` handoff for a bank that needs re-login. Do not poll; call `get_context` again only when the borrower says they have finished.
+
+### Bank needs re-login (`RECONNECT_BANK`)
+
+While a bank link needs the borrower to sign in to their bank again, `get_context` may list `RECONNECT_BANK` (`actor: BORROWER`, reason `BANK_REAUTH_REQUIRED`), after `PAY` on an active facility or in place of `CONNECT_BANK` before activation. SohoPay stops reading that bank until it is repaired, so the profile goes stale and spending can pause (`frozen`). Report it as the borrower's step on SohoPay. There is no agent tool or link for it: give no link, do not call `start_browser_handoff`, and do not start a `CONNECT_BANK` handoff for it. It is a status, not a reason to poll.
+
+SohoPay emails the borrower about a week before a bank connection's consent ends, and again if spending pauses or returns. You do not send these and need not repeat them; if asked, say the borrower will be emailed and that a lapsed bank link pauses new spending until it is reconnected.
