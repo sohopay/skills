@@ -41,7 +41,7 @@ The workload key, borrower token, and ACTIVE grant come immediately after `regis
 | `BANK_AUTOPAY_PAUSED` | BORROWER · no link | `REAUTHORIZE_BANK_DEBIT`. Report it to the borrower. Replaces `SET_UP_AUTOPAY` | **Bank repayment** below |
 | `BANK_RETURN_OBLIGATION_OPEN` | BORROWER · no link | `REPAY_RETURNED_AMOUNT`. Report it to the borrower | **Bank repayment** below |
 | `REPAYMENT_STATEMENT_DUE` | BORROWER · no link | `REPAY_STATEMENT`. Report it to the borrower | **Statement repayment** below |
-| `REPAYMENT_STATEMENT_OVERDUE` | BORROWER · no link | `REPAY_OVERDUE`. Report it to the borrower | **Statement repayment** below |
+| `REPAYMENT_OVERDUE` | BORROWER · no link | `REPAY_OVERDUE`. Report it to the borrower | **Statement repayment** below |
 
 **Bank repayment.** These four appear only while the bank rail is on. Each is `actor: BORROWER`, `handoff_required: false`, with no `tool` and no `handoff_type`. The backend returns no `open_url`. `handoff_required: false` means there is no browser handoff, not that you perform the debit. Report the action to the borrower and tell them to open the SohoPay portal themselves (give no link), then carry on with any `AGENT` action listed alongside it, such as `PAY`. Do not call `start_browser_handoff`, invent a URL, or ask for a legal name, date of birth, account number, or routing number. Do not open `{SKILL:sohopay-repay}` for them: that skill is a wallet repayment. There is no debit tool and no `repayment:bank:execute`. The borrower completes the debit on the SohoPay portal.
 
@@ -54,12 +54,12 @@ The workload key, borrower token, and ACTIVE grant come immediately after `regis
 
 `unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus. Scan the full `next_actions` array: these can sit beside `PAY`.
 
-**Statement repayment.** While the repayment due-date flag is on, `get_context` may list these. Each is `actor: BORROWER`, `handoff_required: false`, with no `tool` and no `handoff_type`. The backend returns no `open_url`. Report the action to the borrower and stop inventing a browser handoff, URL, or new repayment tool. Do not open `{SKILL:sohopay-repay}` for them: that skill is a wallet repayment challenge, not statement billing. When `repayment` carries optional `next_due_at`, `amount_due`, `overdue`, or `grace_ends_at`, mention those values (convert `amount_due` from 6-decimal USDC base units before you say it). Scan the full `next_actions` array: these can sit beside `PAY` or bank-repayment actions.
+**Statement repayment.** While the repayment due-date flag is on, `get_context` may list these. Each is `actor: BORROWER`, `handoff_required: false`, with no `tool` and no `handoff_type`. The backend returns no `open_url`. Report the action to the borrower and stop inventing a browser handoff, URL, or new repayment tool. These actions never start a repayment on their own: open `{SKILL:sohopay-repay}` only if the borrower asks you to repay. A confirmed wallet repayment is applied to open statements oldest first, so it does clear a due statement. When `repayment` carries optional `next_due_at`, `amount_due`, `overdue`, or `grace_ends_at`, mention those values (convert `amount_due` from 6-decimal USDC base units; the repayment quote's `amount_due` is already a USD decimal before you say it). Scan the full `next_actions` array: these can sit beside `PAY` or bank-repayment actions.
 
 | Action | Reason code | When |
 | --- | --- | --- |
 | `REPAY_STATEMENT` | `REPAYMENT_STATEMENT_DUE` | A facility statement is open and due |
-| `REPAY_OVERDUE` | `REPAYMENT_STATEMENT_OVERDUE` | A facility statement is past grace / overdue |
+| `REPAY_OVERDUE` | `REPAYMENT_OVERDUE` | A facility statement is past grace / overdue |
 
 **`HANDLE_CLAIM_REQUIRED` when it is not `[0]`.** The backend may list `SPENDING_AVAILABLE` (or another AGENT step) before `HANDLE_CLAIM_REQUIRED` when the borrower can pay but has no @handle. After you act on `next_actions[0]`, scan the full array: any entry with `reason_code: HANDLE_CLAIM_REQUIRED` (`action: CLAIM_HANDLE`, `tool: claim_handle`) means onboarding is **incomplete** until a handle is claimed — hand off to the borrower via `{SKILL:sohopay-onboard}` step 6 (or `{SKILL:sohopay-handle}` for claim mechanics). Do not report the borrower as fully onboarded while that entry is present.
 

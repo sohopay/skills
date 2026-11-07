@@ -13,7 +13,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Execute this repay in the same turn. Do not plan. Do not invent a signature. Do not ask the borrower to paste `SohoSettlement.repay` calldata.
 
-This skill is wallet consent repayment only. It is **not** the handler for `get_context` `REPAY_STATEMENT` / `REPAY_OVERDUE` (statement billing) or bank-rail debit actions — those are report-only borrower hints with no tool and no handoff (see `{SKILLS_BASE}/bootstrap.md`).
+This skill is wallet consent repayment only. `get_context` `REPAY_STATEMENT` / `REPAY_OVERDUE` and the bank-rail debit actions are report-only borrower hints with no tool and no handoff (see `{SKILLS_BASE}/bootstrap.md`); they do not start this skill. Run it when the borrower asks to repay: a confirmed wallet repayment is applied to open statements oldest first. A bank-rail debit is not a wallet repayment.
 
 **Before:** MCP connected; borrower onboarded. `create_repayment` / `execute_repayment` stay prepare-only for third-party payers.
 

@@ -86,12 +86,12 @@ While the bank rail is on, `get_context` may list a debit the borrower does on t
 
 ### Statement repayment (`handoff_required: false`)
 
-While the repayment due-date flag is on, `get_context` may list statement billing hints. Same shape as bank repayment: `actor: BORROWER`, no `handoff_type`, no `tool`, no `open_url`. Report `REPAY_STATEMENT` or `REPAY_OVERDUE` to the borrower and stop. Do not invent a link or a new tool. Do not start a wallet repayment for them. When present, mention optional `repayment.next_due_at`, `amount_due`, `overdue`, and `grace_ends_at` (convert `amount_due` from 6-decimal USDC base units).
+While the repayment due-date flag is on, `get_context` may list statement billing hints. Same shape as bank repayment: `actor: BORROWER`, no `handoff_type`, no `tool`, no `open_url`. Report `REPAY_STATEMENT` or `REPAY_OVERDUE` to the borrower and stop. Do not invent a link or a new tool. Do not start a wallet repayment unless the borrower asks you to repay: a confirmed wallet repayment is applied to open statements oldest first. When present, mention optional `repayment.next_due_at`, `amount_due`, `overdue`, and `grace_ends_at` (convert `amount_due` from 6-decimal USDC base units; the repayment quote's `amount_due` is already a USD decimal).
 
 | Action | Reason code | When |
 | --- | --- | --- |
 | `REPAY_STATEMENT` | `REPAYMENT_STATEMENT_DUE` | A facility statement is open and due |
-| `REPAY_OVERDUE` | `REPAYMENT_STATEMENT_OVERDUE` | A facility statement is past grace / overdue |
+| `REPAY_OVERDUE` | `REPAYMENT_OVERDUE` | A facility statement is past grace / overdue |
 
 ### Rules
 

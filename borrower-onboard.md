@@ -50,7 +50,7 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 `unapplied_bank_credit`, when present, is a string in 6-decimal USDC base units (`"10000000"` is $10.00; convert before you say it). It is settled bank money the facility debt could not absorb. Report it. It is not spendable credit, not a reason to skip a payment, and not something you apply on chain. It is omitted when the rail is off or there is no surplus.
 
-**Statement repayment.** While the repayment due-date flag is on, `get_context` may list `REPAY_STATEMENT` (`REPAYMENT_STATEMENT_DUE`) or `REPAY_OVERDUE` (`REPAYMENT_STATEMENT_OVERDUE`). Each is `actor: BORROWER`, `handoff_required: false`, with no `tool`, no `handoff_type`, and no `open_url`. Report the action to the borrower; do not invent a URL, handoff, or new repayment tool; do not start `{SKILLS_BASE}/repay.md` for them. When `repayment` includes optional `next_due_at`, `amount_due`, `overdue`, or `grace_ends_at`, mention those values (convert `amount_due` from 6-decimal USDC base units).
+**Statement repayment.** While the repayment due-date flag is on, `get_context` may list `REPAY_STATEMENT` (`REPAYMENT_STATEMENT_DUE`) or `REPAY_OVERDUE` (`REPAYMENT_OVERDUE`). Each is `actor: BORROWER`, `handoff_required: false`, with no `tool`, no `handoff_type`, and no `open_url`. Report the action to the borrower; do not invent a URL, handoff, or new repayment tool; do not start `{SKILLS_BASE}/repay.md` unless the borrower asks you to repay (a confirmed wallet repayment is applied to open statements oldest first). When `repayment` includes optional `next_due_at`, `amount_due`, `overdue`, or `grace_ends_at`, mention those values (convert `amount_due` from 6-decimal USDC base units; the repayment quote's `amount_due` is already a USD decimal).
 
 9. **Completion — welcome the borrower, then hand over the web dashboard.** Only when onboarding is actually complete (agent grant ACTIVE **and** @handle claimed; plus `can_pay` true, or the onboarded-but-not-spend-ready no-wallet path in step 1). Never on an incomplete / STOP report. Do not start a payment. End the turn with this block, filling `<>` from `get_context` (v7: `get_borrower_status`). Omit a table row whose value you do not have — never invent a statistic. `get_context` returns `available_credit.value` as a 6-decimal USDC base-unit string (`"20000000"` is $20.00): convert it and show dollars, never the raw string. The v7 `get_borrower_status` `available_credit` is already a decimal dollar string (`"20"`): show it as is, do not convert it again.
 
@@ -213,12 +213,12 @@ While the bank rail is on, `get_context` may list a debit the borrower does on t
 
 ### Statement repayment (`handoff_required: false`)
 
-While the repayment due-date flag is on, `get_context` may list statement billing hints. Same shape as bank repayment: `actor: BORROWER`, no `handoff_type`, no `tool`, no `open_url`. Report `REPAY_STATEMENT` or `REPAY_OVERDUE` to the borrower and stop. Do not invent a link or a new tool. Do not start a wallet repayment for them. When present, mention optional `repayment.next_due_at`, `amount_due`, `overdue`, and `grace_ends_at` (convert `amount_due` from 6-decimal USDC base units).
+While the repayment due-date flag is on, `get_context` may list statement billing hints. Same shape as bank repayment: `actor: BORROWER`, no `handoff_type`, no `tool`, no `open_url`. Report `REPAY_STATEMENT` or `REPAY_OVERDUE` to the borrower and stop. Do not invent a link or a new tool. Do not start a wallet repayment unless the borrower asks you to repay: a confirmed wallet repayment is applied to open statements oldest first. When present, mention optional `repayment.next_due_at`, `amount_due`, `overdue`, and `grace_ends_at` (convert `amount_due` from 6-decimal USDC base units; the repayment quote's `amount_due` is already a USD decimal).
 
 | Action | Reason code | When |
 | --- | --- | --- |
 | `REPAY_STATEMENT` | `REPAYMENT_STATEMENT_DUE` | A facility statement is open and due |
-| `REPAY_OVERDUE` | `REPAYMENT_STATEMENT_OVERDUE` | A facility statement is past grace / overdue |
+| `REPAY_OVERDUE` | `REPAYMENT_OVERDUE` | A facility statement is past grace / overdue |
 
 ### Rules
 
