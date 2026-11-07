@@ -72,6 +72,8 @@ Canonical identity: **borrowerId = User.id (UUID)**. Pass `idempotency_key` on w
 
 Resolve `<BORROWER_PORTAL_URL>` from the environment row in `{SKILLS_BASE}/mcp-connect.md` — **staging: `https://staging.borrower.sohopay.xyz/`**. Show it as a bare URL on its own line so every harness renders it clickable. If the environment has no portal (production row is `—`), skip the dashboard section entirely: never send a production borrower the staging link, and never invent a production portal URL. On the not-spend-ready path, keep the block but replace the credit row's value with “Connect a wallet or bank account to start paying”.
 
+Facility terms (the offer is a maximum, renewals keep the limit) `limit_standing` (why the limit is what it is, and the bank or overdue-payment pause) and `RECONNECT_BANK` (report it, no link): [references/onboarding-context.md](#hosted-reference-onboarding-context).
+
 Dropped scopes are not fatal — re-request after gates complete. Scope table: [references/scopes.md](#hosted-reference-scopes). Operate: `{SKILLS_BASE}/human-direct-flow.md`. Warm pay after the grant is ACTIVE: `{SKILLS_BASE}/x402-credit-pay.md`.
 
 ---
@@ -174,8 +176,10 @@ The backend lists it with `tool: "review_facility_offer"`. Until acceptance comp
 2. Call `review_facility_offer` with a fresh `idempotency_key`. It takes no offer argument: the backend picks the open offer and returns `action` (`FACILITY_ACCEPT`), `open_url` and `expires_at`.
 3. Open `open_url` for the borrower exactly as returned, as in step 3 of "Connect link": whole, never shortened, rewritten or rebuilt. Never build a `/facility/accept` link yourself. It is single-use and bound to this borrower: give it to no one else, and do not fetch it with your own tools. The page handles sign-in and confirmation.
 4. **Poll for completion (do not wait for chat).** After opening the link, poll `get_context` every **5 seconds** for up to **15 minutes**. Stop when `REVIEW_AND_ACCEPT_FACILITY` is absent from `next_actions` or `credit` is no longer `null`. Continue onboarding from the fresh context. **Do not** ask the borrower to type "done" or end the turn waiting for a chat reply — polling is the default. If 15 minutes elapse, say the link may still be open and they can tell you when finished so you can call `get_context` once more.
-5. `409 FACILITY_OFFER_NOT_AVAILABLE` means no offer can be reviewed right now (it expired, was withdrawn, or is already accepted). Call `get_context` again. Do not retry.
+5. `409 FACILITY_OFFER_NOT_AVAILABLE` means no offer can be reviewed right now (it expired, was withdrawn, or is already accepted). Call `get_context` again. Do not retry. `details.reason` may say why: `PROFILE_DECLINED` (the credit profile does not qualify right now) or `NO_UNDERWRITING_RESULT` (still being evaluated). Report it plainly; it is not agent-actionable.
 6. Reuse an `idempotency_key` only to retry a call that failed in transit. If the link is past `expires_at`, or the borrower lost it, call `review_facility_offer` again with a **new** `idempotency_key`; the new link replaces the old one.
+
+What the offer says: the borrower accepts a **maximum** limit and the underwriting policy, not an exact limit. SohoPay sets the actual limit up to that maximum. It can go up or down, can be zero, and changing it needs no new acceptance. Never quote the maximum as the borrower's limit. A changed maximum, repayment due schedule or underwriting policy needs a new acceptance: for a facility that is already ACTIVE, `REVIEW_AND_ACCEPT_FACILITY` then means a **renewal** and the current limit stays as it is. Handle it the same way (`review_facility_offer`, open `open_url`, re-read) and say it is updated terms, not a new credit line.
 
 ### Connect link (`start_browser_handoff`)
 
@@ -216,6 +220,30 @@ While the bank rail is on, `get_context` may list a debit the borrower does on t
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - `COMPLETE_PROFILE` and a source step do not delay the workload key or `authorize_agent`. Those are done first. The source step gates spendable credit. Wallet proof runs when `PROVE_WALLET` is the borrower's choice. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
 - `IN_REVIEW` or `INELIGIBLE` with no action listed means there is nothing to do; say so plainly. Do not retry, poll, or ask for more data. The borrower is onboarded but not spend-ready.
+
+### Limit standing (`limit_standing`)
+
+Some deployments add a `limit_standing` section to `get_context` when limits are sized from the credit profile. When it is absent, ignore this part. It explains the limit; it never replaces `credit` (limit, available credit) or `purchasing_power.can_pay`, and it is not a reason to call any tool.
+
+| Field | Meaning |
+|---|---|
+| `limit`, `headroom` | The current limit and what is left under it, as `credit` reports them. Amounts here (and in `last_change`) are USDC base-unit strings (6 decimals): `5000000` is 5 USDC. Convert before quoting. |
+| `band`, `effective_tier` | Opaque labels from the credit profile (`effective_tier` is `PRIME`, `STANDARD`, `STARTER` or `DECLINE`). Name them if asked; never turn them into a score or promise a higher tier. Both are null before the first evaluation. |
+| `sources_used` | `{ banks, wallets }`: how many of each the profile used. |
+| `frozen` | New spending is paused. The limit shows as 0, `can_pay` is false, what they owe is unchanged and repayment still works. The `modifiers` say why: a bank connection to repair (`BANK_FREEZE`) or an overdue payment (`LATE_FREEZE`, `DEFAULT_ZERO`). |
+| `modifiers` | Live adjustments: `BANK_FREEZE` (the bank pause above), `LATE_FREEZE` (a statement is past its grace period: the limit returns when it is paid), `DEFAULT_ZERO` (a statement is 30 or more days past grace: the same, and it lifts on payment), `ON_TIME_BOOST` (the limit is up to 50% higher, within the tier ceiling, because the last 3 statements were paid on time; it ends if one is late, it is not applied while `NEGATIVE_REPULL` is live, and it is not a freeze), `NEGATIVE_REPULL` (the limit is 25% lower after a bank update showed a new overdraft, fee or negative balance, and it rises when a later update looks healthy), `OVERRIDE` (SohoPay set the limit by hand; the re-pull cut and the boost do not change it). |
+| `reason_codes` | Why the borrower is not scored (for example `INSUFFICIENT_HISTORY`). A status: report it, no tool. |
+| `last_change` | `previous_limit` to `current_limit` with `reason_codes` and `at`, or null when nothing has moved. |
+
+When the borrower asks why their limit changed, answer from `last_change` and `modifiers` in plain words, and say which amounts moved. If the reason code is not one you recognise, say the limit was re-evaluated; never guess a cause. Never promise when or whether the limit will rise.
+
+When `frozen` is true, read `modifiers`. For `LATE_FREEZE` or `DEFAULT_ZERO`, tell the operator that spending is paused because a payment is overdue and returns once it is paid; offer the repayment flow, and do not blame the bank. For `BANK_FREEZE`, tell the operator that spending is paused until the bank connection is repaired and that the borrower does this on SohoPay. There is no agent tool or link for it: give only a link a tool returned, never invent one, and do not start a new `CONNECT_BANK` handoff for a bank that needs re-login. Do not poll; call `get_context` again only when the borrower says they have finished.
+
+### Bank needs re-login (`RECONNECT_BANK`)
+
+While a bank link needs the borrower to sign in to their bank again, `get_context` may list `RECONNECT_BANK` (`actor: BORROWER`, reason `BANK_REAUTH_REQUIRED`), after `PAY` on an active facility or in place of `CONNECT_BANK` before activation. SohoPay stops reading that bank until it is repaired, so the profile goes stale and spending can pause (`frozen`). Report it as the borrower's step on SohoPay. There is no agent tool or link for it: give no link, do not call `start_browser_handoff`, and do not start a `CONNECT_BANK` handoff for it. It is a status, not a reason to poll.
+
+SohoPay emails the borrower about a week before a bank connection's consent ends, and again if spending pauses or returns. You do not send these and need not repeat them; if asked, say the borrower will be emailed and that a lapsed bank link pauses new spending until it is reconnected.
 
 
 <a id="hosted-reference-scopes"></a>
