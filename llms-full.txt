@@ -660,7 +660,7 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 
 A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no credit limit, credit balance or credit debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions. If none are listed, there is nothing to do yet; say so plainly. Never present it as a zero limit or a zero balance.
 
-This covers the borrower's own credit only. A2A credit they have received still counts: when the `a2a_transfers` section is `supported` and `a2a_transfers.available` is above zero (an `A2A_RECEIVED` / legacy `GIFT_RECEIVED` action is listed), report that balance. Received A2A value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
+This covers the borrower's own credit only. A2A credit they have received still counts: when the `a2a_transfers` section is `supported` and `a2a_transfers.available` is above zero (an `A2A_RECEIVED` action is listed), report that balance. Received A2A value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
 
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 
@@ -1971,17 +1971,20 @@ Read `get_agent_authorization` (or the authorization block on `get_context`). Th
 - Grant not `ACTIVE` (`PENDING`, `REVOKED`, `SUPERSEDED`, `EXPIRED`) → recover with
   `{SKILLS_BASE}/authorize-agent.md` first, then continue in the same turn.
 
-**Shared budget (SOHO-656):** merchant purchases and A2A transfers share the same agent limits
+**Shared budget:** merchant purchases and A2A transfers share the same agent limits
 (`max_per_payment` / `daily_limit` / lifetime). Do **not** treat A2A as a separate grant counter.
 Still do not invent local headroom math beyond those fields — the backend also enforces available
 credit, the exposure ceiling, and SohoPay A2A caps (per-sender outstanding, per-pair-per-day, hourly
 velocity, minimum sender account age). Send and let the backend decide:
 
-- Insufficient credit / exposure → report and offer a smaller amount; a larger grant may help only if
-  shared payment limits were the blocker.
-- Cap exceeded (`details.cap` when present) → report the named cap. Do **not** split into smaller
-  sends to slip under a cap — that is deliberate cap evasion.
-- `AGENT_A2A_NOT_PERMITTED` → A2A is off on the grant; take the `a2a_enabled: false` path above.
+- `A2A_INSUFFICIENT_CREDIT` (409) → the amount exceeds available credit or the exposure ceiling. Report
+  it and offer a smaller amount; a larger grant may help only if shared payment limits were the blocker.
+- `A2A_CAP_EXCEEDED` (409, `details.cap` names the limit hit) → report the named cap. Do **not** split
+  into smaller sends to slip under a cap — that is deliberate cap evasion.
+- `AGENT_A2A_NOT_PERMITTED` (403) → A2A is off on the grant; take the `a2a_enabled: false` path above.
+- `A2A_SELF_A2A_FORBIDDEN` (400) → the recipient is the sender; refuse and say so.
+- `A2A_AMOUNT_BELOW_MINIMUM` (400) → ask the operator for a larger amount.
+- `A2A_RECIPIENT_ONBOARDING_INCOMPLETE` (409) → the recipient cannot receive yet; tell the operator, do not retry.
 
 ## Phase 2 — Execution
 
@@ -1994,6 +1997,8 @@ velocity, minimum sender account age). Send and let the backend decide:
   unless you already need the UUID for another reason.
 - `404 NOT_RESOLVABLE` → **STOP.** The handle does not exist or is not discoverable. Tell the
   operator; do not guess a UUID and do not retry.
+- `400 HANDLE_INVALID_FORMAT` → the handle is malformed; ask the operator to confirm it.
+- `429 HANDLE_RESOLUTION_RATE_LIMITED` → back off, then retry once with the **same** `idempotency_key`.
 - Response includes `recipient_handle`, `avatar_hash`, and `resolved_at` so you can confirm what
   was sent.
 
@@ -2424,10 +2429,10 @@ The workload key, borrower token, and ACTIVE grant come immediately after `regis
 
 **`handoff_required: true` → stop and hand off.** The step needs the borrower's signature/decision (`actor: BORROWER`); surface it to the borrower and do not attempt it as the agent. `actor: AGENT` steps you perform yourself. For a delegated session, continue in `{SKILLS_BASE}/agent-session.md`.
 
-> v8 may emit a blocking step plus `PAY`, `AWAIT_REPAYMENT`, `A2A_RECEIVED` (legacy `GIFT_RECEIVED`), the bank-repayment and statement-repayment actions above, and `HANDLE_CLAIM_REQUIRED` (last when the borrower has no handle). Source steps (`FINANCIAL_SOURCE_REQUIRED`) may both be listed. `REPAYMENT_IN_FLIGHT` is reserved on some deployments. If `next_actions` is empty and `can_pay` is false, resolve the blocker shown in `authorization` (frozen / suspended / compliance) before retrying. Exception: when `credit` is `null` there is no credit account yet, not a blocker (see below).
+> v8 may emit a blocking step plus `PAY`, `AWAIT_REPAYMENT`, `A2A_RECEIVED`, the bank-repayment and statement-repayment actions above, and `HANDLE_CLAIM_REQUIRED` (last when the borrower has no handle). Source steps (`FINANCIAL_SOURCE_REQUIRED`) may both be listed. `REPAYMENT_IN_FLIGHT` is reserved on some deployments. If `next_actions` is empty and `can_pay` is false, resolve the blocker shown in `authorization` (frozen / suspended / compliance) before retrying. Exception: when `credit` is `null` there is no credit account yet, not a blocker (see below).
 
 ### get_context essentials
-`get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and `next_actions` hints. It replaces the `whoami` → `get_borrower_status` dance on v8+. `credit` and `repayment` are `null` when the borrower has no credit account yet: say there is no credit line yet and follow `next_actions` (if it is empty, there is nothing to do yet; say so). Never report it as a zero credit limit or credit balance. Received A2A credit is separate: report `a2a_transfers.available` (legacy `gifts.available`) when it is above zero, even with no credit line (not spendable until a credit account exists). Sender A2A debt may appear as `credit.a2a_debt_owed`. `unapplied_bank_credit` (6-decimal base units, so `"10000000"` is $10.00) is also separate from spendable credit: report it when present, and do not spend it or skip a payment because of it.
+`get_context` is one backend-backed call returning `borrower_id` **directly**, plus credit, authorization, and `next_actions` hints. It replaces the `whoami` → `get_borrower_status` dance on v8+. `credit` and `repayment` are `null` when the borrower has no credit account yet: say there is no credit line yet and follow `next_actions` (if it is empty, there is nothing to do yet; say so). Never report it as a zero credit limit or credit balance. Received A2A credit is separate: report `a2a_transfers.available` when it is above zero, even with no credit line (not spendable until a credit account exists). Sender A2A debt may appear as `credit.a2a_debt_owed`. `unapplied_bank_credit` (6-decimal base units, so `"10000000"` is $10.00) is also separate from spendable credit: report it when present, and do not spend it or skip a payment because of it.
 
 **When to call:** at session start, and after onboarding, credit activation, authorization, a material payment, a repayment, or an authorization error. Not before every trivial read.
 

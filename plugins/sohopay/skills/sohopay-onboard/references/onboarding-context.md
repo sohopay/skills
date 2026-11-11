@@ -13,7 +13,7 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 
 A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no credit limit, credit balance or credit debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions. If none are listed, there is nothing to do yet; say so plainly. Never present it as a zero limit or a zero balance.
 
-This covers the borrower's own credit only. A2A credit they have received still counts: when the `a2a_transfers` section is `supported` and `a2a_transfers.available` is above zero (an `A2A_RECEIVED` / legacy `GIFT_RECEIVED` action is listed), report that balance. Received A2A value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
+This covers the borrower's own credit only. A2A credit they have received still counts: when the `a2a_transfers` section is `supported` and `a2a_transfers.available` is above zero (an `A2A_RECEIVED` action is listed), report that balance. Received A2A value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
 
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 

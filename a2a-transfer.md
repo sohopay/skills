@@ -44,17 +44,20 @@ Read `get_agent_authorization` (or the authorization block on `get_context`). Th
 - Grant not `ACTIVE` (`PENDING`, `REVOKED`, `SUPERSEDED`, `EXPIRED`) → recover with
   `{SKILLS_BASE}/authorize-agent.md` first, then continue in the same turn.
 
-**Shared budget (SOHO-656):** merchant purchases and A2A transfers share the same agent limits
+**Shared budget:** merchant purchases and A2A transfers share the same agent limits
 (`max_per_payment` / `daily_limit` / lifetime). Do **not** treat A2A as a separate grant counter.
 Still do not invent local headroom math beyond those fields — the backend also enforces available
 credit, the exposure ceiling, and SohoPay A2A caps (per-sender outstanding, per-pair-per-day, hourly
 velocity, minimum sender account age). Send and let the backend decide:
 
-- Insufficient credit / exposure → report and offer a smaller amount; a larger grant may help only if
-  shared payment limits were the blocker.
-- Cap exceeded (`details.cap` when present) → report the named cap. Do **not** split into smaller
-  sends to slip under a cap — that is deliberate cap evasion.
-- `AGENT_A2A_NOT_PERMITTED` → A2A is off on the grant; take the `a2a_enabled: false` path above.
+- `A2A_INSUFFICIENT_CREDIT` (409) → the amount exceeds available credit or the exposure ceiling. Report
+  it and offer a smaller amount; a larger grant may help only if shared payment limits were the blocker.
+- `A2A_CAP_EXCEEDED` (409, `details.cap` names the limit hit) → report the named cap. Do **not** split
+  into smaller sends to slip under a cap — that is deliberate cap evasion.
+- `AGENT_A2A_NOT_PERMITTED` (403) → A2A is off on the grant; take the `a2a_enabled: false` path above.
+- `A2A_SELF_A2A_FORBIDDEN` (400) → the recipient is the sender; refuse and say so.
+- `A2A_AMOUNT_BELOW_MINIMUM` (400) → ask the operator for a larger amount.
+- `A2A_RECIPIENT_ONBOARDING_INCOMPLETE` (409) → the recipient cannot receive yet; tell the operator, do not retry.
 
 ## Phase 2 — Execution
 
@@ -67,6 +70,8 @@ velocity, minimum sender account age). Send and let the backend decide:
   unless you already need the UUID for another reason.
 - `404 NOT_RESOLVABLE` → **STOP.** The handle does not exist or is not discoverable. Tell the
   operator; do not guess a UUID and do not retry.
+- `400 HANDLE_INVALID_FORMAT` → the handle is malformed; ask the operator to confirm it.
+- `429 HANDLE_RESOLUTION_RATE_LIMITED` → back off, then retry once with the **same** `idempotency_key`.
 - Response includes `recipient_handle`, `avatar_hash`, and `resolved_at` so you can confirm what
   was sent.
 
