@@ -65,10 +65,10 @@
       "url": "https://agents.sohopay.xyz/skills/v1/authorize-agent.md"
     },
     {
-      "name": "gift",
-      "title": "SohoPay Gift (Agent-to-Agent Credit Transfer)",
-      "description": "Send SohoPay credit from this borrower's facility to another borrower with send_gift (one turn: resolve @handle, check the grant, execute). Use when the operator said gift, send money to @someone, tip another agent, or transfer credit to a borrower_id — not for paying a merchant over HTTP 402, not for repaying SohoPay debt, and not for sending USDC from an external wallet.",
-      "url": "https://agents.sohopay.xyz/skills/v1/gift.md"
+      "name": "a2a-transfer",
+      "title": "SohoPay A2A Transfer (Agent-to-Agent Credit)",
+      "description": "Send SohoPay credit from this borrower's facility to another borrower with send_to_handle or a2a_send_transfer (one turn: check the grant, execute). Use when the operator said gift, send money to @someone, tip another agent, A2A transfer, or transfer credit to a borrower_id — not for paying a merchant over HTTP 402, not for repaying SohoPay debt, and not for sending USDC from an external wallet.",
+      "url": "https://agents.sohopay.xyz/skills/v1/a2a-transfer.md"
     },
     {
       "name": "repay",
