@@ -20,7 +20,7 @@ On a server advertising catalog v8+, open with `get_context` (`borrower_id` + cr
 Load a sibling **only when that step is next**:
 
 - [ ] Onboarding until `purchasing_power.can_pay` is true — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`), then **sohopay-authorize-agent** in that same turn. A missing handle does not block `can_pay`, but the borrower is not fully onboarded without one
-- [ ] Send credit to an `@handle` — **sohopay-gift** (`{SKILLS_BASE}/gift.md`), after `can_pay`
+- [ ] Send credit to an `@handle` — **sohopay-a2a-transfer** (`{SKILLS_BASE}/a2a-transfer.md`), after `can_pay`
 - [ ] HTTP 402 — **sohopay-x402** (`{SKILLS_BASE}/x402-credit-pay.md`)
 - [ ] `AGENT_AUTHORIZATION_REQUIRED` — recovery only — **sohopay-authorize-agent** (`{SKILLS_BASE}/authorize-agent.md`)
 - [ ] Repay / pay back SohoPay credit — **sohopay-repay** (`{SKILLS_BASE}/repay.md`)

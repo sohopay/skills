@@ -19,6 +19,8 @@ Consent link: open the `consent_url` returned by the challenge **verbatim** (`â€
 
 Onboarding defaults (no pending merchant): `max_per_payment=1000000` (1 USDC), `daily_limit=5000000` (5 USDC), `valid_until` ~7 days, omit `allowed_merchant_ids`. These are inside the passkey-only browser thresholds. On pay-time recovery, cover the pending payment; terms above the browser thresholds require an EOA signature in addition to passkey step-up.
 
+**A2A transfers:** when the operator needs `{SKILL:sohopay-a2a-transfer}`, pass `allow_a2a_transfers: true` on the challenge so the grant binds `a2a_enabled`. Merchant purchases and A2A transfers share the same agent budget (`max_per_payment` / `daily_limit` / lifetime) â€” there is no separate A2A counter.
+
 Need `credit:facility:accept` on the borrower token. If it is missing, call `request_borrower_token` with that scope before the challenge. Do **not** ask before that token call.
 
 ```text

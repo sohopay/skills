@@ -23,7 +23,7 @@ export const HOSTED_SKILL_DIRS = [
   'sohopay-spend',
   'sohopay-x402',
   'sohopay-authorize-agent',
-  'sohopay-gift',
+  'sohopay-a2a-transfer',
   'sohopay-repay',
   'sohopay-idempotency',
   'sohopay-agent-session',

@@ -88,7 +88,7 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 
 ## Handle claim (required gate)
 
-A **@handle** is the public address other agents resolve to send gifts. It is a **required** part of onboarding: the borrower is not onboarded until they hold one. A borrower is still *addressed* by `borrowerId` for payments and repayment — the handle's job is to make them discoverable and resolvable by others — but onboarding does not complete without a claimed handle. Report the step as outstanding rather than quietly dropping it; the borrower can still change one any time via `{SKILLS_BASE}/handle.md`.
+A **@handle** is the public address other agents resolve for A2A transfers (`send_to_handle`). It is a **required** part of onboarding: the borrower is not onboarded until they hold one. A borrower is still *addressed* by `borrowerId` for payments and repayment — the handle's job is to make them discoverable and resolvable by others — but onboarding does not complete without a claimed handle. Report the step as outstanding rather than quietly dropping it; the borrower can still change one any time via `{SKILLS_BASE}/handle.md`.
 
 Tools ship with MCP catalog **v13** ([sohopay-mcp-server#142](https://github.com/sohopay/sohopay-mcp-server/pull/142)); scope `handle:claim` in `@sohopay/mcp-contract` ≥ `0.19.0`; backend [sohopay-backend#1296](https://github.com/sohopay/sohopay-backend/pull/1296). Add `handle:claim` to the `request_borrower_token` scope list (step 3). A dropped scope is not fatal on its own — re-request after gates and confirm `handle:claim` is in `scopes` before claiming; if it never arrives, this gate cannot be satisfied and onboarding stays incomplete (see **When the claim cannot succeed**).
 
@@ -140,7 +140,7 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 
 A registered borrower with no credit account gets `credit: null` and `repayment: null`, with `purchasing_power.can_pay` false. That is a normal state, not an error: there is no credit limit, credit balance or credit debt to report yet. Tell the operator there is no credit line yet and follow the listed next actions. If none are listed, there is nothing to do yet; say so plainly. Never present it as a zero limit or a zero balance.
 
-This covers the borrower's own credit only. Gifts they have received still count: when the `gifts` section is `supported` and `gifts.available` is above zero (a `GIFT_RECEIVED` action is listed), report that balance. Gift value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
+This covers the borrower's own credit only. A2A credit they have received still counts: when the `a2a_transfers` section is `supported` and `a2a_transfers.available` is above zero (an `A2A_RECEIVED` / legacy `GIFT_RECEIVED` action is listed), report that balance. Received A2A value cannot be spent until the borrower has a credit account, so do not attempt a payment: report the balance and follow the listed next actions.
 
 ### Browser steps (`handoff_type: "OPEN_URL"`)
 
