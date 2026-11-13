@@ -44,7 +44,7 @@ Do not discover prerequisites by serial 403s. `whoami.scopes` of `["borrower:tok
 whoami → register_borrower (store operational_agent_id)
   → keygen + register_agent_workload_key
   → request_borrower_token (include credit:facility:accept) — no chat prompt
-  → authorize_agent: open passkey consent URL in this turn — sohopay-authorize-agent
+  → authorize_agent: open the consent_url in this turn, or on status DRAFT follow the hub flow — sohopay-authorize-agent
   → after Grant active: prepare SAME order / SAME idempotency_key
 ```
 
@@ -53,7 +53,7 @@ whoami → register_borrower (store operational_agent_id)
 | Gate | When |
 |------|------|
 | Repayment/source blocker | Follow `get_context`; wallet proof is not required merely to recover the workload key or within-threshold grant |
-| `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn. Do not ask first. Do not re-GET the merchant |
+| `authorize_agent` | Recovery only — `AGENT_AUTHORIZATION_REQUIRED`. Open the consent page in this turn (on `status: "DRAFT"` there is none: hub flow). Do not ask first. Do not re-GET the merchant |
 | Other policy deny | `POLICY_DECISION_DENIED` without `RISK_FIRST_TIME_MERCHANT` (or no payRequest) |
 | No credit account | `credit: null` in the session's `get_context`, or `CREDIT_ACCOUNT_NOT_FOUND` (404) from prepare: the borrower has no credit line yet. Do not prepare again (any key, MCP or REST), sign, or retry the merchant. Tell the operator there is no credit line yet (never a zero limit) and follow `get_context` `next_actions`. Received gifts cannot be spent without a credit account either |
 
@@ -61,7 +61,7 @@ whoami → register_borrower (store operational_agent_id)
 |-------|--------|
 | `X402_AGENT_KEY_NOT_REGISTERED` | Terminal + key, retry same key — no custodial invent |
 | `CUSTODIAL_SIGNING_DISABLED` | V2 voucher path only |
-| `AGENT_AUTHORIZATION_REQUIRED` | Open consent page this turn — `{SKILLS_BASE}/authorize-agent.md` |
+| `AGENT_AUTHORIZATION_REQUIRED` | Open consent page this turn, or the hub flow on `status: "DRAFT"` — `{SKILLS_BASE}/authorize-agent.md` |
 | `RISK_FIRST_TIME_MERCHANT` on payRequest | Accept; retry same order/key |
 | `X402_INTENT_EXPIRED` | Retry same order/key — do not mint a new merchant `orderRef` |
 

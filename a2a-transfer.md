@@ -38,9 +38,8 @@ Read `get_agent_authorization` (or the authorization block on `get_context`). Th
 | `status` | Must be `ACTIVE` (and the grant inside its validity window). |
 | `authorization_version` | Echoed back in the transfer response. |
 
-- `a2a_enabled: false` → **STOP** and present the `authorize_agent` consent URL so the operator can
-  sign a grant with A2A enabled (`allow_a2a_transfers: true`). Open the page verbatim; do not rebuild the
-  URL, do not end the turn on "please open this page".
+- `a2a_enabled: false` → **STOP** and call `authorize_agent` with `allow_a2a_transfers: true`. With a `consent_url`, open the page verbatim; do not rebuild the
+  URL, do not end the turn on "please open this page". On `status: "DRAFT"` (hub on) there is no URL: follow the hub flow in `{SKILLS_BASE}/authorize-agent.md`.
 - Grant not `ACTIVE` (`PENDING`, `REVOKED`, `SUPERSEDED`, `EXPIRED`) → recover with
   `{SKILLS_BASE}/authorize-agent.md` first, then continue in the same turn.
 
