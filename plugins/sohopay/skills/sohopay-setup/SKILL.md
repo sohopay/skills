@@ -9,6 +9,8 @@ metadata:
   version: "1.0"
 ---
 
+**Host capability gate:** Before executable setup or onboarding, follow [references/mobile-host-capabilities.md](references/mobile-host-capabilities.md). A mobile chat without a verified SohoPay integration uses the official website fallback; reading this skill does not install payment tools. Desktop runtimes that satisfy the gate continue the existing checklist unchanged.
+
 Execute this checklist in order. Do not write a plan, recap, or load other SohoPay skills until a step names them.
 
 For **staging**, first load **sohopay-setup-staging** (`{SKILL:sohopay-setup-staging}`) to pin the staging row, then run this checklist against those staging hosts — do not mix production and staging hosts. If you already arrived here from **sohopay-setup-staging** with the staging row pinned, continue the checklist below; do not loop back.

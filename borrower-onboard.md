@@ -11,6 +11,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
+**Host capability gate:** Mobile/browser-only chats must first apply the mobile host capability reference in `{SKILLS_BASE}/setup.md`. Without a verified integration and compatible isolated signer, do not enter this executable desktop workflow or claim spend readiness. Authenticated read-only status and the trusted browser fallback remain separate from payment activation. Desktop runtimes with the existing signer continue below unchanged.
+
 Execute the numbered workflow in **one turn**. Do not plan. Do not defer the workload key or `authorize_agent` until the first payment. **Before:** MCP connected (`{SKILLS_BASE}/mcp-connect.md`).
 
 **Global failure rule:** If any fetch fails (non-2xx status, HTML content, or empty body), STOP. Do not improvise. Report the exact failed URL to the operator.

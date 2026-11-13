@@ -11,6 +11,8 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
+**Host capability gate:** Before executable setup or onboarding, follow [references/mobile-host-capabilities.md](#hosted-reference-mobile-host-capabilities). A mobile chat without a verified SohoPay integration uses the official website fallback; reading this skill does not install payment tools. Desktop runtimes that satisfy the gate continue the existing checklist unchanged.
+
 Execute this checklist in order. Do not write a plan, recap, or load other SohoPay skills until a step names them.
 
 For **staging**, first load **sohopay-setup-staging** (`{SKILLS_BASE}/setup-staging.md`) to pin the staging row, then run this checklist against those staging hosts — do not mix production and staging hosts. If you already arrived here from **sohopay-setup-staging** with the staging row pinned, continue the checklist below; do not loop back.
@@ -91,6 +93,42 @@ Some harnesses (for example **Hermes**, at the time of writing) register only **
 CLI MCP login starts a **local callback listener** on the operator's machine. **Do not run `mcp login` in an agent shell** that may exit in ~30 s — that kills the listener and leaves `ERR_CONNECTION_REFUSED` on `/callback` even when consent succeeded. Operator runs login in a normal Terminal tab; paste the full callback URL if prompted. Defaults and Hermes `oauth.timeout`: `{SKILLS_BASE}/mcp-connect.md` — load `references/harnesses.md` ("OAuth browser login").
 
 
+<a id="hosted-reference-mobile-host-capabilities"></a>
+
+### Hosted reference: mobile-host-capabilities.md
+
+## Mobile host capability gate
+
+Apply this gate before installing packages, changing MCP configuration, registering a terminal, requesting write scopes, or starting the executable desktop onboarding chain. A phone can use hosted onboarding without installing or executing SKILL.md. Reading instructions, opening a website, and completing OAuth do not by themselves add tools to the originating chat or establish payment readiness.
+
+### Decide from observed capabilities
+
+1. Identify the actual host and surface, not an installed CLI or a user-agent string. Check whether this conversation already exposes the approved SohoPay integration and its authenticated read-only tools. Never claim that a hypothetical tool is callable. Do not probe a payment tool to test connectivity.
+2. **No verified integration:** tell the borrower to open the official SohoPay website (sohopay.xyz) and explain: “You can continue on SohoPay's website. This does not connect payment tools to this chat.” For staging, use only the reviewed staging website configured by the operator; never substitute production. Do not invent an activation route, ticket, callback, or deep link. Naming the website is navigation guidance, not a claim that its root is a profile-completion or activation endpoint. If the website offers no enabled onboarding entry, report that limitation and support@sohopay.xyz.
+3. **Integration present, signer unavailable or unverified:** perform only authenticated read-only status supported by the installed catalog and granted scope. Open an activation/handoff link only when a supported authorized tool returns it. Do not run desktop commands, generate keys in the model, install a global signer, or create an agent grant to conceal a missing signing runtime. Report `SIGNER_READY` as false/unverified and payment as unavailable.
+4. **Verified desktop runtime plus existing signer:** continue the established setup checklist, pinned signer installation rules, borrower authorization and Protocol V2 flow. This mobile guidance does not change desktop key storage, signer pin, spending consent or verifier format.
+
+A future mobile-compatible signer must be separately reviewed against the current authorization and verifier contracts. A web confirmation, passkey assertion, OAuth token or browser session is not an Ed25519 workload voucher signature. Never fall back to a shared/cloud-held signing key.
+
+### State and continuity
+
+Report only server-authoritative states. Keep ACCOUNT_CREATED, IDENTITY_VERIFIED, BANK_CONNECTED, CREDIT_APPROVED, FACILITY_ACCEPTED, AGENT_AUTHORIZED, SIGNER_READY and PAYMENT_READY distinct. Do not infer credit approval from bank connection or payment readiness from a successful account login. Pending, declined, revoked and expired states must remain visible; no invented success receipts.
+
+Use the trusted browser UI for phone OTP, profile, KYC, bank consent, credit acceptance and agent permissions. Never request bank credentials, private keys, signing seeds, legal name, date of birth or OTP in chat. Do not repeat billable checks simply because the app was suspended. Resume from authenticated server state; recover an expired ticket through the supported service, not by editing its URL.
+
+For mobile activation, do not hold the model in a fifteen-minute polling loop. Prefer explicit status refresh when the user returns; if the host supports bounded background status polling, obey the server's retry guidance and stop on completion, expiry, revocation or the bounded cap. Browser navigation and app suspension are not proof of completion. A return-to-assistant action is offered only for a verified host-supported return target; it need not restore the original conversation.
+
+A handoff URL must come from a trusted, authenticated service, preserve its opaque ticket exactly and stay within the configured origin/redirect allowlist. Never append OAuth tokens, credentials, private keys or borrower details to a URL. Do not log or send handoff tickets to analytics.
+
+### Accurate payment language
+
+A2A credit allocation and merchant x402 spending are distinct operations. Existing A2A allocation is not a generic withdrawable on-chain USDC transfer. Show the operation and actual server receipt; “send 20 USDC” must not be silently mapped to a credit allocation.
+
+### Host availability is a verification gate
+
+As checked on 2026-11-12, OpenAI's custom-MCP documentation describes creation/connection on web, while Anthropic documents remote connectors across mobile and other Claude surfaces. These statements are not a certification of SohoPay on either mobile app. Account/workspace permissions, enabled tools, OAuth, signing, callback behavior and actual iOS/Android runs must be verified before marking a host supported. Never instruct an unsupported fresh chat to inject tools into itself.
+
+
 <a id="hosted-reference-prereqs"></a>
 
 ### Hosted reference: prereqs.md
@@ -126,7 +164,7 @@ For reproducibility, pin fetches to a commit SHA you have reviewed rather than a
 
 The harness is **the agent environment actually executing this document** — not merely a tool installed on the machine. You most likely already know which you are: Claude Code, Cursor, Codex, Hermes, or the ChatGPT desktop app. **Start from that self-knowledge.**
 
-**Claude.ai chat is not Claude Code.** If you are running on claude.ai (web chat, a Claude Project, or the claude.ai sandbox), you are **not** a supported MCP client: there is no `claude mcp` config to write, and sandbox egress often blocks SohoPay hosts. **STOP**, report that to the operator, and tell them to re-run this setup from **Claude Code** on their machine.
+**Claude.ai chat is not Claude Code.** Remote connectors may be available through the Claude account, but there is no `claude mcp` configuration to write in that chat. Follow the host capability gate in the setup skill first. Use only a verified, authenticated SohoPay tool already exposed to this conversation. Without that integration, stop executable setup and show the official website fallback. Do not infer signer availability from remote MCP connectivity.
 
 The probes below only detect *installed* CLIs, which can differ from the harness you are running in — e.g. the ChatGPT desktop app may find `claude` / `cursor` / `codex` installed alongside it without being any of them. Treat the output as a hint, not the answer:
 
@@ -140,7 +178,7 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 - If you know which harness you are, use that — even if the probes list other tools.
 - Configure SohoPay for the harness the operator will actually **use it from**, not merely one that happens to be installed.
 - If your own identity and the probes disagree, if more than one plausible target exists, or if you have no CLI signal at all (e.g. the ChatGPT desktop app), **ask the operator which harness to configure SohoPay for and wait.** Record the answer; do not assume.
-- **GUI clients are not on `PATH` and will not appear above.** If you are running inside the **ChatGPT app** (a supported MCP client via Developer Mode connectors), the commands above detect only installed CLIs — ChatGPT itself won't show up. Treat `chatgpt` as the harness and follow its connector path in `mcp-connect.md`; do not pick a CLI you don't actually use.
+- **GUI clients are not on `PATH` and will not appear above.** If you are running inside the **ChatGPT app** (where integration availability depends on the current surface and account), the commands above detect only installed CLIs — ChatGPT itself won't show up. Treat `chatgpt` as the harness and follow its connector path in `mcp-connect.md`; do not pick a CLI you don't actually use.
 
 ## Step 2: Check prerequisites
 
