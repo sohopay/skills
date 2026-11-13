@@ -1,5 +1,7 @@
 ## Consent page (preferred borrower UX)
 
+This page applies to the challenge flow only (the `authorize_agent` response has no `status`). When the response is `status: "DRAFT"` (onboarding hub on) there is no `consent_url` and no `challenge_id`: use the hub flow in `{SKILL:sohopay-authorize-agent}` and skip this page.
+
 General browser rules (models, `#` fragments, polling, Hermes close-tab): see the "Browser consent and handoff pages" reference in `{SKILL:sohopay-setup}`.
 
 Do **not** paste raw EIP-712 typed data into chat as the primary path. Open the SohoPay consent page so the borrower can review limits and complete passkey step-up. A wallet is optional for within-threshold grants; larger grants also require an EOA signature.
