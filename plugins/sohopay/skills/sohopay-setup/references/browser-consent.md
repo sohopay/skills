@@ -20,9 +20,9 @@ If your harness has no browser tool:
 1. **macOS (Hermes and other CLIs):** `open 'https://…#…'` with the **full** URL in single quotes so the shell does not strip the fragment. Run this only for an `https://` URL on the SohoPay console/consent host returned by the tool, and never when the URL contains a `'` — print it for the operator instead.
 2. **Otherwise:** print the full URL for the operator to open on phone or desktop. Do not retype it.
 
-### After opening — poll, do not wait in chat
+### After opening — poll, do not wait in chat (except the hub-mode grant)
 
-When a skill says to poll `get_context` or `get_agent_authorization`, do that on a **5 s** interval for the cap that skill states (onboarding handoffs: 15 minutes; agent authorization with a `challenge_id`: 2 minutes; a hub-flow DRAFT has no `challenge_id` and is not polled), or 10 minutes if it states none. **Do not** ask the borrower to type "done" or end the turn waiting for chat. If the step has not cleared within the cap (or the handoff token has expired), stop polling, tell the operator which step is outstanding, and offer to re-issue the link. Onboarding handoff polling: `{SKILL:sohopay-onboard}` — load `references/onboarding-context.md` ("Connect link", "Facility acceptance").
+When a skill says to poll `get_context` or `get_agent_authorization`, do that on a **5 s** interval for the cap that skill states (onboarding handoffs: 15 minutes; agent authorization with a `challenge_id`: 2 minutes; a hub-flow DRAFT has no `challenge_id` and is not polled), or 10 minutes if it states none. **Do not** ask the borrower to type "done" or end the turn waiting for chat. Exception: a hub-flow grant (`authorize_agent` returned `status: "DRAFT"`) is not polled; end the turn and check `get_context` `hub.step` once after the borrower says they approved (`{SKILL:sohopay-authorize-agent}`). If the step has not cleared within the cap (or the handoff token has expired), stop polling, tell the operator which step is outstanding, and offer to re-issue the link. Onboarding handoff polling: `{SKILL:sohopay-onboard}` — load `references/onboarding-context.md` ("Connect link", "Facility acceptance").
 
 ### Success pages without "return to agent"
 

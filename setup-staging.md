@@ -26,4 +26,4 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 Now run the **sohopay-setup** (`{SKILLS_BASE}/setup.md`) checklist (Steps 1–6) using the staging row above for every host — never the production hosts in its examples — and do not re-follow its "for staging, load sohopay-setup-staging" redirect: you are already on the staging path. Connect via **sohopay-mcp-connect-staging** (`{SKILLS_BASE}/mcp-connect-staging.md`) or the staging row in **sohopay-mcp-connect**.
 
-Onboarding finishes in one turn on these staging hosts. Do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`.
+Onboarding finishes in one turn on these staging hosts when `authorize_agent` returns a `consent_url` (the challenge flow). With the onboarding hub on it returns `status: "DRAFT"` and the grant approval waits for the borrower to say they approved in the SohoPay setup page (`{SKILLS_BASE}/authorize-agent.md`). Either way, do **not** ask the operator, and do **not** wait for a chat reply, before `request_borrower_token` or before `authorize_agent`.

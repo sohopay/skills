@@ -11,7 +11,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 
 **Substitute SKILLS_BASE into every fetch URL below** — replace `{SKILLS_BASE}` with the value on the line above before running any `curl`.
 
-Execute this grant in the same turn. Do not plan. Do not fall back to `sign_transaction`. Do not ask a chat question before the grant call.
+Execute this grant in the same turn (hub flow: the borrower's approval is the one wait, see below). Do not plan. Do not fall back to `sign_transaction`. Do not ask a chat question before the grant call.
 
 **Before:** MCP connected; workload key registered; borrower token includes `credit:facility:accept`. Wallet proof is **not** required for a within-threshold grant. **Primary trigger:** onboarding, immediately after `register_agent_workload_key` (`{SKILLS_BASE}/borrower-onboard.md`). `prepare_x402_payment` → `AGENT_AUTHORIZATION_REQUIRED` is recovery only (onboard was skipped).
 
@@ -54,7 +54,7 @@ Hub-mode errors (no consent URL fallback, ever):
 | Error | Action |
 |-------|--------|
 | `503 HUB_TERMS_UNAVAILABLE` | Nothing was saved. Tell the borrower the grant step is temporarily unavailable. Call `authorize_agent` again later with a fresh `idempotency_key` |
-| `409 HUB_GRANT_DRAFT_FROZEN` | The borrower is mid-approval. Tell them, check `get_context`, do not retry in a loop |
+| `409 HUB_GRANT_DRAFT_FROZEN` | The borrower is mid-approval. Tell them, check `get_context`, do not retry in a loop. To change terms they must decline the pending draft in the setup page first |
 | `409 HUB_AGENT_REMOVED` | Tell the borrower. Do not retry |
 | `409 HUB_GRANT_DRAFT_CONFLICT` | Concurrent write. One retry is reasonable; do not loop. Still failing: tell the borrower and check `get_context` |
 | `403 HUB_TERMS_AGENT_NOT_OWNED` | Wrong or foreign `operational_agent_id` / `borrower_id`. Re-check both from `register_borrower` / `get_context`. Nothing to tell the borrower |

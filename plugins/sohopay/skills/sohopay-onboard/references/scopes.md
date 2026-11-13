@@ -30,6 +30,6 @@ JWT stays thin — always resolve fresh before privileged MCP tools. `whoami` re
 | `get_borrower_status` | Onboarding status |
 | `request_borrower_token` | Scope-gated token (onboard: include `credit:facility:accept`) |
 | `register_agent_workload_key` | Register agent-held Ed25519 workload public key (PoP); alias `onboard_sohopay_agent` |
-| `authorize_agent` | Borrower EIP-712 grant — required during onboarding after the workload key |
+| `authorize_agent` | Borrower EIP-712 grant (flag-off challenge flow; with the hub on it returns a DRAFT) — required during onboarding after the workload key |
 | `check_handle_availability` | Check a candidate @handle before claiming (read, scope `handle:claim`) — [references/handle-claim.md](references/handle-claim.md) |
 | `claim_handle` | Claim the borrower's own @handle (write, scope `handle:claim`, `idempotency_key`) — [references/handle-claim.md](references/handle-claim.md) |
