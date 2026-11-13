@@ -40,7 +40,7 @@ Need `credit:facility:accept` on the borrower token. If it is missing, call `req
 1. Relay summary.sentence to the borrower
 2. get_context: when hub.open_url is non-null, relay it. The borrower reviews and approves the grant in the SohoPay setup page. Never invent a link
    hub.open_url null = no step needs the human right now (for example EVALUATING or WAITING_FOR_AGENT_KEY): relay no link
-3. End the turn. This is the one grant step that waits for the borrower's chat reply: they say they approved
+3. If `get_context` lists `CLAIM_HANDLE`, claim a handle the borrower confirms first (`{SKILL:sohopay-onboard}` step 6), then end the turn. This is the one grant step that waits for the borrower's chat reply: they say they approved
 4. After they say so, get_context once. ACTIVE = hub.step DONE. Not DONE yet: tell the borrower, check again on their next message — no tight loop
 5. Onboarding: no prepare. Pay-time recovery: after ACTIVE, prepare_x402_payment SAME order / SAME payment idempotency_key
 ```
