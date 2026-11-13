@@ -5,7 +5,7 @@ Some deployments add an `onboarding` section to `get_context`. When it is absent
 | Field | Meaning |
 |---|---|
 | `verification_tier` | Which verified sources the borrower has: `PHONE_ONLY`, `WALLET_VERIFIED`, `FINANCIAL_VERIFIED`, `MULTI_SOURCE_VERIFIED`. Coverage, not credit quality. |
-| `profile_complete` | The borrower declared their legal name and date of birth. Absent when the deployment does not track it. Not identity or credit approval. |
+| `profile_complete` | The borrower declared their legal name, date of birth and a contact email. Absent when the deployment does not track it. Not identity or credit approval. |
 | `credit_eligibility` | `status` (`NOT_EVALUATED`, `IN_REVIEW`, `ELIGIBLE`, `INELIGIBLE`) and an opaque `band`. Never a score; do not interpret the band. |
 | `spend_ready` | Onboarding gates for spending are passed. Not the same as `purchasing_power.can_pay`: decide whether to pay from `can_pay`, and `prepare_x402_payment` stays authoritative. |
 
@@ -21,7 +21,7 @@ A next action with `handoff_type: "OPEN_URL"` is a step the borrower does on a S
 
 | Action | What to do |
 |---|---|
-| `COMPLETE_PROFILE` | Report it: the borrower enters their legal name and date of birth on the SohoPay page, never in chat. It does not delay the workload key or the grant. After those, it is the first blocker, ahead of any wallet or bank step. There is no link. Report it, claim a handle first if `CLAIM_HANDLE` is listed, then end the turn. Do not poll. |
+| `COMPLETE_PROFILE` | Report it: the borrower enters their legal name, date of birth and a contact email on the SohoPay page, never in chat. A borrower who declared name and date of birth earlier sees it once more, to add the email; report it the same way. It does not delay the workload key or the grant. After those, it is the first blocker, ahead of any wallet or bank step. There is no link. Report it, claim a handle first if `CLAIM_HANDLE` is listed, then end the turn. Do not poll. |
 | `CONNECT_WALLET` / `CONNECT_BANK` | Alternatives (`reason_code: FINANCIAL_SOURCE_REQUIRED`): ask the borrower wallet or bank, then get the link for that choice with `start_browser_handoff` (see "Choosing a source" and "Connect link" below). Either connection is enough for **evidence**; it does **not** by itself activate spendable credit. |
 | `REVIEW_AND_ACCEPT_FACILITY` | Get the borrower a link with `review_facility_offer` (see "Facility acceptance" below). |
 
@@ -95,7 +95,7 @@ While the repayment due-date flag is on, `get_context` may list statement billin
 
 ### Rules
 
-- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. A bank-repayment or statement-repayment action has no link. Never invent a link. Never ask for a legal name, date of birth, an account number, a routing number, or a passkey in chat.
+- The only link you give is one a tool returned: `start_browser_handoff`'s `open_url` for a connect step, or `review_facility_offer`'s for facility acceptance. A bank-repayment or statement-repayment action has no link. Never invent a link. Never ask for a legal name, date of birth, email, an account number, a routing number, or a passkey in chat.
 - `PROVE_WALLET` stays on `request_signature_challenge` / `submit_signature`.
 - Keep doing any `PAY`, repayment or handle action that is listed alongside it. An `OPEN_URL` action only stops the work that depends on it; wait for the borrower only when nothing else is listed.
 - `COMPLETE_PROFILE` and a source step do not delay the workload key or `authorize_agent`. Those are done first. The source step gates spendable credit. Wallet proof runs when `PROVE_WALLET` is the borrower's choice. If no source step is listed and `PROVE_WALLET` is not either (a deployment may not enable it), the wallet-proof step still runs whenever `wallet_proof_verified` is false.
