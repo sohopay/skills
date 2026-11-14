@@ -56,7 +56,7 @@ Native Agent Skills read these from `references/` on demand. This hosted export 
 
 ## Browser consent and handoff pages
 
-SohoPay onboarding and MCP login depend on **opening HTTPS URLs in the operator's browser**. The agent prepares links; the borrower completes passkey, Plaid, or OAuth approval on SohoPay pages. This reference applies to every `consent_url`, `open_url`, and OAuth approval page — not only agent authorization.
+SohoPay onboarding and MCP login depend on **opening HTTPS URLs in the operator's browser**. The agent prepares links; the borrower completes passkey, bank Link (Plaid or Stripe Financial Connections), or OAuth approval on SohoPay pages. This reference applies to every `consent_url`, `open_url`, and OAuth approval page — not only agent authorization.
 
 ### Use a capable agent model
 
@@ -69,7 +69,7 @@ Weaker models often **fail tool calling**, **truncate URLs**, or **drop the `#` 
 | `consent_url` | `authorize_agent`, repayment consent, etc. | Open exactly as returned (`…/agent/authorize#<challenge_id>` or assembled repay URL). Never rebuild from `typed_data`. Agent-grant details: `{SKILLS_BASE}/authorize-agent.md` — load that skill's `references/consent-page.md`. |
 | `open_url` | `start_browser_handoff`, `review_facility_offer` | Open exactly as returned, **`#…` included**. Single-use, borrower-bound. Never shorten, rewrite, or rebuild paths such as `/facility/accept`. |
 
-**Do not** `curl`, `fetch`, or HTTP GET these URLs from the agent. They are for the **browser** (passkey, Plaid Link, cookies). Fetching from the agent does not complete the step and may consume or confuse session state.
+**Do not** `curl`, `fetch`, or HTTP GET these URLs from the agent. They are for the **browser** (passkey, bank Link (Plaid or Stripe Financial Connections), cookies). Fetching from the agent does not complete the step and may consume or confuse session state.
 
 If your harness has no browser tool:
 
