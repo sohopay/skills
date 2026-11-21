@@ -18,7 +18,7 @@ export const SERVER_INSTRUCTIONS = [
 export const TOOL_CATALOG = {
   get_context: {
     description: "Backend-backed identity + credit + authorization + next step in one call. Prefer it for \"who am I / can I pay / what next\". Returns borrower_id, operational_agent_id, terminal_id, workload_key, authorization and next_action.",
-    inputSchema: { type: "object", properties: {} },
+    inputSchema: { type: "object", properties: { terminal_id: str("Which terminal is asking. A local install passes its own terminal id; omit it on a remote-only connector.") } },
   },
   whoami: {
     description: "JWT claims only, no backend call (principal_id / scopes / roles). Deprecated in favor of get_context; kept for rollback.",
@@ -30,7 +30,7 @@ export const TOOL_CATALOG = {
   },
   register_borrower: {
     description: "Register this host as an operational agent for the borrower. Returns operational_agent_id + terminal_id — store both. Safe to retry with the same idempotency_key.",
-    inputSchema: { type: "object", properties: { idempotency_key: idem, display_name: str("Optional agent display name.") } },
+    inputSchema: { type: "object", properties: { idempotency_key: idem, terminal_id: str("This install's terminal id (from the local signer); omit it on a remote-only connector."), display_name: str("Optional agent display name.") } },
   },
   request_signature_challenge: {
     description: "Start the borrower wallet proof (EIP-712). The borrower signs off-device; the agent never signs for the wallet.",

@@ -7,7 +7,7 @@ export default {
   "situation": "fresh host, local 0.3.1 signer, no key on disk; get_context carries an onboarding section with profile_complete false and lists COMPLETE_PROFILE (handoff_type OPEN_URL) in next_actions",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {},
   "backend": {

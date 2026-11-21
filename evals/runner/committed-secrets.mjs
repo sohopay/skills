@@ -24,6 +24,7 @@ const HEX64_RE = /(?<![0-9A-Fa-f])[0-9A-Fa-f]{64,}(?![0-9A-Fa-f])/g;
 // tokens), none of which is standalone key material. Glued keys are caught by the `=`-boundary fix above (K1).
 const KEY_B64_LENGTHS = new Set([43, 44, 86, 87, 88]);
 const PEM_RE = /-----BEGIN [A-Z0-9 ]*-----/;
+const KEY_DIR_SEG = "sohopay-agent-workload/";
 // Anthropic API keys (`sk-ant-api03-…`, `sk-ant-admin01-…`): flagged in any context, whatever field holds them.
 export const ANT_KEY_RE = /sk-ant-[A-Za-z0-9_-]{20,}/;
 const CANARY = "FAKE-SP6-CANARY-";
@@ -67,7 +68,12 @@ function keyShaped(s) {
     // Random key material mixes cases and digits; this keeps word-ish runs (paths, identifiers) out.
     if (KEY_B64_LENGTHS.has(t.length) && /[A-Z]/.test(t) && /[a-z]/.test(t) && /[0-9]/.test(t)) out.push({ t, at: m.index, kind: `${t.length}-char base64` });
   }
-  for (const m of s.matchAll(HEX64_RE)) out.push({ t: m[0], at: m.index, kind: `${m[0].length}-char hex` });
+  for (const m of s.matchAll(HEX64_RE)) {
+    // Signer 0.4.0 key folder: `sohopay-agent-workload/<sha256-hex(terminal_id)>/` — a digest of a public id, printed in
+    // the signer's own path errors. Exempt only as exactly that path segment (64 hex, then `/` or the end).
+    if (m[0].length === 64 && s.slice(Math.max(0, m.index - KEY_DIR_SEG.length), m.index) === KEY_DIR_SEG && /^(?:\/|$|[^0-9A-Za-z])/.test(s.slice(m.index + 64))) continue;
+    out.push({ t: m[0], at: m.index, kind: `${m[0].length}-char hex` });
+  }
   return out;
 }
 const fieldBefore = (text, at) => {

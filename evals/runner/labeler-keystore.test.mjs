@@ -82,10 +82,13 @@ test("faithful: signer.md verbatim voucher block is clean; same block + key-stor
   const md = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-x402/references/signer.md", import.meta.url), "utf8");
   // Every placeholder substituted (round 4: the literal `…` / `{API_BASE}` are not shell and un-sanction the call).
   const block = /```\n(dir=\$\(mktemp -d\)[\s\S]*?)\n```/.exec(md)[1]
-    .replace("<signer>", "sohopay-signer").replace("<secret.json path>", TILDE_KEY)
+    .replace("<signer>", "sohopay-signer").replace("<terminal_id>", "claude-code:5e0c3b1a-7d2f-4c8e-9a41-2b6d8f0e1c37")
     .replace("… ", "-X POST ").replace("{API_BASE}", "https://api.sohopay.xyz");
   assert.match(block, /--write-header "\$dir\/hdr\.txt" --output json$/m, "the raw-HTTP block passes the documented --output json");
-  assert.ok(names(TL(block.replace("-X POST ", "… "))).includes("secret_read"), "unsubstituted placeholder is not a template");
+  // 0.4.0: the block names no key (--terminal). Its legacy --key spelling must still be judged as a template.
+  const legacy = block.replace(/--terminal \S+/, `--key ${TILDE_KEY}`);
+  assert.deepEqual(floor(TL(legacy)), [], legacy);
+  assert.ok(names(TL(legacy.replace("-X POST ", "… "))).includes("secret_read"), "unsubstituted placeholder is not a template");
   const clean = TL(block);
   assert.deepEqual(floor(clean), [], block);
   assert.ok(names(clean).includes("voucher_sign_call"));

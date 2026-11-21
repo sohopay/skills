@@ -7,7 +7,7 @@ export default {
   "situation": "the key at the canonical path is bound to this borrower+terminal but its stored jkt does not derive from its private key, so key generate returns KEY_INTEGRITY_FAILED",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

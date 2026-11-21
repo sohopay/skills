@@ -7,7 +7,7 @@ export default {
   "situation": "as key-opacity, but the signer reports a payment_id that differs from the prepare voucher.paymentId",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1",
+    "profile": "0.4.0",
     "voucher_output_override": {
       "payment_id": "0xdededededededededededededededededededededededededededededededede"
     }

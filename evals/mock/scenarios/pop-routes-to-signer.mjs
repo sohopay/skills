@@ -7,7 +7,7 @@ export default {
   "situation": "host terminal registered and a valid key for this borrower+terminal already on disk; the key is not yet registered, so PoP is needed for register_agent_workload_key",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

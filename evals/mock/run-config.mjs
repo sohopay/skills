@@ -6,6 +6,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { newCanary, publicFromPrivate, storedKeyFile } from "./lib/keymodel.mjs";
+import { terminalKeyFile } from "./lib/keypath.mjs";
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
 
 /**
@@ -13,7 +14,7 @@ import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
  * @property {string} case_id
  * @property {string} suite
  * @property {string} situation  What the case's `given` needs, in words.
- * @property {{presence: "path"|"absent", profile?: "0.3.1"|"0.2.0", answers?: boolean, npx?: "unavailable", npmInstall?: "pinned",
+ * @property {{presence: "path"|"absent", profile?: "0.4.0"|"0.3.1"|"0.2.0", answers?: boolean, npx?: "unavailable", npmInstall?: "pinned",
  *   force_errors?: {command: string, code: string, times?: number}[], voucher_output_override?: object}} signer
  * @property {{key?: {borrower: "self"|"other", terminal: "self"|"other", tamper?: boolean}, key_dir_mode?: number}} seed
  * @property {{state: "fresh-host"|"terminal-registered"|"onboarded", register_fail_times?: number,
@@ -38,6 +39,10 @@ export const SIGNER_SHIM = join(HERE, "sohopay-signer");
 export const KEY_REL = join(".agents", "sohopay-agent-workload", "secret.json");
 /** The canonical key path as the skills spell it (sensitive_paths.key_path). */
 export const KEY_PATH_SPELLING = "~/.agents/sohopay-agent-workload/secret.json";
+/** Live runs drive Claude Code, so the agent's `terminal id --harness` names this harness. */
+export const RUN_HARNESS = "claude-code";
+/** The key file the signer derives for this run's terminal (0.4.0 `--terminal`). */
+export const runKeyFile = (run) => terminalKeyFile(run.home, run.identity.terminal_id);
 
 const hex = (n) => randomBytes(n).toString("hex");
 
@@ -46,7 +51,8 @@ export function newIdentity() {
   return {
     borrower_id: randomUUID(),
     operational_agent_id: `oa_${hex(8)}`,
-    terminal_id: `term_${hex(8)}`,
+    // The signer's per-harness id (`terminal id --harness`), pre-seeded in HOME so backend and signer agree.
+    terminal_id: `${RUN_HARNESS}:${randomUUID()}`,
     handle: `agent${hex(3)}`, // no eval vocabulary in anything the agent sees
     merchant_id: `0x${hex(32)}`,
     merchant_uuid: randomUUID(),
@@ -68,7 +74,7 @@ export function buildRun(scenario, { runDir, home }) {
     state_file: join(runDir, "signer-state.json"),
     canaries,
     identity: newIdentity(),
-    signer: { answers: true, profile: "0.3.1", force_errors: [], voucher_output_override: null, ...scenario.signer },
+    signer: { answers: true, profile: "0.4.0", force_errors: [], voucher_output_override: null, ...scenario.signer },
     seed: scenario.seed ?? {},
     backend: { state: "fresh-host", register_fail_times: 0, injection: null, first_time_merchant: false, no_credit_account: false, onboarding: null, ...scenario.backend },
     // What the transcript's secrets / sensitive_paths blocks must carry for this run (floor + secret_read).
@@ -76,18 +82,29 @@ export function buildRun(scenario, { runDir, home }) {
   };
 }
 
-/** Seed the hermetic HOME: an existing key (own / other borrower or terminal, optionally tampered), dir modes. */
+/**
+ * Seed the hermetic HOME: this harness's terminal id (what `terminal id --harness` returns), an existing key at that
+ * terminal's derived path (own / other borrower or terminal, optionally tampered), dir modes.
+ */
 export function seedHome(run) {
   const { seed, home, identity, canaries } = run;
-  const keyFile = join(home, KEY_REL);
+  const idDir = join(home, ".sohopay", RUN_HARNESS);
+  mkdirSync(idDir, { recursive: true, mode: 0o700 });
+  chmodSync(join(home, ".sohopay"), 0o700);
+  chmodSync(idDir, 0o700);
+  writeFileSync(join(idDir, "terminal_id"), `${identity.terminal_id}\n`, { mode: 0o600 });
+  const keyFile = runKeyFile(run);
+  const root = dirname(dirname(keyFile));
   if (seed.key_dir_mode !== undefined) {
     mkdirSync(dirname(keyFile), { recursive: true });
     chmodSync(join(home, ".agents"), 0o700);
+    chmodSync(root, 0o700);
     chmodSync(dirname(keyFile), seed.key_dir_mode);
   }
   if (seed.key) {
     mkdirSync(dirname(keyFile), { recursive: true, mode: 0o700 });
     chmodSync(join(home, ".agents"), 0o700);
+    chmodSync(root, 0o700);
     chmodSync(dirname(keyFile), 0o700);
     const borrower = seed.key.borrower === "other" ? randomUUID() : identity.borrower_id;
     const terminal = seed.key.terminal === "other" ? `term_${hex(8)}` : identity.terminal_id;

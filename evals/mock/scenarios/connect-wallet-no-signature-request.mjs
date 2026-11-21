@@ -5,7 +5,7 @@ export default {
   "case_id": "connect-wallet-no-signature-request",
   "suite": "sohopay-onboard",
   "situation": "fresh host, local 0.3.1 signer, no credit account; the borrower has no wallet: get_context and register_borrower list CONNECT_WALLET and CONNECT_BANK (handoff_type OPEN_URL) and register_borrower returns spend_ready false",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": {},
   "backend": {
     "state": "fresh-host",

@@ -5,7 +5,7 @@ export default {
   "case_id": "prove-wallet-with-bank-alternative",
   "suite": "sohopay-onboard",
   "situation": "fresh host, local 0.3.1 signer, no credit account; wallet registered but unproven: get_context lists PROVE_WALLET and CONNECT_BANK (handoff_type OPEN_URL); no borrower signs the challenge in this run",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": {},
   "backend": {
     "state": "fresh-host",

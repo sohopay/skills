@@ -7,7 +7,7 @@ export default {
   "situation": "a key for this borrower but a DIFFERENT terminal sits at the canonical path, so key generate returns TERMINAL_MISMATCH",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

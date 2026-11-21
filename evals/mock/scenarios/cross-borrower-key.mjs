@@ -7,7 +7,7 @@ export default {
   "situation": "a key for a DIFFERENT borrower already sits at the canonical path, so key generate returns CROSS_BORROWER_KEY",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

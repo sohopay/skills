@@ -24,7 +24,7 @@ import { publicHost } from "./lib/public-host.mjs";
 export const HOST = "127.0.0.1";
 const PROTOCOL_VERSION = "2025-06-18";
 const MERCHANT_PATH = "/merchant/api/premium";
-const KEYS_RE = /^\/api\/v1\/agents\/([A-Za-z0-9_.-]+)\/keys\/?$/;
+const KEYS_RE = /^\/api\/v1\/agents\/([A-Za-z0-9_.:@%-]+)\/keys\/?$/;
 
 // Realistic descriptions / schemas (tool-catalog.mjs); a tool without a catalog entry is a wiring bug.
 const TOOL_LIST = Object.keys(TOOLS).map((name) => {
@@ -190,7 +190,8 @@ export function createBackend(run, opts = {}) {
 
 function restRoute(path) {
   const m = KEYS_RE.exec(path);
-  if (m) return { tool: "register_agent_workload_key", args: { terminal_id: m[1] } };
+  // 0.4.0 terminal ids carry `:` (`claude-code:<uuid>`), sent raw or percent-encoded.
+  if (m) { try { return { tool: "register_agent_workload_key", args: { terminal_id: decodeURIComponent(m[1]) } }; } catch { return null; } }
   if (path === "/api/v1/spend/x402/prepare") return { tool: "prepare_x402_payment", args: {} };
   if (path === "/api/v1/auth/authorization-context") return { tool: "get_context", args: {} };
   return null;

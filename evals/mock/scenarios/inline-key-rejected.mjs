@@ -7,7 +7,7 @@ export default {
   "situation": "a valid key is on disk; the first pop sign returns INLINE_KEY_REJECTED (the scenario forces the code the case starts from), later calls with --key <path> succeed",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1",
+    "profile": "0.4.0",
     "force_errors": [
       {
         "command": "pop sign",

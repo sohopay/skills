@@ -9,7 +9,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { buildRun, seedHome } from "../mock/run-config.mjs";
+import { buildRun, runKeyFile, seedHome } from "../mock/run-config.mjs";
 import { createBackend } from "../mock/backend.mjs";
 import { publicFromPrivate, storedKeyFile } from "../mock/lib/keymodel.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
@@ -47,7 +47,7 @@ async function world(caseId = "key-opacity", { policyOverrides = {}, sandbox = F
   };
   const logs = newLogs();
   const exec = (argv, { stdin = "", cwd = home, env = { HOME: home }, seam, callTimeoutMs } = {}) => execForwarded(run, { argv, stdin, cwd, env }, logs, { policy, privateDir: priv, seam: { sandbox, ...seam }, callTimeoutMs });
-  return { dir, home, sbx, operator, runRoot, priv, run, logs, exec, policy, sandbox, key: join(home, ".agents", "sohopay-agent-workload", "secret.json") };
+  return { dir, home, sbx, operator, runRoot, priv, run, logs, exec, policy, sandbox, key: runKeyFile(run) };
 }
 const err = (r) => JSON.parse(r.stderr).error;
 /** A real VOUCHER_ISSUED prepare response for this world (the input an honest voucher sign gets). */
@@ -353,7 +353,8 @@ test("N2: agent-supplied SOHOPAY_SIGNER_KEY_ROOTS (and any forwarded env but HOM
   assert.equal(r.exitCode, 1);
   assert.equal(err(r).code, "KEY_PATH_INVALID");
   assert.ok(!existsSync(join(elsewhere, "secret.json")));
-  const ok = await w.exec(["key", "generate", "--out", w.key, "--input", "-", "--output", "json"], { stdin: input, env });
+  // The documented form (0.4.0): --terminal, which creates the digest folder under the pinned root.
+  const ok = await w.exec(["key", "generate", "--terminal", w.run.identity.terminal_id, "--input", "-", "--output", "json"], { stdin: input, env });
   assert.equal(ok.exitCode, 0, ok.stderr);
   assert.ok(w.logs.owned.some((o) => o.path === w.key), "keygen's own store write is signer-owned");
 });

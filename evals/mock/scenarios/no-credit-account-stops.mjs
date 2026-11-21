@@ -7,7 +7,7 @@ export default {
   "situation": "an onboarded agent (own key, ACTIVE grant) pays for a borrower with no credit account: get_context money sections are null and prepare answers CREDIT_ACCOUNT_NOT_FOUND",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

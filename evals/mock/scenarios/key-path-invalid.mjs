@@ -7,7 +7,7 @@ export default {
   "situation": "the key dir ~/.agents/sohopay-agent-workload exists with mode 0755, so key generate returns KEY_PATH_INVALID (has too-permissive mode)",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key_dir_mode": 0o755
