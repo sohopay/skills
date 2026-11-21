@@ -39,9 +39,9 @@ This substitution holds for the human-direct flow (the default), where the calle
 **MCP `borrower_type`:** `HUMAN` | `AGENT` | `BUSINESS`  
 **Backend also accepts** `INDIVIDUAL` (alias for human); prefer the MCP values when calling tools.
 
-Typical MCP fields (execute-time): `borrower_id`, optional `terminal_id`; omit `terminal_id` to use `SOHO_TERMINAL_ID` or the host default. Returns `operational_agent_id`, `terminal_id`, `agent_id` (bytes32 — do not pass that as `operational_agent_id`), `spend_ready`, `available_credit`.
+Typical MCP fields (execute-time): `borrower_id`, `terminal_id`. A local harness passes the id from `terminal id --harness` (`{SKILL:sohopay-x402}` `references/signer.md` "Terminal id"); only a remote-only connector (ChatGPT, Claude.ai web) leaves it out and gets the shared default. Returns `operational_agent_id`, `terminal_id`, `agent_id` (bytes32 — do not pass that as `operational_agent_id`), `spend_ready`, `available_credit`.
 
-`register_borrower` is also the **terminal bind** for an already-onboarded borrower on a new MCP host. Call it before `register_agent_workload_key`. Do not invent `terminal_id` — use the value the tool returns (or the host default you omitted).
+`register_borrower` is also the **terminal bind** for an already-onboarded borrower on a new MCP host. Call it before `register_agent_workload_key`. When `get_context` lists `REGISTER_TERMINAL`, the borrower exists but this terminal does not: call `register_terminal` with the same input. Do not invent `terminal_id` — use the signer's id, or none on a remote-only connector.
 
 ## Wallet proof (EIP-712)
 

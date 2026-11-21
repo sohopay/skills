@@ -26,6 +26,7 @@ import { createServer } from "node:http";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { timingSafeEqual } from "node:crypto";
 import { parseArgs } from "./signer-core.mjs";
+import { terminalKeyFile } from "./lib/keypath.mjs";
 import { diffSnapshots, snapshotTree } from "./lib/keystore-snapshot.mjs";
 import { resolveLoose } from "./lib/realpath-loose.mjs";
 import { childTraceSupport, runSandboxed, sandboxSupport, SIGNER_CALL_TIMEOUT_MS } from "./lib/signer-sandbox.mjs";
@@ -37,6 +38,8 @@ export { sandboxSupport };
 export const HOST = "127.0.0.1";
 const MAX_BODY = 4 * 1024 * 1024;
 const PATH_FLAGS = ["--input", "--key", "--out", "--write-header"];
+// Value flags that are not paths (0.4.0); duplicates are refused the same way.
+const VALUE_FLAGS = [...PATH_FLAGS, "--terminal", "--harness"];
 // Child strace (Linux): the agent-tree syscall set plus io_uring (unobservable I/O must at least be seen). `?` marks
 // every call an architecture (or an older kernel / strace) may lack — open / creat exist only on x86-64, renameat /
 // newfstatat not on every asm-generic port — since an unknown name in `-e trace=` aborts strace.
@@ -138,13 +141,13 @@ export function ownedKeygenArtifacts(before, after, { outPath }) {
 
 /** The duplicated path flag in argv, if any (`--flag v` and `--flag=v` both count). */
 function duplicatePathFlag(argv) {
-  for (const f of PATH_FLAGS) if (argv.filter((t) => t === f || t.startsWith(`${f}=`)).length > 1) return f;
+  for (const f of VALUE_FLAGS) if (argv.filter((t) => t === f || t.startsWith(`${f}=`)).length > 1) return f;
   return null;
 }
 /** argv rebuilt from parsed values only. */
 function rebuild(p) {
   const out = p.command.split(" ");
-  for (const [k, f] of [["input", "--input"], ["key", "--key"], ["out", "--out"], ["writeHeader", "--write-header"]]) if (typeof p[k] === "string") out.push(f, p[k]);
+  for (const [k, f] of [["input", "--input"], ["key", "--key"], ["out", "--out"], ["terminal", "--terminal"], ["harness", "--harness"], ["writeHeader", "--write-header"]]) if (typeof p[k] === "string") out.push(f, p[k]);
   if (p.envelope) out.push("--envelope");
   out.push("--output", p.output);
   return out;
@@ -270,8 +273,12 @@ export function recordTrace(rec, text, { home, parsed, cwd, roots = [] }) {
   if (!started) return;
   rec.audit = "available";
   const store = resolveLoose(join(home, ".agents"));
-  const key = typeof parsed?.key === "string" && parsed.key !== "-" ? resolveLoose(resolve(cwd, parsed.key)) : null;
-  const outDir = rec.command === "key generate" && typeof parsed?.out === "string" ? dirname(resolveLoose(resolve(cwd, parsed.out))) : null;
+  // 0.4.0: --terminal names the key file by digest, so the sanctioned key / out path is the derived one.
+  const termFile = typeof parsed?.terminal === "string" ? resolveLoose(terminalKeyFile(home, parsed.terminal)) : null;
+  const key = typeof parsed?.key === "string" && parsed.key !== "-" ? resolveLoose(resolve(cwd, parsed.key))
+    : termFile !== null && rec.command !== "key generate" ? termFile : null;
+  const outDir = rec.command !== "key generate" ? null
+    : typeof parsed?.out === "string" ? dirname(resolveLoose(resolve(cwd, parsed.out))) : termFile !== null ? dirname(termFile) : null;
   const named = new Set(["input", "key", "out", "writeHeader"].map((k) => parsed?.[k]).filter((v) => typeof v === "string" && v !== "-").map((v) => resolveLoose(resolve(cwd, v))));
   const sandboxSet = [...new Set(roots.flatMap((r) => [r, resolveLoose(r)]))]; // as given and canonical (macOS /tmp → /private/tmp)
   const under = (p, d) => p === d || p.startsWith(d + sep);

@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KEYGEN_CONTRACT, SIGNER_PIN, SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
+import { KEYGEN_CONTRACT, SIGNER_PIN, SIGNER_SPEC, TERMINAL_CONTRACT } from "../../scripts/signer-pin.mjs";
 
 const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "scripts", "signer-contract-check.mjs");
 
@@ -34,7 +34,7 @@ const caps = (version) => ({
   signer_protocol: "sohopay-signer/1",
   implementation: "@sohopay/agent-signer",
   implementation_version: version,
-  command_contracts: { "key generate": KEYGEN_CONTRACT, "pop sign": "pop-sign/1" },
+  command_contracts: { "key generate": KEYGEN_CONTRACT, "pop sign": "pop-sign/1", "terminal id": TERMINAL_CONTRACT },
 });
 
 test("contract check: a resolved signer at the pin with the keygen contract passes", () => {
@@ -48,6 +48,14 @@ test("contract check: a resolved signer at a different version hard-fails, even 
   assert.equal(r.code, 1, r.out);
   assert.match(r.out, /FAIL: implementation_version is 0\.2\.0/);
   assert.ok(r.out.includes(SIGNER_PIN), `the failure names the pin ${SIGNER_SPEC}: ${r.out}`);
+});
+
+test("contract check: a pinned signer without the terminal contract hard-fails", () => {
+  const c = caps(SIGNER_PIN);
+  delete c.command_contracts["terminal id"];
+  const r = runGate(c);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /FAIL: command_contracts\["terminal id"\]/);
 });
 
 test("contract check: a resolved signer with no implementation_version hard-fails", () => {

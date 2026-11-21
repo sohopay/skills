@@ -7,7 +7,7 @@ export default {
   "situation": "onboarded borrower with the key at the canonical path; prepare returns VOUCHER_ISSUED; full sign + merchant retry flow",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

@@ -1,4 +1,4 @@
-// Command bodies, mirroring @sohopay/agent-signer@0.3.1 src/cli/commands.ts, key-generate.ts, io.ts, io-schema.ts.
+// Command bodies, mirroring @sohopay/agent-signer@0.4.0 src/cli/commands.ts, key-generate.ts, io.ts, io-schema.ts.
 // Output field sets, field order, error codes and messages are the real ones; only the key material differs
 // (see keymodel.mjs) and `header_value` is `<FAKE-SP6-CANARY-HDR- canary>.<base64url(envelope)>`: the canary prefix
 // is the never-model-visible leak-detection secret, and the base64url(envelope) suffix is the real signed credential
@@ -14,16 +14,25 @@ import {
 
 export const SIGNER_PROTOCOL = "sohopay-signer/1";
 export const IMPLEMENTATION = "@sohopay/agent-signer";
-export const VERSION = "0.3.1";
-export const COMMANDS = ["voucher sign", "payment-id", "key jkt", "key generate", "pop sign", "verify-vectors", "capabilities"];
-const COMMAND_CONTRACTS = { "key generate": "workload-keygen/1", "pop sign": "pop-sign/1" };
+export const VERSION = "0.4.0";
+export const COMMANDS = ["voucher sign", "payment-id", "key jkt", "key generate", "pop sign", "verify-vectors", "capabilities", "terminal id"];
+const COMMAND_CONTRACTS = { "key generate": "workload-keygen/1", "pop sign": "pop-sign/1", "terminal id": "workload-terminal/1" };
+// The real 0.3.1 advertisement: no `terminal id`, no workload-terminal/1 (a stale signer below the 0.4.0 pin).
+const COMMANDS_031 = COMMANDS.slice(0, -1);
+const COMMAND_CONTRACTS_031 = { "key generate": "workload-keygen/1", "pop sign": "pop-sign/1" };
 // The real 0.2.0 advertisement: no key generate, no command_contracts (git 72bd896 src/cli/commands.ts).
 const COMMANDS_020 = ["voucher sign", "payment-id", "key jkt", "pop sign", "verify-vectors", "capabilities"];
 
-/** `capabilities` — 0.3.1, or the real 0.2.0 shape for a signer that lacks the keygen contract. */
+/** `capabilities` — 0.4.0, the real 0.3.1 shape (no terminal contract), or the real 0.2.0 shape (no keygen contract). */
 export function capabilitiesResult(profile) {
   if (profile === "0.2.0") {
     return { signer_protocol: SIGNER_PROTOCOL, implementation: IMPLEMENTATION, implementation_version: "0.2.0", algorithms: ["Ed25519"], commands: COMMANDS_020 };
+  }
+  if (profile === "0.3.1") {
+    return {
+      signer_protocol: SIGNER_PROTOCOL, implementation: IMPLEMENTATION, implementation_version: "0.3.1",
+      algorithms: ["Ed25519"], commands: COMMANDS_031, command_contracts: COMMAND_CONTRACTS_031,
+    };
   }
   return {
     signer_protocol: SIGNER_PROTOCOL, implementation: IMPLEMENTATION, implementation_version: VERSION,

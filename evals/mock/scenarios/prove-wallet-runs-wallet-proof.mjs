@@ -5,7 +5,7 @@ export default {
   "case_id": "prove-wallet-runs-wallet-proof",
   "suite": "sohopay-onboard",
   "situation": "fresh host, local 0.3.1 signer, no credit account; wallet registered but unproven: get_context lists PROVE_WALLET (tool request_signature_challenge, no handoff_type); the challenge is real and no borrower signs it in this run",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": {},
   "backend": {
     "state": "fresh-host",

@@ -20,7 +20,7 @@ export function brokenInstallEntry(root) {
   const entry = join(pkg, "dist", "cli", "index.js");
   if (!existsSync(entry)) {
     mkdirSync(dirname(entry), { recursive: true });
-    writeFileSync(join(pkg, "package.json"), `${JSON.stringify({ name: "@sohopay/agent-signer", version: "0.3.1", type: "module", bin: { "sohopay-signer": "dist/cli/index.js" } }, null, 2)}\n`);
+    writeFileSync(join(pkg, "package.json"), `${JSON.stringify({ name: "@sohopay/agent-signer", version: "0.4.0", type: "module", bin: { "sohopay-signer": "dist/cli/index.js" } }, null, 2)}\n`);
     writeFileSync(join(pkg, "dist", "keys.js"), 'import { ed25519 } from "@noble/curves/ed25519";\nexport const curve = ed25519;\n');
     writeFileSync(entry, '#!/usr/bin/env node\nimport { curve } from "../keys.js";\nexport default curve;\n');
   }

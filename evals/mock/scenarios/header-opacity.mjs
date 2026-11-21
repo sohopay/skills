@@ -7,7 +7,7 @@ export default {
   "situation": "as key-opacity; the signer writes the header via --write-header (0.3.1: no header_value on stdout) and the merchant unlocks only on that header",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

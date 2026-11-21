@@ -1,5 +1,5 @@
-// Mock `sohopay-signer` @ 0.3.1: pure orchestrator run(argv, stdin, ctx) → { stdout, stderr, exitCode }, mirroring
-// @sohopay/agent-signer@0.3.1 src/cli/run.ts + args.ts line for line. Zero dependencies, no network.
+// Mock `sohopay-signer` @ 0.4.0: pure orchestrator run(argv, stdin, ctx) → { stdout, stderr, exitCode }, mirroring
+// @sohopay/agent-signer@0.4.0 src/cli/run.ts + args.ts line for line. Zero dependencies, no network.
 //
 // Contract (the real one):
 //   * success          → exit 0, stdout = result (`--output human` default: `key: value` lines; `--output json`)
@@ -9,30 +9,35 @@
 //                        signature and reports header_file instead
 // Scenario hooks (run config `signer`): answers=false (a broken global install — signer-main.mjs runs Node on an
 // install missing a dependency, so Node itself prints ERR_MODULE_NOT_FOUND), profile "0.2.0" (the real 0.2.0
-// capabilities and argv grammar: no keygen contract, no --out), force_errors (a real error code + real message, N times), and
+// capabilities and argv grammar: no keygen contract, no --out), profile "0.3.1" (a signer below the pin: no
+// `terminal id`, no --terminal / --harness), force_errors (a real error code + real message, N times), and
 // voucher_output_override (a faulty signer whose payment_id / agent_key_jkt disagree with the voucher).
 // Hooks change only WHICH real-shaped output is produced; input conditions go to the side-channel journal.
 import { appendFileSync, chmodSync, closeSync, constants, existsSync, fstatSync, ftruncateSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { REAL_MESSAGES, SignerError, UsageError } from "./lib/errors.mjs";
 import { newCanary } from "./lib/keymodel.mjs";
+import { resolveHarnessTerminalId, terminalKeyPath } from "./lib/keypath.mjs";
 import {
   assertInputSchema, capabilitiesResult, keyGenerateResult, keyJktResult, paymentIdResult, popSignResult, readInput,
   voucherSignEnvelopeResult, voucherSignResult,
 } from "./lib/commands.mjs";
 
-const KNOWN_COMMANDS = new Set(["voucher sign", "payment-id", "key jkt", "key generate", "pop sign", "verify-vectors", "capabilities"]);
+const KNOWN_COMMANDS_031 = new Set(["voucher sign", "payment-id", "key jkt", "key generate", "pop sign", "verify-vectors", "capabilities"]);
+const KNOWN_COMMANDS = new Set([...KNOWN_COMMANDS_031, "terminal id"]);
+const TERMINAL_COMMANDS = new Set(["key generate", "pop sign", "voucher sign"]);
 const KNOWN_COMMANDS_020 = new Set(["voucher sign", "payment-id", "key jkt", "pop sign", "verify-vectors", "capabilities"]);
 // Per-profile argv grammar: 0.2.0 (git 72bd896 args.ts) has no `--out` flag and no `key generate` command.
 const GRAMMAR = {
-  "0.3.1": { known: KNOWN_COMMANDS, flags: new Set(["--input", "--key", "--out", "--output", "--envelope", "--write-header"]) },
+  "0.4.0": { known: KNOWN_COMMANDS, flags: new Set(["--input", "--key", "--out", "--terminal", "--harness", "--output", "--envelope", "--write-header"]) },
+  "0.3.1": { known: KNOWN_COMMANDS_031, flags: new Set(["--input", "--key", "--out", "--output", "--envelope", "--write-header"]) },
   "0.2.0": { known: KNOWN_COMMANDS_020, flags: new Set(["--input", "--key", "--output", "--envelope", "--write-header"]) },
 };
 // verify-vectors on the real 0.3.1 build (@sohopay/signer-vectors 0.2.0): 19/19.
 const VECTORS = { passed: 19, failed: 0, total: 19 };
 
 /** args.ts parseArgs: `--flag value` / `--flag=value`, a 1–2 token known command, nothing extra. */
-export function parseArgs(argv, { known, flags } = GRAMMAR["0.3.1"]) {
+export function parseArgs(argv, { known, flags } = GRAMMAR["0.4.0"]) {
   const positionals = [];
   const p = { output: "human", envelope: false };
   for (let i = 0; i < argv.length; i++) {
@@ -52,6 +57,8 @@ export function parseArgs(argv, { known, flags } = GRAMMAR["0.3.1"]) {
     if (name === "--input") p.input = valueOf("--input");
     else if (name === "--key") p.key = valueOf("--key");
     else if (name === "--out") p.out = valueOf("--out");
+    else if (name === "--terminal") p.terminal = valueOf("--terminal");
+    else if (name === "--harness") p.harness = valueOf("--harness");
     else if (name === "--output") {
       const v = valueOf("--output");
       if (v !== "json" && v !== "human") throw new UsageError(`--output must be "json" or "human", got "${v}"`);
@@ -125,6 +132,9 @@ function voucherSign(parsed, stdin, ctx) {
 
 function dispatch(parsed, stdin, ctx) {
   switch (parsed.command) {
+    case "terminal id":
+      if (parsed.harness === undefined) throw new UsageError("terminal id requires --harness <name>");
+      return { terminal_id: resolveHarnessTerminalId(parsed.harness, ctx.home) };
     case "capabilities":
       if (ctx.signer.profile === "0.2.0") ctx.note("capabilities_missing_keygen");
       return capabilitiesResult(ctx.signer.profile);
@@ -134,7 +144,12 @@ function dispatch(parsed, stdin, ctx) {
     case "key generate": {
       const input = readInput(parsed.input, stdin, ctx.cwd);
       assertInputSchema("key generate", input);
-      return keyGenerateResult(input, parsed.out, ctx);
+      let out = parsed.out;
+      if (parsed.terminal !== undefined) {
+        if (input.terminal_id !== parsed.terminal) throw new SignerError("TERMINAL_MISMATCH", "input terminal_id does not match --terminal");
+        out = terminalKeyPath(parsed.terminal, "ensure", ctx);
+      }
+      return keyGenerateResult(input, out, ctx);
     }
     case "pop sign": {
       const input = readInput(parsed.input, stdin, ctx.cwd);
@@ -148,7 +163,7 @@ function dispatch(parsed, stdin, ctx) {
 /** run.ts run(): never throws; usage → exit 2 plain stderr, everything else → exit 1 error envelope. */
 export function run(argv, stdin, ctx) {
   // `answers:false` (a broken install) never reaches here: signer-main.mjs hands the call to Node itself.
-  const profile = ctx.signer.profile === "0.2.0" ? "0.2.0" : "0.3.1";
+  const profile = ctx.signer.profile === "0.2.0" || ctx.signer.profile === "0.3.1" ? ctx.signer.profile : "0.4.0";
   try {
     const parsed = parseArgs(argv, GRAMMAR[profile]);
     if (parsed.input === "-" && parsed.key === "-") throw new UsageError("--input and --key cannot both read stdin");
@@ -156,12 +171,18 @@ export function run(argv, stdin, ctx) {
       throw new UsageError("--envelope and --write-header are only valid for `voucher sign`");
     }
     if (parsed.writeHeader !== undefined && !parsed.envelope) throw new UsageError("--write-header requires --envelope");
+    if (parsed.harness !== undefined && parsed.command !== "terminal id") throw new UsageError("--harness is only valid for `terminal id`");
+    if (parsed.terminal !== undefined) {
+      if (!TERMINAL_COMMANDS.has(parsed.command)) throw new UsageError("--terminal is only valid for `key generate`, `pop sign` and `voucher sign`");
+      if (parsed.key !== undefined || parsed.out !== undefined) throw new UsageError("--terminal replaces --key / --out; pass only one");
+      if (parsed.command !== "key generate") parsed.key = terminalKeyPath(parsed.terminal, "read", ctx);
+    }
     if (parsed.command === "verify-vectors") return { stdout: format(VECTORS, parsed.output), stderr: "", exitCode: 0 };
     const forced = forcedError(ctx, parsed.command);
     if (forced) throw forced;
     const result = dispatch(parsed, stdin, ctx);
-    // A 0.2.0 binary stamps every answer 0.2.0 (command bodies stay 0.3.1 — documented in PROVENANCE.md).
-    const stamped = profile === "0.2.0" && "implementation_version" in result ? { ...result, implementation_version: "0.2.0" } : result;
+    // An older binary stamps every answer with its own version (command bodies stay 0.4.0 — documented in PROVENANCE.md).
+    const stamped = profile !== "0.4.0" && "implementation_version" in result ? { ...result, implementation_version: profile } : result;
     return { stdout: format(stamped, parsed.output), stderr: "", exitCode: 0 };
   } catch (error) {
     if (error instanceof UsageError) return { stdout: "", stderr: `${error.message}\n`, exitCode: 2 };
@@ -171,10 +192,10 @@ export function run(argv, stdin, ctx) {
   }
 }
 
-const DEFAULT_SIGNER = Object.freeze({ answers: true, profile: "0.3.1", force_errors: [], voucher_output_override: null });
+const DEFAULT_SIGNER = Object.freeze({ answers: true, profile: "0.4.0", force_errors: [], voucher_output_override: null });
 
 /**
- * Build the run context from a run config (see run-config.mjs). With no config the mock is a plain 0.3.1 signer
+ * Build the run context from a run config (see run-config.mjs). With no config the mock is a plain 0.4.0 signer
  * with fresh canaries (contract tests). `home` comes from the signer's own environment, exactly as os.homedir()
  * does for the real one. Input conditions go to the side-channel journal (never stdout/stderr).
  */

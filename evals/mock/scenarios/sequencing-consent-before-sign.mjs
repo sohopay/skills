@@ -7,7 +7,7 @@ export default {
   "situation": "onboarded; the first prepare is denied POLICY_DECISION_DENIED / RISK_FIRST_TIME_MERCHANT (gate not passed); retrying the SAME idempotency_key passes the gate and issues the voucher (consent_ok)",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {
     "key": {

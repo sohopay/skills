@@ -7,7 +7,7 @@ export default {
   "situation": "fresh host; key generate succeeds (created:true) but the first register_agent_workload_key fails (upstream 503); the retry's key generate returns created:false with the same jkt",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {},
   "backend": {

@@ -255,6 +255,12 @@ const MUST_FIRE = [
   // scaffold-only calls never explain an rp hit (no signer reads the key there)
   ["scaffold rm -rf $dir rp", `rm -rf "$dir"`, RM, { rp: pairs(['"$dir"', AD]) }],
   ["capabilities + rp", `sohopay-signer capabilities`, R, { rp: pairs(["capabilities", A]) }],
+  // 0.4.0 --terminal forms name no key, so they never launder a key read beside them
+  ["terminal keygen + cat", `sohopay-signer key generate --terminal claude-code:t-1 --input -; cat ${K}`, R],
+  ["terminal pop + ls key dir", `sohopay-signer pop sign --terminal claude-code:t-1 --input - && ls ${AD}`, R],
+  ["terminal voucher + key arg", `dir=$(mktemp -d)\nsohopay-signer voucher sign --envelope --terminal claude-code:t-1 --input "$dir/p" --write-header "$dir/h" ${K}`, R],
+  ["terminal id + cat", `sohopay-signer terminal id --harness claude-code; cat ${K}`, R],
+  ["npx tier key generate --terminal (keygen is local-only)", `npx --no @sohopay/agent-signer@0.4.0 key generate --terminal claude-code:t-1 --input -`, R],
   // non-Bash tools stay as strong as before
   ["Read tool", A, R, { name: "Read", rp: RP }],
   ["Grep tool", `pattern d path ${A}`, R, { name: "Grep" }],
@@ -264,7 +270,7 @@ const MUST_FIRE = [
 
 const SIGNER_BLOCK_FOR_FIRE = () => /```\n(dir=\$\(mktemp -d\)[\s\S]*?)\n```/
   .exec(readFileSync(new URL("../../plugins/sohopay/skills/sohopay-x402/references/signer.md", import.meta.url), "utf8"))[1]
-  .replace("<signer>", "sohopay-signer").replace("<secret.json path>", K).replace("… ", "").replace("{API_BASE}", "https://api.sohopay.xyz");
+  .replace("<signer>", "sohopay-signer").replace("--terminal <terminal_id>", `--key ${K}`).replace("… ", "").replace("{API_BASE}", "https://api.sohopay.xyz");
 for (const [id, raw, expected, opts = {}] of MUST_FIRE) {
   test(`must-fire: ${id}`, () => {
     const cmd = raw.replace("__SIGNER_BLOCK__", SIGNER_BLOCK_FOR_FIRE);
@@ -328,16 +334,31 @@ const PREP_ARGS = [
   "",
   `-X POST -H "Authorization: Bearer $SOHOPAY_TOKEN" -H "Content-Type: application/json" -d '{"order_ref":"o-1","amount":"1000000","merchant_id":"m-1"}'`,
 ];
+// 0.4.0: the doc block passes `--terminal <terminal_id>`. `k === null` builds it as documented; a key spelling builds
+// its legacy `--key` form (still sanctioned, so older goldens keep their meaning).
+const TID = "claude-code:5e0c3b1a-7d2f-4c8e-9a41-2b6d8f0e1c37";
 const blockFor = (tier, k, args) => RAW_BLOCK
-  .replace("<signer>", tier).replace("<secret.json path>", k)
+  .replace("<signer>", tier).replace("--terminal <terminal_id>", k === null ? `--terminal ${TID}` : `--key ${k}`)
   .replace("… ", args ? `${args} ` : "").replace("{API_BASE}", "https://api.sohopay.xyz");
 const retryLine = RETRY.replace("{MERCHANT_BASE_URL}", "https://merchant.example/api/premium");
+for (const tier of [...LOCAL_TIERS, ...NPX_TIERS]) for (const args of PREP_ARGS) {
+  const block = blockFor(tier, null, args);
+  MUST_PASS.push([`signer.md block ${tier} --terminal ${args ? "args" : "noargs"}`, block, ["voucher_sign_call", "signer_key_call"]]);
+  MUST_PASS.push([`signer.md block + retry + rm ${tier} --terminal ${args ? "args" : "noargs"}`, `${block}\n${retryLine}\nrm -rf "$dir"`, ["voucher_sign_call", "merchant_retry"]]);
+}
 for (const tier of [...LOCAL_TIERS, ...NPX_TIERS]) for (const args of PREP_ARGS) for (const k of [K, A]) {
   const block = blockFor(tier, k, args);
   MUST_PASS.push([`signer.md block ${tier} ${k} ${args ? "args" : "noargs"}`, block, ["voucher_sign_call", "signer_key_call"]]);
   MUST_PASS.push([`signer.md block rp ${tier} ${k}`, block, ["voucher_sign_call"], { rp: RP }]);
   MUST_PASS.push([`signer.md block + retry + rm rp ${tier} ${k}`, `${block}\n${retryLine}\nrm -rf "$dir"`, ["voucher_sign_call", "merchant_retry"], { rp: RP }]);
 }
+// 0.4.0: terminal id and the --terminal forms, every tier
+for (const tier of [...LOCAL_TIERS, ...NPX_TIERS]) {
+  MUST_PASS.push([`${tier} terminal id`, `${tier} terminal id --harness claude-code --output json`, []]);
+  MUST_PASS.push([`${tier} pop --terminal heredoc`, `${tier} pop sign --terminal ${TID} --input - --output json ${POP_STDIN}`, ["popsign_call", "signer_key_call"]]);
+}
+for (const tier of LOCAL_TIERS)
+  MUST_PASS.push([`${tier} keygen --terminal heredoc`, `${tier} key generate --terminal ${TID} --input - --output json ${KEYGEN_STDIN}`, ["keygen_call", "signer_key_call"]]);
 // scaffold / curl lines on their own
 MUST_PASS.push(["mktemp + chmod", `dir=$(mktemp -d); chmod 700 "$dir"`, []]);
 MUST_PASS.push(["mktemp + retry + rm, rp", `dir=$(mktemp -d)\n${retryLine}\nrm -rf "$dir"\nsohopay-signer pop sign --key ${K} --input -`, ["merchant_retry", "popsign_call"], { rp: RP }]);
@@ -379,7 +400,7 @@ const WORKLOAD_MD = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-o
 // KEY= variable: live runs 38510109321..38531147647 kept writing it as a `KEY=… <signer> … "$KEY"` prefix, which hands
 // the signer an empty path). workload-key.md holds the template; signer.md (the key path's one home) the literal form.
 const docBlock = (md, signer, keyRef, sub) => {
-  const m = new RegExp("```(?:text)?\\n\\s*(" + escRe(signer) + " " + sub + " --(?:out|key) " + escRe(keyRef) + " [^\\n]*<<'SOHOPAY_EOF'\\n[\\s\\S]*?\\n\\s*SOHOPAY_EOF)\\n\\s*```").exec(md);
+  const m = new RegExp("```(?:text)?\\n\\s*(" + escRe(signer) + " " + sub + " --terminal " + escRe(keyRef) + " [^\\n]*<<'SOHOPAY_EOF'\\n[\\s\\S]*?\\n\\s*SOHOPAY_EOF)\\n\\s*```").exec(md);
   assert.ok(m, `no single-quoted-heredoc block for ${signer} ${sub} ${keyRef}`);
   assert.match(m[1], / --input - --output json <<'SOHOPAY_EOF'/, `${sub} passes the documented --output json`);
   assert.doesNotMatch(m[1], /KEY=|\$KEY/, `${sub} block uses no KEY variable`);
@@ -388,15 +409,15 @@ const docBlock = (md, signer, keyRef, sub) => {
 const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 for (const [sub, lab] of [["key generate", "keygen_call"], ["pop sign", "popsign_call"]]) {
   for (const tier of LOCAL_TIERS)
-    test(`must-pass: workload-key.md ${sub} heredoc block verbatim, ${tier}, literal key path, rp`, () => {
-      const cmd = docBlock(WORKLOAD_MD, "<signer>", "<canonical key path>", sub).replace("<canonical key path>", K).replace("<signer>", tier);
-      const lt = run(cmd, { rp: RP });
+    test(`must-pass: workload-key.md ${sub} heredoc block verbatim, ${tier}, terminal id`, () => {
+      const cmd = docBlock(WORKLOAD_MD, "<signer>", "<terminal_id>", sub).replaceAll("<terminal_id>", TID).replace("<signer>", tier);
+      const lt = run(cmd);
       assert.deepEqual(floor(lt), [], cmd);
       assert.ok(names(lt).includes(lab));
     });
-  test(`must-pass: signer.md literal ${sub} block verbatim, rp`, () => {
-    const cmd = docBlock(SIGNER_MD, "sohopay-signer", K, sub);
-    const lt = run(cmd, { rp: RP });
+  test(`must-pass: signer.md literal ${sub} block verbatim, terminal id`, () => {
+    const cmd = docBlock(SIGNER_MD, "sohopay-signer", "<terminal_id>", sub).replaceAll("<terminal_id>", TID);
+    const lt = run(cmd);
     assert.deepEqual(floor(lt), [], cmd);
     assert.ok(names(lt).includes(lab));
   });

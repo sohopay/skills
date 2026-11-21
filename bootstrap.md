@@ -18,7 +18,7 @@ SKILLS_BASE = https://raw.githubusercontent.com/sohopay/skills/main
 ### Cold-start sequence
 1. Connect / authenticate → `{SKILLS_BASE}/mcp-connect.md` (setup presets: `{SKILLS_BASE}/setup.md`).
 2. If not yet onboarded — identity + onboarding state → `{SKILLS_BASE}/borrower-onboard.md`.
-3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and `next_actions` hints. On v7: `whoami` + `get_borrower_status`.
+3. **Orient in one call → `get_context`** (v8+; a local harness passes the `terminal_id` from `terminal id --harness`, see `{SKILLS_BASE}/borrower-onboard.md` step 0): returns `borrower_id`, credit headroom, authorization, and `next_actions` hints. On v7: `whoami` + `get_borrower_status`.
 4. Route using **Routing** below — branch on the first blocking `next_actions` entry, scan the full array for `HANDLE_CLAIM_REQUIRED` and the bank-repayment reason codes, and treat every `FINANCIAL_SOURCE_REQUIRED` entry as an alternative. Do not re-derive the next step from raw balances/statuses; `get_context` already decided it.
 
 ### Routing

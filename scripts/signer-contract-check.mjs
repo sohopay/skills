@@ -8,7 +8,7 @@
  * the private package, the check soft-skips rather than blocking every skills PR.
  */
 import { spawnSync } from 'node:child_process';
-import { SIGNER_PIN, SIGNER_SPEC, SIGNER_PKG, KEYGEN_CONTRACT, POPSIGN_CONTRACT } from './signer-pin.mjs';
+import { SIGNER_PIN, SIGNER_SPEC, SIGNER_PKG, KEYGEN_CONTRACT, POPSIGN_CONTRACT, TERMINAL_CONTRACT } from './signer-pin.mjs';
 
 function candidates() {
   const list = [];
@@ -91,4 +91,10 @@ if (popContract !== POPSIGN_CONTRACT) {
   console.error(`FAIL: command_contracts["pop sign"] is ${popContract}, expected ${POPSIGN_CONTRACT}`);
   process.exit(1);
 }
-console.log(`OK: ${SIGNER_SPEC} advertises key generate => ${KEYGEN_CONTRACT}, pop sign => ${POPSIGN_CONTRACT}`);
+// 0.4.0+: the skills pass --terminal and run `terminal id --harness`, so the pin must advertise it.
+const terminalContract = caps.command_contracts?.['terminal id'];
+if (terminalContract !== TERMINAL_CONTRACT) {
+  console.error(`FAIL: command_contracts["terminal id"] is ${terminalContract}, expected ${TERMINAL_CONTRACT}`);
+  process.exit(1);
+}
+console.log(`OK: ${SIGNER_SPEC} advertises key generate => ${KEYGEN_CONTRACT}, pop sign => ${POPSIGN_CONTRACT}, terminal id => ${TERMINAL_CONTRACT}`);

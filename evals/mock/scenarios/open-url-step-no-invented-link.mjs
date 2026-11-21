@@ -5,7 +5,7 @@ export default {
   "case_id": "open-url-step-no-invented-link",
   "suite": "sohopay-onboard",
   "situation": "onboarded agent, local 0.3.1 signer, no credit account yet; get_context lists EVALUATE_CREDIT (handoff_type OPEN_URL, no URL anywhere)",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": { "key": { "borrower": "self", "terminal": "self" } },
   "backend": {
     "state": "onboarded",

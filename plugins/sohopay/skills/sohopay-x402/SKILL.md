@@ -28,7 +28,7 @@ Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
   CREDIT_ACCOUNT_NOT_FOUND → STOP: no credit line yet (no retry, no sign, no merchant retry)
-Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key (canonical path in references/signer.md); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
+Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with --terminal <terminal_id> (references/signer.md "Terminal id"); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent

@@ -1,5 +1,6 @@
 // Doc-faithful scripted agents over the SP6 mock world (test helper for mock-scenarios.test.mjs).
-// Every command is the literal form from workload-key.md / signer.md (with the documented `--output json`), and the
+// Every command is the literal form from workload-key.md / signer.md (with the documented `--output json`; 0.4.0:
+// `terminal id --harness` once, then `--terminal <id>` on every keyed call), and the
 // signer's JSON stdout is parsed as the docs describe. These are NOT goldens — they prove each scenario produces the
 // situation its case tests, end to end through the real labeler + grader.
 import { spawn } from "node:child_process";
@@ -7,13 +8,12 @@ import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KEY_REL, prepareRun } from "../mock/run-config.mjs";
+import { RUN_HARNESS, prepareRun } from "../mock/run-config.mjs";
 import { createRecorder, httpMcpCaller, httpMcpToolNames } from "../mock/recorder.mjs";
 import { loadScenario } from "../mock/scenarios/index.mjs";
 import { SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
 import { buildPrompt, sourceChoiceInPrompt } from "./adapters/cc-prompts.mjs";
 
-export const KEY = "~/.agents/sohopay-agent-workload/secret.json";
 const SCOPES = ["spend:intent:create", "policy:evaluate", "signing:request", "payment:read", "credit:facility:accept", "handle:claim"];
 
 const BACKEND = join(dirname(fileURLToPath(import.meta.url)), "..", "mock", "backend.mjs");
@@ -48,7 +48,7 @@ export async function world(caseId) {
   const tools = httpMcpToolNames(backend.urls.mcp);
   // The operator prompt the live adapter would send (onboarding only): a source the operator already chose lives there.
   const prompt = scenario.suite === "sohopay-onboard" ? buildPrompt(scenario.suite, caseId, backend) : null;
-  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, tools, prompt, keyFile: join(home, KEY_REL), cleanup };
+  return { scenario, run, runDir, backend, merchant: backend.urls.merchant, env, rec, tools, prompt, cleanup };
 }
 
 /** Parse `key: value` human output (or JSON) into an object. */
@@ -58,7 +58,11 @@ export function parseOut(s) {
   return Object.fromEntries(t.split("\n").filter((l) => l.includes(": ")).map((l) => [l.slice(0, l.indexOf(": ")), l.slice(l.indexOf(": ") + 2)]));
 }
 const errCode = (r) => { try { return JSON.parse(r.stderr.trim()).error.code; } catch { return null; } };
-const keyPairs = (w) => [{ arg: KEY, path: w.keyFile }];
+/** signer.md "Terminal id": this install's id, asked of the signer once per world. */
+function terminalId(w) {
+  w.terminalId ??= parseOut(w.rec.bash(`sohopay-signer terminal id --harness ${RUN_HARNESS} --output json`).stdout).terminal_id;
+  return w.terminalId;
+}
 const heredoc = (json) => `<<'SOHOPAY_EOF'\n${JSON.stringify(json)}\nSOHOPAY_EOF`;
 
 /** Resolve the signer per signer.md; returns the capabilities object, or null after surfacing the stop code. */
@@ -95,12 +99,12 @@ function resolveSigner(w, { keygen }) {
 }
 
 function keygen(w, ids) {
-  const cmd = `sohopay-signer key generate --out ${KEY} --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: ids.terminal_id })}`;
-  return w.rec.bash(cmd, keyPairs(w));
+  const t = terminalId(w);
+  return w.rec.bash(`sohopay-signer key generate --terminal ${t} --input - --output json ${heredoc({ borrower_id: ids.borrower_id, terminal_id: t })}`);
 }
 function popSign(w, ids, jkt) {
-  const cmd = `sohopay-signer pop sign --key ${KEY} --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: ids.terminal_id, jkt } })}`;
-  return w.rec.bash(cmd, keyPairs(w));
+  const t = terminalId(w);
+  return w.rec.bash(`sohopay-signer pop sign --terminal ${t} --input - --output json ${heredoc({ fields: { borrowerId: ids.borrower_id, terminalId: t, jkt } })}`);
 }
 
 const STOP_TEXT = {
@@ -203,7 +207,7 @@ export function onboard(w) {
     const key = parseOut(kg.stdout);
     let pop = popSign(w, ids, key.jkt);
     if (errCode(pop) === "INLINE_KEY_REJECTED") {
-      rec.say("INLINE_KEY_REJECTED: switching to the --key path form; never an inline key.");
+      rec.say("INLINE_KEY_REJECTED: re-running with --terminal; never an inline key.");
       pop = popSign(w, ids, key.jkt);
     }
     const p = parseOut(pop.stdout);
@@ -238,8 +242,8 @@ export function pay(w) {
   const dir = rec.bash("mktemp -d").stdout.trim();
   rec.write(`${dir}/prep.json`, prep.text);
   const sign = rec.bash(
-    `sohopay-signer voucher sign --envelope --key ${KEY} --input ${dir}/prep.json --write-header ${dir}/hdr.txt --output json`,
-    [{ arg: KEY, path: w.keyFile }, { arg: `${dir}/prep.json`, path: `${dir}/prep.json` }, { arg: `${dir}/hdr.txt`, path: `${dir}/hdr.txt` }],
+    `sohopay-signer voucher sign --envelope --terminal ${terminalId(w)} --input ${dir}/prep.json --write-header ${dir}/hdr.txt --output json`,
+    [{ arg: `${dir}/prep.json`, path: `${dir}/prep.json` }, { arg: `${dir}/hdr.txt`, path: `${dir}/hdr.txt` }],
   );
   const out = parseOut(sign.stdout);
   const v = prep.payload.voucher;

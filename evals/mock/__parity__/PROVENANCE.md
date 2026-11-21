@@ -1,33 +1,40 @@
 # Provenance — SP6 mock parity fixtures
 
-`real-0.3.1.json` is a recording of the **real** signer CLI, used by `evals/runner/parity.test.mjs` to hold the mock
-(`evals/mock/sohopay-signer`) to the 0.3.1 contract.
+`real-0.4.0.json` is a recording of the **real** signer CLI, used by `evals/runner/parity.test.mjs` to hold the mock
+(`evals/mock/sohopay-signer`) to the 0.4.0 contract. The file name follows `SIGNER_PIN` (`scripts/signer-pin.mjs`).
 
 | Item | Value |
 |------|-------|
-| Repository | `github.com/sohopay/sohopay-agent-signer` (local worktree `sohopay-agent-signer-wt-031`) |
-| Branch | `fix/header-value-write-header-0.3.1` (PR #7, unmerged at capture time) |
-| Commit | `44cb9feb5d2c19288c123c97b3dd5672d65b838d` — "chore(release): 0.3.1 — header_value no longer echoed under --write-header (INV-1)" |
-| Package | `@sohopay/agent-signer@0.3.1` (`package.json` blob `009ce2b`), built with `npm run build` (tsc → `dist/`, gitignored; nothing committed there) |
+| Repository | `github.com/sohopay/sohopay-agent-signer` |
+| Branch | `feat/soho-734-terminal-key-path` (PR #8, unmerged at capture time) |
+| Commit | `05a1656` — "feat(signer): per-harness terminal id and per-terminal key path (SOHO-734)" |
+| Package | `@sohopay/agent-signer@0.4.0` (`package.json` blob `ab39498`), built with `npm run build` (tsc → `dist/`, gitignored) |
 | Binary run | `node dist/cli/index.js` (the `sohopay-signer` bin) |
-| Runtime | Node `v26.0.0`, macOS |
-| Captured by | `node evals/mock/__parity__/capture.mjs <worktree>` on 2026-10-08 |
+| Runtime | Node `v26.13.1`, Linux |
+| Captured by | `node evals/mock/__parity__/capture.mjs <checkout>` on 2026-11-21 |
 
-## Source files the mock mirrors (git blob ids at 44cb9fe)
+`terminal id` mints `<harness>:<uuid v4>`; `cases.mjs` normalises every uuid v4 to `{{UUID}}` on both sides.
+
+## Source files the mock mirrors (git blob ids at 05a1656)
 
 | File | Blob | Mirrored in |
 |------|------|-------------|
 | `src/cli/index.ts` | `21f6663` | `evals/mock/signer-main.mjs` |
-| `src/cli/run.ts` | `e14f28b` | `evals/mock/signer-core.mjs` (`run`, `--write-header` INV-1 strip) |
-| `src/cli/args.ts` | `2f90303` | `signer-core.mjs` (`parseArgs`, `needsStdin`) |
-| `src/cli/commands.ts` | `7756572` | `lib/commands.mjs` |
+| `src/cli/run.ts` | `cee8195` | `evals/mock/signer-core.mjs` (`run`, `--write-header` INV-1 strip, `--terminal` / `--harness` rules) |
+| `src/cli/args.ts` | `bd17f52` | `signer-core.mjs` (`parseArgs`, `needsStdin`) |
+| `src/cli/commands.ts` | `54d6f97` | `lib/commands.mjs` |
 | `src/cli/key-generate.ts` | `9ab5cc4` | `lib/commands.mjs` (`keyGenerateResult`) |
-| `src/cli/key-path.ts`, `src/cli/signer-config.ts` | `a4e9322`, `c2a8573` | `lib/keypath.mjs` |
+| `src/cli/key-path.ts`, `src/cli/signer-config.ts` | `3988a71`, `24a0956` | `lib/keypath.mjs` (incl. `terminalKeyPath`) |
+| `src/terminal.ts` | `e346d37` | `lib/keypath.mjs` (`assertValidTerminalId`, `resolveHarnessTerminalId`) |
 | `src/cli/io.ts`, `src/cli/io-schema.ts` | `f58cf53`, `e05bd67` | `lib/commands.mjs` (`readInput`, `assertInputSchema`) |
 | `src/cli/node-floor.ts` | `6704b11` | `signer-core.mjs` (`answers:false` → `NODE_VERSION_UNSUPPORTED`) |
 | `src/storage.ts` | `9f48d61` | `lib/keypath.mjs` (`loadKeyFile`), `lib/commands.mjs` (`writeSecretFileAtPath`) |
 | `src/voucher.ts`, `src/pop.ts`, `src/keys.ts`, `src/envelope.ts` | `700e37e`, `cce8f02`, `450be4d`, `7cedd0f` | `lib/keymodel.mjs` |
-| `src/errors.ts`, `src/constants.ts` | `7af4892`, `4b6094f` | `lib/errors.mjs`, `lib/keymodel.mjs` |
+| `src/errors.ts`, `src/constants.ts` | `4c18fc0`, `4b6094f` | `lib/errors.mjs`, `lib/keymodel.mjs` |
+
+The `0.3.1` profile (a signer below the pin) is source-derived from `44cb9fe` (the 0.3.1 release): its capabilities
+lack `terminal id` and `workload-terminal/1`, and its argv grammar has no `--terminal` / `--harness`, so the
+documented calls fail `unknown flag`, exit 2. Command bodies stay 0.4.0, stamped `implementation_version: 0.3.1`.
 
 The `0.2.0` profile (scenario `signer-keygen-unsupported`) is taken from the same repository at `72bd896`
 (`src/cli/commands.ts` `COMMANDS` / `capabilitiesResult`, `src/cli/args.ts` flag set, `package.json` version `0.2.0`):
@@ -46,8 +53,8 @@ never touched. Keys are single-use and discarded; the recording holds only publi
 **Inline-key argument.** The `voucher-inline-key-arg` case passes an "inline private key" as `--key`. It is the
 43-character canary `FAKE-SP6-CANARY-INLINE-x0x0x0x0x0x0x0x0x0x0` (`INLINE_KEY_CANARY` in `cases.mjs`): the length of
 a raw Ed25519 seed in base64url (what the labeler's inline branch keys on), but obviously fake. The real signer's
-answer does not depend on the value (`KEY_PATH_INVALID "key file must be named secret.json"`). The recording was
-re-captured with it on 2026-10-08 at the same commit. It deliberately avoids the `FAKE-SP6-CANARY-PRIV-` prefix: it
+answer does not depend on the value (`KEY_PATH_INVALID "key file must be named secret.json"`). The 0.3.1 recording was
+re-captured with it on 2026-10-08; the 0.4.0 recording uses it from the start. It deliberately avoids the `FAKE-SP6-CANARY-PRIV-` prefix: it
 shares no 16-character window (other than the exempt bare `FAKE-SP6-CANARY-`) with any private-key or header canary,
 so passing it never trips `never_appears` by itself (`evals/runner/inline-canary.test.mjs`).
 

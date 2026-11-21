@@ -1,4 +1,4 @@
-// Parity cases: one script per signer behaviour the skills exercise, run identically against the REAL 0.3.1
+// Parity cases: one script per signer behaviour the skills exercise, run identically against the REAL pinned
 // signer (capture.mjs, offline, once) and the MOCK (parity.test.mjs, every CI run). Each step is a CLI call or
 // a filesystem setup action; outputs are normalised ({{HOME}}, {{DIR}}) so the two recordings are comparable.
 import { chmodSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
@@ -26,6 +26,12 @@ export function prepResponse(v, extra = {}) {
     ...(extra.top ?? {}),
   });
 }
+// 0.4.0: `--terminal <id>` in place of --out / --key (the signer derives the key file from the id).
+const TA = "claude-code:parity-a";
+const TB = "codex:parity-b";
+const kgT = (t, inputT = t) => ({ argv: ["key generate", "--terminal", t, "--input", "-", "--output", "json"], stdin: JSON.stringify({ borrower_id: B, terminal_id: inputT }), save: { jkt: "jkt" } });
+const popT = (t, fieldT = t) => ({ argv: ["pop sign", "--terminal", t, "--input", "-", "--output", "json"], stdin: (v) => JSON.stringify({ fields: { borrowerId: B, terminalId: fieldT, jkt: v.jkt } }) });
+const tid = (h) => ({ argv: ["terminal id", "--harness", h, "--output", "json"] });
 const writePrep = (extra) => ({ write: "{{DIR}}/prep.json", content: (v) => prepResponse(v, extra) });
 const sign = (extra = []) => ({ argv: ["voucher sign", "--envelope", "--key", "{{KEY}}", "--input", "{{DIR}}/prep.json", ...extra] });
 const WH = ["--write-header", "{{DIR}}/hdr.txt"];
@@ -65,6 +71,17 @@ export const PARITY_CASES = [
   { id: "voucher-embedded-mismatch", steps: [kgJson(B, T), pid, writePrep({ embedded: { paymentId: `0x${"33".repeat(32)}` } }), sign(WH)] },
   { id: "voucher-write-header-without-envelope", steps: [kgJson(B, T), pid, writePrep(), { argv: ["voucher sign", "--key", "{{KEY}}", "--input", "{{DIR}}/prep.json", ...WH] }] },
   { id: "unknown-flag", steps: [{ argv: ["capabilities", "--bogus"] }] },
+  { id: "terminal-id-stable", steps: [tid("claude-code"), tid("claude-code"), tid("codex")] },
+  { id: "terminal-id-bad-harness", steps: [tid("vim"), tid("..")] },
+  { id: "terminal-id-no-harness", steps: [{ argv: ["terminal id"] }] },
+  { id: "keygen-terminal-created-then-reused", steps: [kgT(TA), kgT(TA), kgT(TB)] },
+  { id: "keygen-terminal-input-mismatch", steps: [kgT(TA, TB)] },
+  { id: "keygen-terminal-dotdot", steps: [kgT("a..b")] },
+  { id: "keygen-terminal-with-out", steps: [{ ...kgT(TA), argv: ["key generate", "--terminal", TA, "--out", "{{KEY}}", "--input", "-"] }] },
+  { id: "popsign-terminal", steps: [kgT(TA), popT(TA)] },
+  { id: "popsign-terminal-cross", steps: [kgT(TA), popT(TA, TB)] },
+  { id: "voucher-terminal-write-header-json", steps: [kgT(TA), pid, writePrep(), { argv: ["voucher sign", "--envelope", "--terminal", TA, "--input", "{{DIR}}/prep.json", ...WH, "--output", "json"] }] },
+  { id: "terminal-flag-on-key-jkt", steps: [{ argv: ["key jkt", "--terminal", TA, "--input", "-"], stdin: "{}" }] },
 ];
 
 const fill = (s, v) => s.replace(/\{\{(\w+)\}\}/g, (_, k) => v[k]);
@@ -101,8 +118,10 @@ export function runCase(c, exec, { home, dir }) {
   return records;
 }
 
+// `terminal id` mints `<harness>:<uuid v4>`: random on both sides, so the uuid is compared as a tag.
+const UUID_RE = /[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/g;
 function norm(s, v) {
-  let out = s ?? "";
+  let out = (s ?? "").replace(UUID_RE, "{{UUID}}");
   for (const [p, tag] of [[v.DIR, "{{DIR}}"], [v.HOME, "{{HOME}}"]]) {
     let real = p;
     try { real = realpathSync(p); } catch { /* keep lexical */ }

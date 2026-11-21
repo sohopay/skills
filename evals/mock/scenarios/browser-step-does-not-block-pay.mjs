@@ -5,7 +5,7 @@ export default {
   "case_id": "browser-step-does-not-block-pay",
   "suite": "sohopay-x402",
   "situation": "onboarded agent, local 0.3.1 signer, ACTIVE grant; get_context lists COMPLETE_PROFILE and CONNECT_BANK (handoff_type OPEN_URL) alongside PAY (tool prepare_x402_payment)",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": { "key": { "borrower": "self", "terminal": "self" } },
   "backend": {
     "state": "onboarded",

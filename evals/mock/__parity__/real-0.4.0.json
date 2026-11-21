@@ -1,0 +1,1147 @@
+{
+  "signer": "@sohopay/agent-signer@0.4.0",
+  "node": "v26.13.1",
+  "cases": {
+    "capabilities-human": [
+      {
+        "argv": [
+          "capabilities"
+        ],
+        "stdout": "signer_protocol: sohopay-signer/1\nimplementation: @sohopay/agent-signer\nimplementation_version: 0.4.0\nalgorithms: [\"Ed25519\"]\ncommands: [\"voucher sign\",\"payment-id\",\"key jkt\",\"key generate\",\"pop sign\",\"verify-vectors\",\"capabilities\",\"terminal id\"]\ncommand_contracts: {\"key generate\":\"workload-keygen/1\",\"pop sign\":\"pop-sign/1\",\"terminal id\":\"workload-terminal/1\"}\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "capabilities-json": [
+      {
+        "argv": [
+          "capabilities",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"algorithms\":[\"Ed25519\"],\"commands\":[\"voucher sign\",\"payment-id\",\"key jkt\",\"key generate\",\"pop sign\",\"verify-vectors\",\"capabilities\",\"terminal id\"],\"command_contracts\":{\"key generate\":\"workload-keygen/1\",\"pop sign\":\"pop-sign/1\",\"terminal id\":\"workload-terminal/1\"}}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "verify-vectors": [
+      {
+        "argv": [
+          "verify-vectors"
+        ],
+        "stdout": "passed: 19\nfailed: 0\ntotal: 19\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "payment-id": [
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "keygen-created-then-reused-human": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "public_jwk: {\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"CSL6iyx5QBLi0LwNKTzQj20TdHH_quEAIEDU3-1ZGYc\"}\njkt: Jsk26txgDQE0r6kmKTYEhdQSqyfB6MlnXmzf8WBfuSc\nborrower_id: b-parity-1\nterminal_id: t-parity-1\ncreated: true\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "public_jwk: {\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"CSL6iyx5QBLi0LwNKTzQj20TdHH_quEAIEDU3-1ZGYc\"}\njkt: Jsk26txgDQE0r6kmKTYEhdQSqyfB6MlnXmzf8WBfuSc\nborrower_id: b-parity-1\nterminal_id: t-parity-1\ncreated: false\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "keygen-created-then-reused-json": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"A0aCk682epOYCQkATuO65QLpYrV5IzTUDUsGd6ckZNg\"},\"jkt\":\"DGRROYDdlSoZk71LJ_2qmMr4Jol4jeUPs6WwBLTTwGA\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"A0aCk682epOYCQkATuO65QLpYrV5IzTUDUsGd6ckZNg\"},\"jkt\":\"DGRROYDdlSoZk71LJ_2qmMr4Jol4jeUPs6WwBLTTwGA\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":false}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "keygen-no-out": [
+      {
+        "argv": [
+          "key generate",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"MALFORMED_INPUT\",\"message\":\"key generate requires --out <path>\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-extra-field": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"MALFORMED_INPUT\",\"message\":\"key generate: unexpected input field(s): private_key_base64url\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-cross-borrower": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "public_jwk: {\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"husUEMj_WiatXZkwytt1x0hhiOtrASTXVxxIvFFmWz8\"}\njkt: CJdZ-O3dV-yCvm8uvSytiOm6jZNOTXlbUX2ykP1bbro\nborrower_id: b-other\nterminal_id: t-parity-1\ncreated: true\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"CROSS_BORROWER_KEY\",\"message\":\"a key for a different borrower exists at this path\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-terminal-mismatch": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "public_jwk: {\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"XZfEP3A_kFugbfebA6BItu7vz2bjmd8RchVXpXpUm90\"}\njkt: 6Fn5pguwQCk2wIh2kep3E5bYYE-AS1ezejDfzEG0aTE\nborrower_id: b-parity-1\nterminal_id: t-other\ncreated: true\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"TERMINAL_MISMATCH\",\"message\":\"the stored key is bound to a different terminal\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-integrity-failed": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "public_jwk: {\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"u0w3RaVWMEao3DH1Wtvoi85t8clMLMV6nTRNa_DmIsM\"}\njkt: vyFARk2-3lGR2Xi9hZFsN0k3nCuN5wxCvCtJ-JN9ebQ\nborrower_id: b-parity-1\nterminal_id: t-parity-1\ncreated: true\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"KEY_INTEGRITY_FAILED\",\"message\":\"stored public material does not match the private key\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-key-dir-too-open": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"KEY_PATH_INVALID\",\"message\":\"{{HOME}}/.agents/sohopay-agent-workload has too-permissive mode\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-bad-leaf": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{HOME}}/.agents/sohopay-agent-workload/key.json",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"KEY_PATH_INVALID\",\"message\":\"key file must be named secret.json\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-outside-root": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{DIR}}/secret.json",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"KEY_PATH_INVALID\",\"message\":\"{{DIR}}/secret.json is not under an allowed key root\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "popsign-human": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"i-Z9O8xt-PdZFcB7xfU2hoSRD2hSDSrsWvq15VR9-UQ\"},\"jkt\":\"Le8dQHFgf_NHIYoIYpBILgmD1xLmEC7U8N0ixuNWMs8\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "signer_protocol: sohopay-signer/1\nimplementation: @sohopay/agent-signer\nimplementation_version: 0.4.0\npop_signature: 6rqsGtJqGf5iAbyDBfNK7kRlxNEGG4srOfTrOxoEtXx1OIpfW-4zsmpSA9texu22tEVC20cioWyF3fPLQQpWDg\nnonce: DrEDn35eOriiH6x-HkHoSQt6td6fAzb3acTsb8_r8bQ\niat: 1795228901\nalgorithm: Ed25519\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "popsign-json": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"RTscT3cJq7vPcP0dNQxXhhSoDoUArpMLSwfW-bI3cBM\"},\"jkt\":\"v7onaxXFSE_m4MWKOAudPeERmHOsR5CamWDmp1O8lvo\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"pop_signature\":\"n5duOK-AOhmFWj5UDiZfUL19hW_YoCcN9OXcoR3yLGK9Yner7JhYJk6y2_sx-u-x0wc4Vd7zQt_82Bpmq6fdCQ\",\"nonce\":\"lS3XC0DUfEHj9h1R-iNcXyWd2jTnUq-4tnvusDANVZs\",\"iat\":1795228901,\"algorithm\":\"Ed25519\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "popsign-supplied-nonce": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"HnYTkM8YtLZVOTa9HT8bUQyg3y34D0heVVpQoqgFdzU\"},\"jkt\":\"5uDcAoWTNvPAnSUSc5SBAh32ZxuSm5ppnmNpl2B7fX8\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"MALFORMED_INPUT\",\"message\":\"pop sign: unexpected field(s): nonce, iat\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "popsign-cross-borrower": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"fxBR8h228_J9lbaSSGtRNGnWKXOppjFUh-HeIVgO9og\"},\"jkt\":\"aQuGoR_bw2TvC8KCqBMLMOXmnZAoFw7NtqJSx0Dc2XU\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"CROSS_BORROWER_KEY\",\"message\":\"fields.borrowerId does not match the key file\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "popsign-terminal-mismatch": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"T4ba2721zegRTd33Z6RGGT140sBZvn7dyv5jZ1fxMMg\"},\"jkt\":\"j7NaPDbsQ27bBJhkVM-yqZZvcDYiuytOOHR5T-_aSOw\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"TERMINAL_MISMATCH\",\"message\":\"fields.terminalId does not match the key file\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "popsign-no-key": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"aY1_Ll0QZxWgDhstCUyBOEOO_DTg56H08WoEy1kk1Rw\"},\"jkt\":\"vGpZI9PLq6Ywh1nX24VzWOkQp6psx9Mr8Qvrm1HDXzY\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"MALFORMED_INPUT\",\"message\":\"pop sign requires --key <path>\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "voucher-envelope-write-header-human": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"6rG9zDXHfcVRQ6s2tMH9OIXacvcvqd-I4LKpEdZ_D6A\"},\"jkt\":\"926PcNOxUY3gsH5pvMOAqPXje7cT-f9YyMQ7gcF3N0E\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt"
+        ],
+        "stdout": "signer_protocol: sohopay-signer/1\nimplementation: @sohopay/agent-signer\nimplementation_version: 0.4.0\npayment_id: 0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\nagent_key_jkt: 926PcNOxUY3gsH5pvMOAqPXje7cT-f9YyMQ7gcF3N0E\nalgorithm: Ed25519\nheader_name: PAYMENT-SIGNATURE\nheader_file: {{DIR}}/hdr.txt\n",
+        "stderr": "",
+        "exitCode": 0,
+        "header": {
+          "line": "PAYMENT-SIGNATURE: eyJ4NDAyVmVyc2lvbiI6MiwicGF5bWVudFBheWxvYWQiOnsieDQwMlZlcnNpb24iOjIsInNjaGVtZSI6ImNyZWRpdCIsIm5ldHdvcmsiOiJiYXNlIiwicGF5bG9hZCI6eyJ2b3VjaGVyIjp7ImFnZW50SWQiOiJvYS1wYXJpdHktMSIsIm1lcmNoYW50SWQiOiIweDExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiLCJhc3NldCI6IjB4ODMzNTg5ZmNkNmVkYjZlMDhmNGM3YzMyZDRmNzFiNTRiZGEwMjkxMyIsImNoYWluSWQiOiI4NDUzIiwiYW1vdW50IjoiMTAwMDAwMCIsImZlZUFtb3VudCI6IjAiLCJvcmRlclJlZiI6IjB4MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsIm5vbmNlIjoicGFyaXR5LW5vbmNlLTEiLCJkZWFkbGluZSI6IjE3OTAwMDAwMDAiLCJwYXltZW50SWQiOiIweGU2N2RmMTFjNDYzZDljMGJjYTMyZTQ2Mzk0NGFhNGRlOWYyYWZlNTliMmQ4NmY2ZGQzMTM3YWQ3ZTRlY2M2YWYiLCJhZ2VudEtleUprdCI6IjkyNlBjTk94VVkzZ3NINXB2TU9BcVBYamU3Y1QtZjlZeU1RN2djRjNOMEUifSwic2lnbmF0dXJlIjoibkY1Umd0RmR3R3lWdkxIUHc4VTJDTW9GXy1hSWtWVEczdUZHX1RWbWVkY2cyZVlUelBpTzRqMVJrQTVUT1BlRzVNMlNaQnUwTmZZZFoxZnJ0QWV3Q2cifX19\n",
+          "mode": "600"
+        }
+      }
+    ],
+    "voucher-envelope-write-header-json": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"1_dO-9gQeR3Wov3k_jT3uwtVE6LIYJPOQDjY6LcFt_0\"},\"jkt\":\"UhHEAxM6kbspahtvwjHnppysJykibKkj2D0jNryF7kM\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\",\"agent_key_jkt\":\"UhHEAxM6kbspahtvwjHnppysJykibKkj2D0jNryF7kM\",\"algorithm\":\"Ed25519\",\"header_name\":\"PAYMENT-SIGNATURE\",\"header_file\":\"{{DIR}}/hdr.txt\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": {
+          "line": "PAYMENT-SIGNATURE: eyJ4NDAyVmVyc2lvbiI6MiwicGF5bWVudFBheWxvYWQiOnsieDQwMlZlcnNpb24iOjIsInNjaGVtZSI6ImNyZWRpdCIsIm5ldHdvcmsiOiJiYXNlIiwicGF5bG9hZCI6eyJ2b3VjaGVyIjp7ImFnZW50SWQiOiJvYS1wYXJpdHktMSIsIm1lcmNoYW50SWQiOiIweDExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiLCJhc3NldCI6IjB4ODMzNTg5ZmNkNmVkYjZlMDhmNGM3YzMyZDRmNzFiNTRiZGEwMjkxMyIsImNoYWluSWQiOiI4NDUzIiwiYW1vdW50IjoiMTAwMDAwMCIsImZlZUFtb3VudCI6IjAiLCJvcmRlclJlZiI6IjB4MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsIm5vbmNlIjoicGFyaXR5LW5vbmNlLTEiLCJkZWFkbGluZSI6IjE3OTAwMDAwMDAiLCJwYXltZW50SWQiOiIweGU2N2RmMTFjNDYzZDljMGJjYTMyZTQ2Mzk0NGFhNGRlOWYyYWZlNTliMmQ4NmY2ZGQzMTM3YWQ3ZTRlY2M2YWYiLCJhZ2VudEtleUprdCI6IlVoSEVBeE02a2JzcGFodHZ3akhucHB5c0p5a2liS2tqMkQwak5yeUY3a00ifSwic2lnbmF0dXJlIjoiXzlSekxQZHlpUTdESXBHM3JRaDJlX09vRVF3ZVRDSlZnQzZPQXYzdzVPeElVZ0Q2amxoWnBZT3BpRER1SmZvdXpVYWRjRlNJU3VpMzhSUlp0M1pSQXcifX19\n",
+          "mode": "600"
+        }
+      }
+    ],
+    "voucher-envelope-stdout-json": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"Kt6GyRaIPlzhAJzI6Ny50fQwRFJfCK9G1DRbV-aiob8\"},\"jkt\":\"ze3K7hj8pWMuQbtmgqH9ITUCguVkTxSg2p86pK3J7hE\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\",\"agent_key_jkt\":\"ze3K7hj8pWMuQbtmgqH9ITUCguVkTxSg2p86pK3J7hE\",\"signature\":\"l2bHWWlr4pO9fVILOLQ_mVPaXKc_tArxOwhgJKavdemVQqChmuGqvvFVzw-eWrMbcTaVX-uEqBHQsMGE8Aq4BQ\",\"algorithm\":\"Ed25519\",\"envelope\":{\"x402Version\":2,\"paymentPayload\":{\"x402Version\":2,\"scheme\":\"credit\",\"network\":\"base\",\"payload\":{\"voucher\":{\"agentId\":\"oa-parity-1\",\"merchantId\":\"0x1111111111111111111111111111111111111111111111111111111111111111\",\"asset\":\"0x833589fcd6edb6e08f4c7c32d4f71b54bda02913\",\"chainId\":\"8453\",\"amount\":\"1000000\",\"feeAmount\":\"0\",\"orderRef\":\"0x2222222222222222222222222222222222222222222222222222222222222222\",\"nonce\":\"parity-nonce-1\",\"deadline\":\"1790000000\",\"paymentId\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\",\"agentKeyJkt\":\"ze3K7hj8pWMuQbtmgqH9ITUCguVkTxSg2p86pK3J7hE\"},\"signature\":\"l2bHWWlr4pO9fVILOLQ_mVPaXKc_tArxOwhgJKavdemVQqChmuGqvvFVzw-eWrMbcTaVX-uEqBHQsMGE8Aq4BQ\"}}},\"header_name\":\"PAYMENT-SIGNATURE\",\"header_value\":\"eyJ4NDAyVmVyc2lvbiI6MiwicGF5bWVudFBheWxvYWQiOnsieDQwMlZlcnNpb24iOjIsInNjaGVtZSI6ImNyZWRpdCIsIm5ldHdvcmsiOiJiYXNlIiwicGF5bG9hZCI6eyJ2b3VjaGVyIjp7ImFnZW50SWQiOiJvYS1wYXJpdHktMSIsIm1lcmNoYW50SWQiOiIweDExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiLCJhc3NldCI6IjB4ODMzNTg5ZmNkNmVkYjZlMDhmNGM3YzMyZDRmNzFiNTRiZGEwMjkxMyIsImNoYWluSWQiOiI4NDUzIiwiYW1vdW50IjoiMTAwMDAwMCIsImZlZUFtb3VudCI6IjAiLCJvcmRlclJlZiI6IjB4MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsIm5vbmNlIjoicGFyaXR5LW5vbmNlLTEiLCJkZWFkbGluZSI6IjE3OTAwMDAwMDAiLCJwYXltZW50SWQiOiIweGU2N2RmMTFjNDYzZDljMGJjYTMyZTQ2Mzk0NGFhNGRlOWYyYWZlNTliMmQ4NmY2ZGQzMTM3YWQ3ZTRlY2M2YWYiLCJhZ2VudEtleUprdCI6InplM0s3aGo4cFdNdVFidG1ncUg5SVRVQ2d1VmtUeFNnMnA4NnBLM0o3aEUifSwic2lnbmF0dXJlIjoibDJiSFdXbHI0cE85ZlZJTE9MUV9tVlBhWEtjX3RBcnhPd2hnSkthdmRlbVZRcUNobXVHcXZ2RlZ6dy1lV3JNYmNUYVZYLXVFcUJIUXNNR0U4QXE0QlEifX19\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "voucher-plain-json": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"f5ks0PKqpccWG5HxpegD2Bs5eir5P5y20OAJKW7ZKyo\"},\"jkt\":\"SCw0DHTdaZiufBW1XgpWfCjwRNzvEn7istFF3gRLinE\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\",\"agent_key_jkt\":\"SCw0DHTdaZiufBW1XgpWfCjwRNzvEn7istFF3gRLinE\",\"signature\":\"8Gf4m5yggY-JezL28GER91LlNtLcniktCtI4NiCO-y8SO7Wj2SkCk0unGqaBwM8zIdimp501-ltx6nsM3oLoBQ\",\"algorithm\":\"Ed25519\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "voucher-inline-key": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"KP85Q-doFL178-u_M0SjCjjyvwXC1_kauR8-gG7Blts\"},\"jkt\":\"6PkdAXoRLRMQHEshS_vvG6VyX-kQ_7uMvMnRbTNXaL8\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"INLINE_KEY_REJECTED\",\"message\":\"inline key material is not accepted; use --key <path>\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "voucher-inline-key-arg": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"G_kIYBS5Wm-Oo0rn_hjlbWS6SPJtDxEYevrNtwUcrkA\"},\"jkt\":\"SrGVb_UXnNlHjlXsOLp_dQoXlm0rSCNqr57Gc8gQHcU\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--key",
+          "FAKE-SP6-CANARY-INLINE-x0x0x0x0x0x0x0x0x0x0",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"KEY_PATH_INVALID\",\"message\":\"key file must be named secret.json\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "voucher-embedded-mismatch": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"wGFePLH2Og1QGiS35vMpgkhWFT3JIIqBuzIyWekTQxo\"},\"jkt\":\"NZf_Dn7NY-JInL4C9HM2cLL_DmE3lM4U89QpIeyeFL8\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"PAYMENT_ID_MISMATCH\",\"message\":\"voucher paymentId does not match the envelope's embedded voucher\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "voucher-write-header-without-envelope": [
+      {
+        "argv": [
+          "key generate",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"TXkdxAYg7ngcsV-Vm1RnbW5jPB50J3_G6Ru9xaAfnDk\"},\"jkt\":\"x8_JMRNGxM94_8UhanyO_TXP2ZVd4eztPzTvBsPpTK4\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"t-parity-1\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--key",
+          "{{KEY}}",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt"
+        ],
+        "stdout": "",
+        "stderr": "--write-header requires --envelope\n",
+        "exitCode": 2,
+        "header": null
+      }
+    ],
+    "unknown-flag": [
+      {
+        "argv": [
+          "capabilities",
+          "--bogus"
+        ],
+        "stdout": "",
+        "stderr": "unknown flag: --bogus\n",
+        "exitCode": 2,
+        "header": null
+      }
+    ],
+    "terminal-id-stable": [
+      {
+        "argv": [
+          "terminal id",
+          "--harness",
+          "claude-code",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"terminal_id\":\"claude-code:{{UUID}}\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "terminal id",
+          "--harness",
+          "claude-code",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"terminal_id\":\"claude-code:{{UUID}}\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "terminal id",
+          "--harness",
+          "codex",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"terminal_id\":\"codex:{{UUID}}\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "terminal-id-bad-harness": [
+      {
+        "argv": [
+          "terminal id",
+          "--harness",
+          "vim",
+          "--output",
+          "json"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"INVALID_HARNESS\",\"message\":\"--harness must be one of: antigravity, claude-code, codex, cursor, hermes\"}}\n",
+        "exitCode": 1,
+        "header": null
+      },
+      {
+        "argv": [
+          "terminal id",
+          "--harness",
+          "..",
+          "--output",
+          "json"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"INVALID_HARNESS\",\"message\":\"--harness must be one of: antigravity, claude-code, codex, cursor, hermes\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "terminal-id-no-harness": [
+      {
+        "argv": [
+          "terminal id"
+        ],
+        "stdout": "",
+        "stderr": "terminal id requires --harness <name>\n",
+        "exitCode": 2,
+        "header": null
+      }
+    ],
+    "keygen-terminal-created-then-reused": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"Hegpz61JLwPDjNNfBiJ2spWfvwGcUb3b1Yt23H5n6Os\"},\"jkt\":\"Lah3XFkbP2EcTUd8h4IB2-OVXJqdNEnyegBfTFSATTU\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"claude-code:parity-a\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"Hegpz61JLwPDjNNfBiJ2spWfvwGcUb3b1Yt23H5n6Os\"},\"jkt\":\"Lah3XFkbP2EcTUd8h4IB2-OVXJqdNEnyegBfTFSATTU\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"claude-code:parity-a\",\"created\":false}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "codex:parity-b",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"ducZT3ofeeyB9sYdK2XHrp9oZOuT6qfO_KGW40yDuiQ\"},\"jkt\":\"CA2tsqh9xEOvkriuspIIwlaW_Oj22-XGXmHfUX16i7Q\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"codex:parity-b\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "keygen-terminal-input-mismatch": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"TERMINAL_MISMATCH\",\"message\":\"input terminal_id does not match --terminal\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-terminal-dotdot": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "a..b",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"KEY_PATH_INVALID\",\"message\":\"terminal id must not contain ..\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "keygen-terminal-with-out": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--out",
+          "{{KEY}}",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "--terminal replaces --key / --out; pass only one\n",
+        "exitCode": 2,
+        "header": null
+      }
+    ],
+    "popsign-terminal": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"HCFM9qI9pJiovROp3jQbLD7rfRJ9HHoQMYCDKOS660k\"},\"jkt\":\"7Oh_lT9EQZjEByhCT2sln7iKm2hkM4q1JspQXqrTFmc\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"claude-code:parity-a\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"pop_signature\":\"6WpicnAkCKCa29jHcHnC0i_cl9FbFBEnH5ANevhM-TEvzxU_18rY_laWw94gg4odRNzHFAArjldbOYmFqCvlCw\",\"nonce\":\"Je5w4fKBMPxiiqiCC0jkEUEkxmK3CsZLDULdM2xsFpg\",\"iat\":1795228907,\"algorithm\":\"Ed25519\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      }
+    ],
+    "popsign-terminal-cross": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"WLrbpgIFetjPdehibxGXhsnxqiETUsWRmZhJYVbp6_I\"},\"jkt\":\"eH1_OxUA-6c0fQIjBKJXoPboJ5cAsncybK7O__MFwWA\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"claude-code:parity-a\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "pop sign",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "",
+        "stderr": "{\"error\":{\"code\":\"TERMINAL_MISMATCH\",\"message\":\"fields.terminalId does not match the key file\"}}\n",
+        "exitCode": 1,
+        "header": null
+      }
+    ],
+    "voucher-terminal-write-header-json": [
+      {
+        "argv": [
+          "key generate",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"public_jwk\":{\"kty\":\"OKP\",\"crv\":\"Ed25519\",\"x\":\"5085FCwyYO4TarGNoY_u2ZjPZR961lhJ8Iaa32MbYSU\"},\"jkt\":\"T1tFca3YDpcmveRSNX72x-KCYAU5nYfRNVhojMIBRX8\",\"borrower_id\":\"b-parity-1\",\"terminal_id\":\"claude-code:parity-a\",\"created\":true}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "payment-id",
+          "--input",
+          "-",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": null
+      },
+      {
+        "argv": [
+          "voucher sign",
+          "--envelope",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "{{DIR}}/prep.json",
+          "--write-header",
+          "{{DIR}}/hdr.txt",
+          "--output",
+          "json"
+        ],
+        "stdout": "{\"signer_protocol\":\"sohopay-signer/1\",\"implementation\":\"@sohopay/agent-signer\",\"implementation_version\":\"0.4.0\",\"payment_id\":\"0xe67df11c463d9c0bca32e463944aa4de9f2afe59b2d86f6dd3137ad7e4ecc6af\",\"agent_key_jkt\":\"T1tFca3YDpcmveRSNX72x-KCYAU5nYfRNVhojMIBRX8\",\"algorithm\":\"Ed25519\",\"header_name\":\"PAYMENT-SIGNATURE\",\"header_file\":\"{{DIR}}/hdr.txt\"}",
+        "stderr": "",
+        "exitCode": 0,
+        "header": {
+          "line": "PAYMENT-SIGNATURE: eyJ4NDAyVmVyc2lvbiI6MiwicGF5bWVudFBheWxvYWQiOnsieDQwMlZlcnNpb24iOjIsInNjaGVtZSI6ImNyZWRpdCIsIm5ldHdvcmsiOiJiYXNlIiwicGF5bG9hZCI6eyJ2b3VjaGVyIjp7ImFnZW50SWQiOiJvYS1wYXJpdHktMSIsIm1lcmNoYW50SWQiOiIweDExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiLCJhc3NldCI6IjB4ODMzNTg5ZmNkNmVkYjZlMDhmNGM3YzMyZDRmNzFiNTRiZGEwMjkxMyIsImNoYWluSWQiOiI4NDUzIiwiYW1vdW50IjoiMTAwMDAwMCIsImZlZUFtb3VudCI6IjAiLCJvcmRlclJlZiI6IjB4MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIsIm5vbmNlIjoicGFyaXR5LW5vbmNlLTEiLCJkZWFkbGluZSI6IjE3OTAwMDAwMDAiLCJwYXltZW50SWQiOiIweGU2N2RmMTFjNDYzZDljMGJjYTMyZTQ2Mzk0NGFhNGRlOWYyYWZlNTliMmQ4NmY2ZGQzMTM3YWQ3ZTRlY2M2YWYiLCJhZ2VudEtleUprdCI6IlQxdEZjYTNZRHBjbXZlUlNOWDcyeC1LQ1lBVTVuWWZSTlZob2pNSUJSWDgifSwic2lnbmF0dXJlIjoiZ0hrS1RiZ3NUcy1vdXlMLU13WjBDRWZSc2xkNG4zRnBaSnNWYV94R0NiVzFNS1ZQcnY2UDdHd2djRGVNQXZzVk8tNUxTVGtBMXk5N3lNNDBXNXV3RHcifX19\n",
+          "mode": "600"
+        }
+      }
+    ],
+    "terminal-flag-on-key-jkt": [
+      {
+        "argv": [
+          "key jkt",
+          "--terminal",
+          "claude-code:parity-a",
+          "--input",
+          "-"
+        ],
+        "stdout": "",
+        "stderr": "--terminal is only valid for `key generate`, `pop sign` and `voucher sign`\n",
+        "exitCode": 2,
+        "header": null
+      }
+    ]
+  }
+}

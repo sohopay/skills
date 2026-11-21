@@ -1,4 +1,4 @@
-// Mock signer (evals/mock/sohopay-signer) against the @sohopay/agent-signer@0.3.1 CLI contract, plus the scenario
+// Mock signer (evals/mock/sohopay-signer) against the @sohopay/agent-signer@0.4.0 CLI contract, plus the scenario
 // hooks. The byte-level comparison with the real signer lives in parity.test.mjs; these pin the contract rules
 // themselves so a regression names the rule it broke.
 import test, { after } from "node:test";
@@ -35,14 +35,23 @@ function sandbox(config) {
 const IDS = JSON.stringify({ borrower_id: "b-1", terminal_id: "t-1" });
 const envelope = (r) => JSON.parse(r.stderr);
 
-test("capabilities: 0.3.1 advertisement with the workload-keygen/1 contract, human by default", () => {
+test("capabilities: 0.4.0 advertisement with the keygen and terminal contracts, human by default", () => {
   const s = sandbox();
   const h = s.run(["capabilities"]);
   assert.equal(h.code, 0);
-  assert.match(h.stdout, /^signer_protocol: sohopay-signer\/1\nimplementation: @sohopay\/agent-signer\nimplementation_version: 0\.3\.1\n/);
+  assert.match(h.stdout, /^signer_protocol: sohopay-signer\/1\nimplementation: @sohopay\/agent-signer\nimplementation_version: 0\.4\.0\n/);
   const j = JSON.parse(s.run(["capabilities", "--output", "json"]).stdout);
   assert.equal(j.command_contracts["key generate"], "workload-keygen/1");
+  assert.equal(j.command_contracts["terminal id"], "workload-terminal/1");
   assert.ok(j.commands.includes("key generate"));
+});
+
+test("capabilities: the 0.3.1 profile (below the pin) has no terminal contract and refuses --terminal", () => {
+  const s = sandbox({ signer: { profile: "0.3.1" } });
+  const j = JSON.parse(s.run(["capabilities", "--output", "json"]).stdout);
+  assert.equal(j.implementation_version, "0.3.1");
+  assert.equal(j.command_contracts["terminal id"], undefined);
+  assert.equal(s.run(["terminal", "id", "--harness", "claude-code"]).code, 2);
 });
 
 test("key generate: created:true then created:false with the same jkt; secret.json 0600 holds the private canary only", () => {
