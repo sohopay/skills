@@ -30,7 +30,7 @@ Wave 2: prepare_x402_payment (one idempotency_key per orderRef)
   X402_AGENT_KEY_NOT_REGISTERED or AGENT_AUTHORIZATION_REQUIRED → § Recovery, then retry SAME key
   RISK_FIRST_TIME_MERCHANT → retry SAME key
   CREDIT_ACCOUNT_NOT_FOUND → STOP: no credit line yet (no retry, no sign, no merchant retry)
-Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with the opaque --key (canonical path in references/signer.md); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
+Wave 3: VOUCHER_ISSUED → route signing to the signer (references/signer.md): the signer's envelope mode (one file-based call) with --terminal <terminal_id> (references/signer.md "Terminal id"); use the signer's header file (curl -fsS -H @<hdrfile>) and retry the URL. No signer → SIGNER_UNAVAILABLE, stop
   COMPLETED → header_name/header_value
   200 done | 202 poll get_settlement_status(~2s) by settlement_id; replay SAME header once CONFIRMED
 SKIP: whoami, get_borrower_status, tools/list, authorization-context, register_borrower, authorize_agent
@@ -192,14 +192,14 @@ Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `
 Do **not** hand-roll the signature or the header. Resolve a signer and run one call per
 [references/signer.md](#hosted-reference-signer):
 
-- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.1`);
+- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.4.0`);
   none answers → `SIGNER_UNAVAILABLE`, stop (never hand-sign).
 - Follow the MCP sequence in [references/signer.md](#hosted-reference-signer): one Bash call
   `mktemp -d` (note the printed `<dir>`), write the prepare response byte-for-byte to
   `<dir>/prep.json` with the file-write tool, then one Bash call
-  `voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json`.
-  `secret.json` is an **opaque** `--key` path — never read or parse it; the private key never
-  enters `argv`/`stdin`.
+  `voucher sign --envelope --terminal <terminal_id> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json`.
+  `--terminal` takes this install's `terminal_id` (signer.md "Terminal id"); the signer finds the
+  key from it — never name, read or parse a key file; the private key never enters `argv`/`stdin`.
 - Assert `header_name === "PAYMENT-SIGNATURE"`; cross-check the signer's `payment_id` +
   `agent_key_jkt` against the prepare `voucher.paymentId` + `voucher.agentKeyJkt` (mismatch →
   stop, no retry). The header **file** is opaque (the signer no longer returns a `header_value`
@@ -302,15 +302,15 @@ Try these in order; use the first that **answers**:
 
 1. `$SOHOPAY_SIGNER` (explicit command/path override)
 2. `sohopay-signer` on `PATH`
-3. `npx --no @sohopay/agent-signer@0.3.1` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
+3. `npx --no @sohopay/agent-signer@0.4.0` (exact pin — never a floating tag; **disallowed for `key generate`**, see below)
 
 Each candidate gets a **10 s** timeout; a timeout or spawn failure is a **miss** — try the
 next. Worst case is ~30 s. A candidate **answers** iff: `<signer> capabilities --output json` exits 0, its
 stdout parses as JSON, and `signer_protocol === "sohopay-signer/1"`. If `capabilities`
 reports embedded vectors, run `<signer> verify-vectors --output json` once, as its own Bash call (never chained with a key command), and require exit 0 — a
 **nonzero exit is a miss** (try the next candidate, not a hard stop). When `implementation`
-is `@sohopay/agent-signer`, also require `implementation_version >= 0.3.1` (the pinned version;
-`0.3.0` echoed `header_value` back on stdout under `--write-header`, i.e. a header-leaking
+is `@sohopay/agent-signer`, also require `implementation_version >= 0.4.0` (the pinned version;
+it adds per-terminal keys, and `0.3.0` echoed `header_value` back on stdout under `--write-header`, i.e. a header-leaking
 signer — this floor must exclude it, so never accept a version below the pin). If a resolved
 signer ever prints `header_value` on stdout, treat it as non-conformant and **STOP** — report a
 header-leaking signer and never retry the merchant with it.
@@ -318,7 +318,29 @@ header-leaking signer and never retry the merchant with it.
 If **no** candidate answers → **`SIGNER_UNAVAILABLE`**: stop and report to the operator.
 Never hand-sign, never WebSearch for crypto, never `pip install` / `npm install` a crypto lib. The one exception is the pinned signer itself, installed exactly as `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` shows.
 
-**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.3.1` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
+**Pin + keygen carve-out (A2).** The npx tier is pinned to the exact version `@sohopay/agent-signer@0.4.0` for all voucher invocations — never a floating tag. True supply-chain integrity arrives with SP3's attested bundle (future: pin the bundle hash). **For `key generate` the npx tier is disallowed entirely** — a secret-writing command runs only on a locally-installed signer (`$SOHOPAY_SIGNER` or `sohopay-signer` on `PATH`). See `{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md` for the keygen resolution rules and the `SIGNER_KEYGEN_REQUIRES_LOCAL` install path.
+
+### Terminal id (local harnesses)
+
+Each local install has its own terminal, operational agent and key. Before the first
+SohoPay call of a session (`get_context`), resolve the signer and run, as its own Bash call:
+
+```
+<signer> terminal id --harness <harness> --output json
+```
+
+`<harness>` is the harness running you: `claude-code`, `codex`, `cursor`, `hermes` or
+`antigravity`. Any other value fails with `INVALID_HARNESS`; do not invent one. stdout is
+`{ "terminal_id": "<harness>:<uuid>" }`. The id is stable: the same harness on this machine
+gets the same id every session. It requires `command_contracts["terminal id"] === "workload-terminal/1"`
+in `capabilities`; an older signer lacks it, so install the pin first (`{SKILLS_BASE}/borrower-onboard.md`
+`references/workload-key.md`).
+
+Pass that `terminal_id` verbatim, never a value of your own, to `get_context`, `register_borrower`
+or `register_terminal`, and as `--terminal` on `key generate`, `pop sign` and `voucher sign`.
+When `get_context` lists `REGISTER_TERMINAL`, call `register_terminal` with the same input you
+would give `register_borrower`. Remote-only connectors (ChatGPT, Claude.ai web, a remote
+Perplexity connector) run no signer: they omit `terminal_id` and keep the shared default.
 
 ### Sign the voucher
 
@@ -335,13 +357,13 @@ not survive between tool calls, so use the **literal** directory that `mktemp` p
 3. One Bash call:
 
    ```
-   <signer> voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json
+   <signer> voucher sign --envelope --terminal <terminal_id> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json
    ```
 
-   Paste both paths literally. For example, if `mktemp -d` printed `/tmp/tmp.Ab12Cd`:
+   Paste the terminal id and both paths literally. For example, if `mktemp -d` printed `/tmp/tmp.Ab12Cd`:
 
    ```
-   sohopay-signer voucher sign --envelope --key ~/.agents/sohopay-agent-workload/secret.json --input /tmp/tmp.Ab12Cd/prep.json --write-header /tmp/tmp.Ab12Cd/hdr.txt --output json
+   sohopay-signer voucher sign --envelope --terminal claude-code:5e0c3b1a-7d2f-4c8e-9a41-2b6d8f0e1c37 --input /tmp/tmp.Ab12Cd/prep.json --write-header /tmp/tmp.Ab12Cd/hdr.txt --output json
    ```
 4. Retry the merchant with the header file: `curl -fsS -H @<dir>/hdr.txt {MERCHANT_BASE_URL}`
    (see **Consume the output and retry** below).
@@ -355,32 +377,39 @@ dir=$(mktemp -d); chmod 700 "$dir"
 umask 077
 # Raw-HTTP fallback only (non-MCP host), response straight to disk byte-for-byte:
 curl -fsS … -o "$dir/prep.json" {API_BASE}/api/v1/spend/x402/prepare
-<signer> voucher sign --envelope --key <secret.json path> --input "$dir/prep.json" --write-header "$dir/hdr.txt" --output json
+<signer> voucher sign --envelope --terminal <terminal_id> --input "$dir/prep.json" --write-header "$dir/hdr.txt" --output json
 ```
 
 - `--input` is the **full** prepare response (`{ voucher, signing, envelope, header_name, … }`),
   written byte-for-byte as received from the prepare call (no re-serialization). **Never** interpolate the JSON into a shell string.
-- `--key` is the **canonical key path** — the single source of this literal across all skills:
-  `~/.agents/sohopay-agent-workload/secret.json`. Onboarding (`{SKILLS_BASE}/borrower-onboard.md`)
-  writes the key here via `key generate --out`, and the voucher path reads it via
-  `voucher sign --key`. The agent **MUST NOT** read, print, parse, copy, or summarize this
-  file; the private key **MUST NOT** appear in `argv`, `stdin`, or any tool input. Nor may it list, `stat` or `echo` the key file, its directory or `~/.agents` (`ls`, `ls -l`, `ls -ld`, `echo <path>`): the signer checks the key; the agent never inspects it. Any command naming the key file other than the documented signer call counts as accessing it.
+- `--terminal` is the `terminal_id` from **Terminal id** above. The signer derives the key file
+  from it; the agent never names, reads, prints, parses, copies or summarizes a key file, and the
+  private key **MUST NOT** appear in `argv`, `stdin` or any tool input. Nor may it list, `stat` or
+  `echo` anything under `~/.agents` (`ls`, `ls -l`, `ls -ld`): the signer checks the key; the agent
+  never inspects it. Onboarding (`{SKILLS_BASE}/borrower-onboard.md`) creates the key with
+  `key generate --terminal`, and the voucher path reads it with `voucher sign --terminal`.
 
-  Paste this path **literally** after `--key` / `--out` in every keyed command — never through a variable (no `KEY=…`). The onboarding commands (`{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md`), each as its own Bash call exactly as shown:
+  An install onboarded before signer 0.4.0 has its key at `~/.agents/sohopay-agent-workload/secret.json`,
+  bound to the old shared terminal. Never move, rename, copy, read or delete it, and never pass that
+  path: a new session uses `--terminal`.
+
+  Paste the terminal id **literally** after `--terminal` in every keyed command — never through a
+  variable. The onboarding commands (`{SKILLS_BASE}/borrower-onboard.md` `references/workload-key.md`), each as
+  its own Bash call exactly as shown:
 
   ```
-  sohopay-signer key generate --out ~/.agents/sohopay-agent-workload/secret.json --input - --output json <<'SOHOPAY_EOF'
-  { "borrower_id": "…", "terminal_id": "…" }
+  sohopay-signer key generate --terminal <terminal_id> --input - --output json <<'SOHOPAY_EOF'
+  { "borrower_id": "…", "terminal_id": "<terminal_id>" }
   SOHOPAY_EOF
   ```
 
   ```
-  sohopay-signer pop sign --key ~/.agents/sohopay-agent-workload/secret.json --input - --output json <<'SOHOPAY_EOF'
-  { "fields": { "borrowerId": "…", "terminalId": "…", "jkt": "…" } }
+  sohopay-signer pop sign --terminal <terminal_id> --input - --output json <<'SOHOPAY_EOF'
+  { "fields": { "borrowerId": "…", "terminalId": "<terminal_id>", "jkt": "…" } }
   SOHOPAY_EOF
   ```
 - **Signer spelling:** write the signer exactly as the candidate that answered — `sohopay-signer`,
-  `"$SOHOPAY_SIGNER"` or the pinned `npx --no @sohopay/agent-signer@0.3.1`. Never an absolute path
+  `"$SOHOPAY_SIGNER"` or the pinned `npx --no @sohopay/agent-signer@0.4.0`. Never an absolute path
   to the binary (`/usr/local/bin/sohopay-signer`), never a default expansion (`${SOHOPAY_SIGNER:-sohopay-signer}`),
   never `env …` / `command …` in front of it.
 - `--write-header` writes a curl-ready `PAYMENT-SIGNATURE: <value>` line (mode 0600).
@@ -424,7 +453,7 @@ paraphrase ("the signer isn't available").
 |-----------|--------|
 | No candidate answers | `SIGNER_UNAVAILABLE` → stop, report |
 | Nonzero exit / `{"error":{"code",…}}` | Surface the code → stop (no retry, no hand-sign) |
-| `INLINE_KEY_REJECTED` | Re-run the **same** command once, as its own Bash call, with `--key` set to the canonical key path above — never retry with an inline key |
+| `INLINE_KEY_REJECTED` | Re-run the **same** command once, as its own Bash call, with `--terminal <terminal_id>` — never retry with an inline key |
 | `header_name` ≠ `PAYMENT-SIGNATURE` | `UNEXPECTED_HEADER_NAME` → stop |
 | `payment_id` / `agent_key_jkt` mismatch | Stop, no retry |
 | Retry fails terminally or voucher expired | **Re-prepare** (new `payment_id`), then sign the fresh envelope — never re-sign a stale one |
