@@ -214,7 +214,7 @@ done
 # Key generation refuses npx. This script runs without a repo checkout, so the pin
 # is a literal here; INV-pin-sync keeps it equal to scripts/signer-pin.mjs.
 
-SIGNER_SPEC="@sohopay/agent-signer@0.3.1"
+SIGNER_SPEC="@sohopay/agent-signer@0.4.0"
 SIGNER_PIN="${SIGNER_SPEC##*@}"
 
 # Prints implementation_version; exits nonzero when the signer gives no readable version.

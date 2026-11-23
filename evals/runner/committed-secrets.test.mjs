@@ -48,6 +48,14 @@ test("K2: hex runs of 64+ chars are flagged, including a 128-char expanded key",
   assert.deepEqual(scanText(`addr=${"ab".repeat(20)}`), []);
 });
 
+test("0.4.0 key folder: a 64-hex digest is exempt only as the segment right after sohopay-agent-workload/", () => {
+  assert.deepEqual(scanText(`/h/.agents/sohopay-agent-workload/${HEX} has too-permissive mode`), []);
+  assert.deepEqual(scanText(`/h/.agents/sohopay-agent-workload/${HEX}/secret.json does not exist`), []);
+  assert.equal(scanText(`/h/.agents/sohopay-agent-workload/${HEX}ab/secret.json`).length, 1, "66 hex is not a digest");
+  assert.equal(scanText(`/h/.agents/other/${HEX}/secret.json`).length, 1, "only the signer key root");
+  assert.equal(scanText(`priv=${HEX} sohopay-agent-workload/`).length, 1, "the segment must precede the hex");
+});
+
 test("scanner: public fields pass only in their public form (N2)", () => {
   const j = (o) => scanText(JSON.stringify(o), { json: true });
   assert.deepEqual(j({ public_jwk: { kty: "OKP", crv: "Ed25519", x: SEED }, jkt: SEED, nonce: SEED, payment_id: `0x${HEX}` }), []);

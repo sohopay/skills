@@ -78,14 +78,14 @@ Do **not** call `sign_transaction` on this path. Do **not** expect a custodial `
 Do **not** hand-roll the signature or the header. Resolve a signer and run one call per
 [references/signer.md](references/signer.md):
 
-- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.3.1`);
+- Resolve a signer (`$SOHOPAY_SIGNER` → `sohopay-signer` → `npx --no @sohopay/agent-signer@0.4.0`);
   none answers → `SIGNER_UNAVAILABLE`, stop (never hand-sign).
 - Follow the MCP sequence in [references/signer.md](references/signer.md): one Bash call
   `mktemp -d` (note the printed `<dir>`), write the prepare response byte-for-byte to
   `<dir>/prep.json` with the file-write tool, then one Bash call
-  `voucher sign --envelope --key <secret.json path> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json`.
-  `secret.json` is an **opaque** `--key` path — never read or parse it; the private key never
-  enters `argv`/`stdin`.
+  `voucher sign --envelope --terminal <terminal_id> --input <dir>/prep.json --write-header <dir>/hdr.txt --output json`.
+  `--terminal` takes this install's `terminal_id` (signer.md "Terminal id"); the signer finds the
+  key from it — never name, read or parse a key file; the private key never enters `argv`/`stdin`.
 - Assert `header_name === "PAYMENT-SIGNATURE"`; cross-check the signer's `payment_id` +
   `agent_key_jkt` against the prepare `voucher.paymentId` + `voucher.agentKeyJkt` (mismatch →
   stop, no retry). The header **file** is opaque (the signer no longer returns a `header_value`

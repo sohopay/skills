@@ -1,6 +1,6 @@
-// SP6 mock parity @ 0.3.1. Two layers:
+// SP6 mock parity @ the pinned signer (scripts/signer-pin.mjs). Two layers:
 //  1. CONTRACT — every parity case (evals/mock/__parity__/cases.mjs) run against the mock matches the committed
-//     recording of the REAL @sohopay/agent-signer@0.3.1 (real-0.3.1.json, see PROVENANCE.md): exit code, stdout
+//     recording of the REAL pinned @sohopay/agent-signer (real-<pin>.json, see PROVENANCE.md): exit code, stdout
 //     format, field names + order, deterministic values, stderr, header-file line + mode; random values by shape.
 //  2. LABELS — for every signer command the skills use, a transcript built from the real recording and one built
 //     from the mock's output of the same behaviour give IDENTICAL label() output (data-valued jkt compared by role).
@@ -14,9 +14,10 @@ import { fileURLToPath } from "node:url";
 import { label, validateTranscript } from "./schema.mjs";
 import { PARITY_CASES, runCase } from "../mock/__parity__/cases.mjs";
 import { compareRecord, parseStdout } from "../mock/__parity__/compare.mjs";
+import { SIGNER_PIN, SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
 
 const MOCK = join(dirname(fileURLToPath(import.meta.url)), "..", "mock");
-const REAL = JSON.parse(readFileSync(join(MOCK, "__parity__", "real-0.3.1.json"), "utf8"));
+const REAL = JSON.parse(readFileSync(join(MOCK, "__parity__", `real-${SIGNER_PIN}.json`), "utf8"));
 const execMock = (argv, stdin, { env, cwd }) => {
   const r = spawnSync(process.execPath, [join(MOCK, "sohopay-signer"), ...argv], { input: stdin, env, cwd, encoding: "utf8" });
   return { stdout: r.stdout, stderr: r.stderr, exitCode: r.status };
@@ -31,13 +32,13 @@ function mockRecords(c) {
 }
 const MOCK_RECS = Object.fromEntries(PARITY_CASES.map((c) => [c.id, mockRecords(c)]));
 
-test("recording provenance: real @sohopay/agent-signer@0.3.1, every parity case recorded", () => {
-  assert.equal(REAL.signer, "@sohopay/agent-signer@0.3.1");
+test(`recording provenance: real ${SIGNER_SPEC}, every parity case recorded`, () => {
+  assert.equal(REAL.signer, SIGNER_SPEC);
   assert.deepEqual(Object.keys(REAL.cases).sort(), PARITY_CASES.map((c) => c.id).sort());
 });
 
 for (const c of PARITY_CASES) {
-  test(`[contract] mock == real 0.3.1: ${c.id}`, () => {
+  test(`[contract] mock == real ${SIGNER_PIN}: ${c.id}`, () => {
     const real = REAL.cases[c.id];
     const mock = MOCK_RECS[c.id];
     assert.equal(mock.length, real.length);

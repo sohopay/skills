@@ -16,7 +16,7 @@ metadata:
 ### Cold-start sequence
 1. Connect / authenticate → `{SKILL:sohopay-mcp-connect}` (setup presets: `{SKILL:sohopay-setup}`).
 2. If not yet onboarded — identity + onboarding state → `{SKILL:sohopay-onboard}`.
-3. **Orient in one call → `get_context`** (v8+): returns `borrower_id`, credit headroom, authorization, and `next_actions` hints. On v7: `whoami` + `get_borrower_status`.
+3. **Orient in one call → `get_context`** (v8+; a local harness passes the `terminal_id` from `terminal id --harness`, see `{SKILL:sohopay-onboard}` step 0): returns `borrower_id`, credit headroom, authorization, and `next_actions` hints. On v7: `whoami` + `get_borrower_status`.
 4. Route using **Routing** below — branch on the first blocking `next_actions` entry, scan the full array for `HANDLE_CLAIM_REQUIRED` and the bank-repayment reason codes, and treat every `FINANCIAL_SOURCE_REQUIRED` entry as an alternative. Do not re-derive the next step from raw balances/statuses; `get_context` already decided it.
 
 ### Routing

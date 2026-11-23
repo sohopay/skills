@@ -5,7 +5,7 @@ export default {
   "case_id": "facility-accept-tool-absent-no-link",
   "suite": "sohopay-onboard",
   "situation": "onboarded agent, local 0.3.1 signer, no credit account yet; get_context lists REVIEW_AND_ACCEPT_FACILITY (tool review_facility_offer) but the server's tool list has no review_facility_offer",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": { "key": { "borrower": "self", "terminal": "self" } },
   "backend": {
     "state": "onboarded",

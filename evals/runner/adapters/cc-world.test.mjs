@@ -11,7 +11,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HardError } from "../schema.mjs";
 import { SIGNER_SPEC } from "../../../scripts/signer-pin.mjs";
-import { buildRun, findOnPath, KEY_REL } from "../../mock/run-config.mjs";
+import { buildRun, findOnPath, runKeyFile } from "../../mock/run-config.mjs";
 import { loadScenario } from "../../mock/scenarios/index.mjs";
 import { SERVER_INSTRUCTIONS, TOOL_CATALOG } from "../../mock/lib/tool-catalog.mjs";
 import { signerChildEnv } from "../../mock/lib/signer-sandbox.mjs";
@@ -75,7 +75,7 @@ test("[E2E] T17 m3: the running backend process holds no harness credential", as
 test("positive: key inside HOME, run root 0700 / outside HOME's parent / not under /tmp / no trust artifacts on disk, one signer", async () => {
   await withWorld("key-opacity", "sohopay-x402", async (w) => {
     assertHermetic(w);
-    assert.ok(realpathSync(join(w.home, KEY_REL)).startsWith(realpathSync(w.home) + "/"));
+    assert.ok(realpathSync(runKeyFile(w.run)).startsWith(realpathSync(w.home) + "/"));
     assert.equal(statSync(w.runRoot).mode & 0o777, 0o700);
     assert.ok(!w.runRoot.startsWith(dirname(w.home) + "/") && !w.runRoot.startsWith(w.home));
     assert.ok(!/^(?:\/private)?\/tmp\//.test(w.runRoot), w.runRoot);

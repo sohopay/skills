@@ -8,16 +8,16 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { KEYGEN_CONTRACT, SIGNER_PIN, SIGNER_SPEC } from "../../scripts/signer-pin.mjs";
+import { KEYGEN_CONTRACT, SIGNER_PIN, SIGNER_SPEC, TERMINAL_CONTRACT } from "../../scripts/signer-pin.mjs";
 
 const SCRIPT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "scripts", "signer-contract-check.mjs");
 
 /** Run the gate with an optional stub signer whose `capabilities --output json` prints `caps`. */
-function runGate(caps) {
+function runGate(caps, extraEnv = {}) {
   const dir = mkdtempSync(join(tmpdir(), "sp6-contract-check-"));
   try {
     const pathDir = mkdtempSync(join(dir, "path-"));
-    const env = { PATH: pathDir, HOME: dir };
+    const env = { PATH: pathDir, HOME: dir, ...extraEnv };
     if (caps) {
       const stub = join(dir, "stub-signer.mjs");
       writeFileSync(stub, `process.stdout.write(${JSON.stringify(JSON.stringify(caps))});\n`);
@@ -34,7 +34,7 @@ const caps = (version) => ({
   signer_protocol: "sohopay-signer/1",
   implementation: "@sohopay/agent-signer",
   implementation_version: version,
-  command_contracts: { "key generate": KEYGEN_CONTRACT, "pop sign": "pop-sign/1" },
+  command_contracts: { "key generate": KEYGEN_CONTRACT, "pop sign": "pop-sign/1", "terminal id": TERMINAL_CONTRACT },
 });
 
 test("contract check: a resolved signer at the pin with the keygen contract passes", () => {
@@ -50,6 +50,14 @@ test("contract check: a resolved signer at a different version hard-fails, even 
   assert.ok(r.out.includes(SIGNER_PIN), `the failure names the pin ${SIGNER_SPEC}: ${r.out}`);
 });
 
+test("contract check: a pinned signer without the terminal contract hard-fails", () => {
+  const c = caps(SIGNER_PIN);
+  delete c.command_contracts["terminal id"];
+  const r = runGate(c);
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /FAIL: command_contracts\["terminal id"\]/);
+});
+
 test("contract check: a resolved signer with no implementation_version hard-fails", () => {
   const c = caps(SIGNER_PIN);
   delete c.implementation_version;
@@ -61,4 +69,49 @@ test("contract check: no resolvable signer stays a soft skip (exit 0, WARN)", ()
   const r = runGate(null);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /WARN: could not resolve a signer/);
+});
+
+/** Stub `npm view`: prints a JSON version, or fails with the given stderr. */
+function npmViewStub(dir, { version, stderr }) {
+  const stub = join(dir, "npm-view.mjs");
+  writeFileSync(
+    stub,
+    version
+      ? `process.stdout.write(${JSON.stringify(JSON.stringify(version))});\n`
+      : `process.stderr.write(${JSON.stringify(stderr)}); process.exit(1);\n`,
+  );
+  return `${process.execPath} ${stub}`;
+}
+
+function gateWithPublic(npmView, extraEnv) {
+  const dir = mkdtempSync(join(tmpdir(), "sp6-public-npm-"));
+  try {
+    return runGate(caps(SIGNER_PIN), { SOHOPAY_PUBLIC_NPM_VIEW: npmViewStub(dir, npmView), ...extraEnv });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test("contract check: in CI a pin missing from public npm hard-fails", () => {
+  const r = gateWithPublic({ stderr: "npm error code E404\nnpm error 404 No match found for version" }, { CI: "true" });
+  assert.equal(r.code, 1, r.out);
+  assert.match(r.out, /not on public npm/);
+});
+
+test("contract check: locally a pin missing from public npm only warns", () => {
+  const r = gateWithPublic({ stderr: "npm error code E404" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /WARN: .*not on public npm/);
+});
+
+test("contract check: a pin present on public npm passes in CI", () => {
+  const r = gateWithPublic({ version: SIGNER_PIN }, { CI: "true" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /^OK: /m);
+});
+
+test("contract check: an inconclusive public npm lookup warns and does not block", () => {
+  const r = gateWithPublic({ stderr: "npm error code ECONNRESET" }, { CI: "true" });
+  assert.equal(r.code, 0, r.out);
+  assert.match(r.out, /WARN: could not confirm/);
 });

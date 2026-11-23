@@ -5,7 +5,7 @@ export default {
   "case_id": "in-review-nothing-to-do",
   "suite": "sohopay-onboard",
   "situation": "onboarded agent, local 0.3.1 signer, no credit account; get_context reports credit_eligibility IN_REVIEW and lists no next actions",
-  "signer": { "presence": "path", "profile": "0.3.1" },
+  "signer": { "presence": "path", "profile": "0.4.0" },
   "seed": { "key": { "borrower": "self", "terminal": "self" } },
   "backend": {
     "state": "onboarded",

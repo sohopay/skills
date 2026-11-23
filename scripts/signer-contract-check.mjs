@@ -3,12 +3,12 @@
  * Merge-gate: when the pinned signer is resolvable, prove it advertises the keygen
  * contract. Exit codes: 0 when the contract checks out OR the signer can't be resolved
  * here (non-fatal — see below); 1 only when a RESOLVED signer advertises the wrong or
- * missing contract, or is not the pinned version. CI resolves `@sohopay/agent-signer@<SIGNER_PIN>` from GitHub Packages
+ * missing contract, or is not the pinned version; in CI also 1 when the pin is not on public npm. CI resolves `@sohopay/agent-signer@<SIGNER_PIN>` from GitHub Packages
  * (.npmrc + the NODE_AUTH_TOKEN env in validate.yml); if the CI token lacks read access to
  * the private package, the check soft-skips rather than blocking every skills PR.
  */
 import { spawnSync } from 'node:child_process';
-import { SIGNER_PIN, SIGNER_SPEC, SIGNER_PKG, KEYGEN_CONTRACT, POPSIGN_CONTRACT } from './signer-pin.mjs';
+import { SIGNER_PIN, SIGNER_SPEC, SIGNER_PKG, KEYGEN_CONTRACT, POPSIGN_CONTRACT, TERMINAL_CONTRACT } from './signer-pin.mjs';
 
 function candidates() {
   const list = [];
@@ -91,4 +91,43 @@ if (popContract !== POPSIGN_CONTRACT) {
   console.error(`FAIL: command_contracts["pop sign"] is ${popContract}, expected ${POPSIGN_CONTRACT}`);
   process.exit(1);
 }
-console.log(`OK: ${SIGNER_SPEC} advertises key generate => ${KEYGEN_CONTRACT}, pop sign => ${POPSIGN_CONTRACT}`);
+// 0.4.0+: the skills pass --terminal and run `terminal id --harness`, so the pin must advertise it.
+const terminalContract = caps.command_contracts?.['terminal id'];
+if (terminalContract !== TERMINAL_CONTRACT) {
+  console.error(`FAIL: command_contracts["terminal id"] is ${terminalContract}, expected ${TERMINAL_CONTRACT}`);
+  process.exit(1);
+}
+// Agents and install.sh install the pin from PUBLIC npm, while the checks above resolve it from GitHub
+// Packages. A pin that exists only on GitHub Packages passes the contract check and then breaks every
+// local agent the moment this deploys, so the pin must also resolve on npmjs.org. `--@sohopay:registry`
+// overrides the repo .npmrc scope mapping, which would otherwise send the lookup back to GitHub Packages.
+// SOHOPAY_PUBLIC_NPM_VIEW swaps in a stub for tests. 'missing' fails everywhere in CI; an inconclusive
+// lookup (network, registry outage) warns rather than blocking, and a local run only warns.
+function publicNpmStatus() {
+  const base = process.env.SOHOPAY_PUBLIC_NPM_VIEW ? process.env.SOHOPAY_PUBLIC_NPM_VIEW.split(/\s+/) : ['npm'];
+  const r = spawnSync(
+    base[0],
+    [...base.slice(1), 'view', SIGNER_SPEC, 'version', '--json', '--prefer-online', '--@sohopay:registry=https://registry.npmjs.org'],
+    { encoding: 'utf8', timeout: 60_000 },
+  );
+  if (r.status === 0) {
+    try {
+      return JSON.parse(r.stdout) === SIGNER_PIN ? 'present' : 'missing';
+    } catch {
+      return 'unknown';
+    }
+  }
+  return /E404|No match found/.test(`${r.stdout}${r.stderr}`) ? 'missing' : 'unknown';
+}
+const publicStatus = publicNpmStatus();
+if (publicStatus === 'missing') {
+  const msg = `${SIGNER_SPEC} is not on public npm (npmjs.org); agents install it from there, so merging would break them. Publish it first`;
+  if (process.env.CI) {
+    console.error(`::error::signer contract check: ${msg}`);
+    process.exit(1);
+  }
+  console.warn(`WARN: ${msg}.`);
+} else if (publicStatus === 'unknown') {
+  console.warn(`WARN: could not confirm ${SIGNER_SPEC} on public npm (lookup inconclusive); not blocking.`);
+}
+console.log(`OK: ${SIGNER_SPEC} advertises key generate => ${KEYGEN_CONTRACT}, pop sign => ${POPSIGN_CONTRACT}, terminal id => ${TERMINAL_CONTRACT}`);

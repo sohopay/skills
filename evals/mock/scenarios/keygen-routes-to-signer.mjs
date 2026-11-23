@@ -7,7 +7,7 @@ export default {
   "situation": "fresh host, local 0.3.1 signer advertising workload-keygen/1, no key on disk",
   "signer": {
     "presence": "path",
-    "profile": "0.3.1"
+    "profile": "0.4.0"
   },
   "seed": {},
   "backend": {

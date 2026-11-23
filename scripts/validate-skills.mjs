@@ -333,7 +333,7 @@ function checkSp5Invariants() {
   // The stdin/inline ban applies to BOTH --input (the prepare response) AND --key (the private
   // key): the key must be an opaque file path, never argv/stdin — so `--key -` is rejected too.
   const x402Files = [pv, join(SKILLS_DIR, 'sohopay-x402/references/signer.md'), join(SKILLS_DIR, 'sohopay-x402/SKILL.md')];
-  const REQUIRED_FLAGS = ['--key', '--input', '--write-header'];
+  const REQUIRED_FLAGS = ['--terminal', '--input', '--write-header'];
   // `<flag> -` | `<flag>=-` | `<flag> "-"` | `<flag> /dev/stdin` | `<flag> {`/`"{` (inline JSON).
   const stdinOrInline = (flag) =>
     new RegExp(`${flag}(\\s+|=)(-(\\s|$|['"])|['"]-['"]|/dev/stdin|['"]?\\{)`);
@@ -353,6 +353,8 @@ function checkSp5Invariants() {
       ) {
         fail(`${f}: voucher sign must be file-based (no stdin, inline JSON, pipe or here-string): ${line.trim()}`);
       }
+      // 0.4.0+: the signer derives the key file from --terminal; a doc must not name a key path.
+      if (/--key\b/.test(line)) fail(`${f}: voucher sign must use --terminal, not --key: ${line.trim()}`);
       if (/voucher sign --envelope/.test(line)) {
         const missing = REQUIRED_FLAGS.filter((flag) => !line.includes(flag));
         for (const flag of missing) fail(`${f}: 'voucher sign --envelope' line missing ${flag}: ${line.trim()}`);
@@ -360,7 +362,7 @@ function checkSp5Invariants() {
       }
     }
   }
-  if (!completeInvocation) fail('SP5: no complete voucher sign --envelope --key --input --write-header invocation found in x402 docs');
+  if (!completeInvocation) fail('SP5: no complete voucher sign --envelope --terminal --input --write-header invocation found in x402 docs');
 }
 checkSp5Invariants();
 
@@ -412,12 +414,12 @@ function checkSp5CompleteInvariants() {
     const wkRaw = read(wk);
     if (!/\bkey generate\b/.test(wkRaw)) fail('INV-onboard-routes: no `key generate` routing in workload-key.md');
     if (!/\bpop sign\b/.test(wkRaw)) fail('INV-onboard-routes: no `pop sign` routing in workload-key.md');
-    if (!/key generate .*--out\b/.test(wkRaw)) fail('INV-onboard-routes: `key generate` must use file-based --out');
-    if (!/pop sign .*--key\b/.test(wkRaw)) fail('INV-onboard-routes: `pop sign` must use file-based --key');
+    if (!/key generate .*--terminal\b/.test(wkRaw)) fail('INV-onboard-routes: `key generate` must use --terminal');
+    if (!/pop sign .*--terminal\b/.test(wkRaw)) fail('INV-onboard-routes: `pop sign` must use --terminal');
     // No stdin/inline key material into either call.
     for (const line of wkRaw.replace(/\\\r?\n/g, ' ').split('\n')) {
-      if (/\b(key generate|pop sign)\b/.test(line) && /--key(\s+|=)(-(\s|$|['"])|\/dev\/stdin)/.test(line)) {
-        fail(`INV-onboard-routes: key must be a file path, never stdin: ${line.trim()}`);
+      if (/\b(key generate|pop sign)\b/.test(line) && /--(key|out)\b/.test(line)) {
+        fail(`INV-onboard-routes: key generate / pop sign take --terminal, never a key path or stdin: ${line.trim()}`);
       }
     }
   }

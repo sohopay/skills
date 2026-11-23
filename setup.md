@@ -29,7 +29,7 @@ Browser consent and handoff pages (verbatim URLs, polling, harness limits): [ref
 
 - [ ] Step 1–2: harness + network-only prereqs — [references/prereqs.md](#hosted-reference-prereqs)
 - [ ] Step 3: sticky skills — **skip** unless asked — [references/sticky-install.md](#hosted-reference-sticky-install)
-- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, run `npm i -g @sohopay/agent-signer@0.3.1` and continue. Do not stop, and do not ask the operator to reply. Never use `sudo` or change npm settings; stop if the install fails. ChatGPT skips the local signer. Details: [references/prereqs.md](#hosted-reference-prereqs)
+- [ ] Signer, before MCP: if `sohopay-signer` is missing or older than the pin, run `npm i -g @sohopay/agent-signer@0.4.0` and continue. Do not stop, and do not ask the operator to reply. Never use `sudo` or change npm settings; stop if the install fails. ChatGPT skips the local signer. Details: [references/prereqs.md](#hosted-reference-prereqs)
 - [ ] Step 4: activate **sohopay-mcp-connect** (`{SKILLS_BASE}/mcp-connect.md`). Hosted MCP origin — **production:** `https://mcp.sohopay.xyz`. **Staging path:** use the staging MCP origin pinned by **sohopay-setup-staging** (`https://staging.mcp.sohopay.xyz`), never the production host
 - [ ] Step 5: smoke the **hosted** connection — health + read-only `whoami` / `get_borrower_status`. Do not run `npm run smoke`. Local MCP setup is currently not available
 - [ ] Step 6: onboard until spendable credit — **sohopay-onboard** (`{SKILLS_BASE}/borrower-onboard.md`): one `get_context` step at a time until `purchasing_power.can_pay` is true. Do not wait for the first payment, and do not start one
@@ -146,13 +146,13 @@ command -v hermes >/dev/null 2>&1 || test -d "$HOME/.hermes" && echo "installed:
 
 Required for the default hosted path: **network access** (ability to fetch skill docs and reach the MCP origin). Do not install Node for its own sake, and do not run `node --version` except as part of the signer install below.
 
-When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.3.1`, run this command yourself and continue the checklist in the same turn. Do not stop. Do not ask the operator to run it or to reply:
+When `sohopay-signer` is missing, or `sohopay-signer capabilities --output json` reports an `implementation_version` older than `0.4.0`, run this command yourself and continue the checklist in the same turn. Do not stop. Do not ask the operator to run it or to reply:
 
 ```bash
-npm i -g @sohopay/agent-signer@0.3.1
+npm i -g @sohopay/agent-signer@0.4.0
 ```
 
-Then confirm `sohopay-signer capabilities --output json` answers `signer_protocol` `sohopay-signer/1` at `implementation_version` `0.3.1` or newer, and go on to MCP registration. Run exactly that command: never use `sudo`, never change the npm prefix, registry or auth, and never install from another source. If the install fails for any reason, stop and show that same command. ChatGPT has no local install: skip the signer and say so (key generation there stops with `SIGNER_KEYGEN_REQUIRES_LOCAL`). `install.sh` may also install this pin when an operator runs the installer. If that version is already on `PATH`, do not install it again.
+Then confirm `sohopay-signer capabilities --output json` answers `signer_protocol` `sohopay-signer/1` at `implementation_version` `0.4.0` or newer, and go on to MCP registration. Run exactly that command: never use `sudo`, never change the npm prefix, registry or auth, and never install from another source. If the install fails for any reason, stop and show that same command. ChatGPT has no local install: skip the signer and say so (key generation there stops with `SIGNER_KEYGEN_REQUIRES_LOCAL`). `install.sh` may also install this pin when an operator runs the installer. If that version is already on `PATH`, do not install it again.
 
 
 <a id="hosted-reference-report"></a>

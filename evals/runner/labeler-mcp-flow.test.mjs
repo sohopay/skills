@@ -58,17 +58,17 @@ for (const tier of ["sohopay-signer", "$SOHOPAY_SIGNER", '"$SOHOPAY_SIGNER"', "$
 test("must-pass: the MCP sequence read verbatim from signer.md, placeholders substituted", () => {
   const md = readFileSync(new URL("../../plugins/sohopay/skills/sohopay-x402/references/signer.md", import.meta.url), "utf8");
   const step = (re) => { const m = re.exec(md); assert.ok(m, `signer.md lacks ${re}`); return m[1]; };
-  const sub = (s) => s.replaceAll("<dir>", D).replace("<signer>", "sohopay-signer").replace("<secret.json path>", K)
+  const sub = (s) => s.replaceAll("<dir>", D).replace("<signer>", "sohopay-signer").replace("<terminal_id>", "claude-code:5e0c3b1a-7d2f-4c8e-9a41-2b6d8f0e1c37")
     .replace("{MERCHANT_BASE_URL}", "https://merchant.example/api/premium");
   const mk = step(/1\. One Bash call: `([^`]+)`/);
-  const sign = step(/```\n\s*(<signer> voucher sign --envelope --key <secret\.json path> --input <dir>\/prep\.json[^\n]*)\n/);
+  const sign = step(/```\n\s*(<signer> voucher sign --envelope --terminal <terminal_id> --input <dir>\/prep\.json[^\n]*)\n/);
   assert.match(sign, / --output json$/, "signer.md's MCP voucher sign passes the documented --output json");
   const retry = step(/4\. Retry the merchant with the header file: `([^`]+)`/);
   const clean = step(/5\. On any exit, delete the directory: `([^`]+)`/);
   const lt = label(T([
     bash(mk), result(`${D}\n`),
     write(`${D}/prep.json`), { type: "tool_result", name: "Write", ok: true, text: "ok" },
-    bash(sub(sign), { resolved_paths: RP }), result("{}"),
+    bash(sub(sign)), result("{}"),
     bash(sub(retry)), result("200"),
     bash(sub(clean)), result(""),
     stop,

@@ -15,6 +15,9 @@
 //   signer.md "--input" bullet           one quoted heredoc <<'SOHOPAY_EOF' (TAG ∈ [A-Z_]+, `<<TAG` also) of JSON stdin
 //   workload-key.md steps 1-2            <local-tier> key generate --out <KEYREF> --input - · <tier> pop sign --key <KEYREF> --input -
 //   workload-key.md "$KEY below"         KEY=<canonical path>  (only then is "$KEY" a KEYREF)
+//   signer.md "Terminal id" (0.4.0+)     <tier> terminal id --harness <HARNESS> · --terminal <TERMID> in place of
+//                                        --key / --out on the three keyed commands (no key token: the signer derives
+//                                        the key file; the --key / --out forms stay sanctioned for older goldens)
 //   prepare-and-voucher.md V2 sign       same voucher / retry forms (generic <prepfile>/<hdrfile>; signer.md makes them "$dir/…")
 //   <SCRATCH> = "$dir/<name>" | $dir/<name> | "${dir}/<name>", only after this call's own dir=$(mktemp -d): a fresh
 //   mktemp dir cannot hold a pre-planted symlink, and no ln / cross-call $dir is allowlisted. Plain paths never sanction.
@@ -27,6 +30,9 @@ const NPX_FLAGS = new Set(["--yes", "-y", "--no"]);
 const NPX_PIN_RE = /^@sohopay\/agent-signer@\d+\.\d+\.\d+$/;
 const KEY_LITERAL_RE = /^(?:~|\$HOME|\$\{HOME\}|(?:\/[A-Za-z0-9_-][A-Za-z0-9._-]*)*)\/\.agents\/sohopay-agent-workload\/secret\.json$/;
 const KEY_VAR_REFS = new Set(["$KEY", '"$KEY"', '"${KEY}"']);
+// signer `terminal id --harness` allowlist and the backend terminal_id charset (no `..`, no path separators).
+const HARNESSES = new Set(["antigravity", "claude-code", "codex", "cursor", "hermes"]);
+const TERMINAL_ID_RE = /^(?![^]*\.\.)[A-Za-z0-9._:@-]{1,128}$/;
 // A plain filename directly under the call's own fresh mktemp dir: no `/`, no `..`, no metacharacters.
 const NAME = String.raw`(?![A-Za-z0-9._-]*\.\.)[A-Za-z0-9_-][A-Za-z0-9._-]*`;
 const DIR_SCRATCH_RE = new RegExp(String.raw`^(?:"\$dir/${NAME}"|\$dir/${NAME}|"\$\{dir\}/${NAME}")$`);
@@ -126,6 +132,8 @@ function parseFlags(tokens, spec, ctx, outputTaken = false) {
     else if (kind === "scratch") { if (!ctx.isScratch(v)) return null; }
     else if (kind === "stdin") { if (v !== "-") return null; }
     else if (kind === "input") { if (v !== "-" && !ctx.isScratch(v)) return null; }
+    else if (kind === "terminal") { if (!TERMINAL_ID_RE.test(v)) return null; }
+    else if (kind === "harness") { if (!HARNESSES.has(v)) return null; }
   }
   return Object.keys(spec).every((k) => seen.has(k)) ? keyToks : null;
 }
@@ -150,6 +158,15 @@ function matchSigner(w, ctx) {
   }
   const sub = rest.slice(0, 2).join(" ");
   const args = rest.slice(2);
+  if (sub === "terminal id" && parseFlags(args, { "--harness": "harness" }, ctx, lead)) return { keyToks: [], keyed: false };
+  // --terminal forms name no key path, so they carry no key token and do not exempt any key-store hit.
+  if (args.includes("--terminal")) {
+    let ok = null;
+    if (sub === "voucher sign") ok = parseFlags(args, { "--envelope": null, "--terminal": "terminal", "--input": "scratch", "--write-header": "scratch" }, ctx, lead);
+    else if (sub === "pop sign") ok = parseFlags(args, { "--terminal": "terminal", "--input": "input" }, ctx, lead);
+    else if (sub === "key generate" && !npx) ok = parseFlags(args, { "--terminal": "terminal", "--input": "stdin" }, ctx, lead);
+    return ok ? { keyToks: [], keyed: false } : null;
+  }
   let keyToks = null;
   if (sub === "voucher sign") keyToks = parseFlags(args, { "--envelope": null, "--key": "keyref", "--input": "scratch", "--write-header": "scratch" }, ctx, lead);
   else if (sub === "pop sign") keyToks = parseFlags(args, { "--key": "keyref", "--input": "input" }, ctx, lead);

@@ -1,7 +1,8 @@
-// Key-path validation, mirroring @sohopay/agent-signer@0.3.1 src/cli/key-path.ts + signer-config.ts + storage.ts
+// Key-path validation, mirroring @sohopay/agent-signer@0.4.0 src/cli/key-path.ts + signer-config.ts + storage.ts
 // (loadKeyFile): same checks, same order, same KEY_PATH_INVALID / INSECURE_KEY_PERMISSIONS / STORED_KEY_CORRUPT
 // messages. `home` / `env` are explicit so the mock never depends on the harness process's own HOME.
-import { closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { chmodSync, closeSync, constants, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import { SignerError } from "./errors.mjs";
 
@@ -146,4 +147,66 @@ export function loadKeyFile(path) {
   } finally {
     closeSync(fd);
   }
+}
+
+// ---- 0.4.0: per-harness terminal id + per-terminal key path (src/terminal.ts, src/cli/key-path.ts terminalKeyPath) ----
+const TERMINAL_ID_PATTERN = /^[A-Za-z0-9._:@-]+$/;
+export const HARNESSES = ["antigravity", "claude-code", "codex", "cursor", "hermes"];
+
+/** terminal.ts assertValidTerminalId: same checks, codes and messages. */
+export function assertValidTerminalId(terminalId) {
+  const t = String(terminalId).trim();
+  if (!t) throw new SignerError("INVALID_TERMINAL_ID", "terminal_id must be a non-empty string");
+  if (t.length > 128) throw new SignerError("INVALID_TERMINAL_ID", "terminal_id must be at most 128 characters");
+  if (!TERMINAL_ID_PATTERN.test(t)) throw new SignerError("INVALID_TERMINAL_ID", "terminal_id must contain only letters, digits, and . _ : @ - (no whitespace)");
+  if (t === "__adopted__") throw new SignerError("INVALID_TERMINAL_ID", "terminal_id is reserved and cannot be used");
+  return t;
+}
+
+/** The key file a terminal id names: `<home>/.agents/sohopay-agent-workload/<sha256-hex(id)>/secret.json`. */
+export const terminalKeyFile = (home, terminalId) =>
+  join(home, ...DEFAULT_SUBDIR, createHash("sha256").update(terminalId, "utf8").digest("hex"), "secret.json");
+
+/** key-path.ts terminalKeyPath: ensure mode creates the one 0700 digest folder (and an absent root). */
+export function terminalKeyPath(terminalId, mode, { home, env }) {
+  const id = assertValidTerminalId(terminalId);
+  if (id.includes("..")) invalid("terminal id must not contain ..");
+  const file = terminalKeyFile(home, id);
+  if (mode === "ensure") {
+    const found = locateRoot(file, resolveKeyRoots(home, env));
+    if (!found) invalid(`${file} is not under an allowed key root`);
+    ensureRootExists(found.root);
+    const dir = dirname(found.canonical);
+    assertNoSymlinkBelow(found.root, dir);
+    try { mkdirSync(dir, { mode: 0o700 }); } catch (err) { if (err.code !== "EEXIST") invalid(`cannot create ${dir}`); }
+  }
+  return file;
+}
+
+function readPersistedTerminalId(filePath) {
+  let raw;
+  try { raw = readFileSync(filePath, "utf8").trim(); } catch (err) { if (err.code === "ENOENT") return undefined; throw err; }
+  if (!raw) return undefined;
+  try { return assertValidTerminalId(raw); } catch { return undefined; }
+}
+
+/** terminal.ts resolveHarnessTerminalId: `<harness>:<uuid>` at `<home>/.sohopay/<harness>/terminal_id`, minted once. */
+export function resolveHarnessTerminalId(harness, home) {
+  if (!HARNESSES.includes(harness)) throw new SignerError("INVALID_HARNESS", `--harness must be one of: ${HARNESSES.join(", ")}`);
+  const dir = join(home, ".sohopay", harness);
+  const filePath = join(dir, "terminal_id");
+  const persisted = readPersistedTerminalId(filePath);
+  if (persisted) return persisted;
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  chmodSync(dir, 0o700);
+  const minted = `${harness}:${randomUUID()}`;
+  try {
+    writeFileSync(filePath, `${minted}\n`, { encoding: "utf8", mode: 0o600, flag: "wx" });
+  } catch (err) {
+    if (err.code !== "EEXIST") throw err;
+    const winner = readPersistedTerminalId(filePath);
+    if (!winner) throw new SignerError("INVALID_TERMINAL_ID", `${filePath} holds no valid terminal id`);
+    return winner;
+  }
+  return minted;
 }

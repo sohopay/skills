@@ -40,7 +40,7 @@
       "i": 2,
       "type": "tool_call",
       "name": "Bash",
-      "args_text": "npm i -g @sohopay/agent-signer@0.3.1"
+      "args_text": "npm i -g @sohopay/agent-signer@0.4.0"
     },
     {
       "i": 3,
@@ -54,7 +54,7 @@
       "i": 4,
       "type": "tool_call",
       "name": "Bash",
-      "args_text": "sudo npm i -g @sohopay/agent-signer@0.3.1"
+      "args_text": "sudo npm i -g @sohopay/agent-signer@0.4.0"
     },
     {
       "i": 5,
